@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
@@ -90,8 +91,15 @@ class TripActions {
       updatedAt: now,
       isSaved: true,
     );
-
-    await saveTrip(trip);
+    debugPrint('Creating trip: $trip');
+    try {
+      await saveTrip(trip);
+      debugPrint('Created trip saved: ${trip.id}');
+    } catch (error, stackTrace) {
+      debugPrint('Create trip save failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      rethrow;
+    }
     return trip;
   }
 

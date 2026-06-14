@@ -51,4 +51,20 @@ class Trip {
       isSaved: isSaved ?? this.isSaved,
     );
   }
+
+  @override
+  String toString() {
+    return 'Trip('
+        'id: $id, '
+        'title: $title, '
+        'destination: $destination, '
+        'coverImage: $coverImage, '
+        'budget: $budget, '
+        'duration: $duration, '
+        'description: $description, '
+        'createdAt: $createdAt, '
+        'updatedAt: $updatedAt, '
+        'isSaved: $isSaved'
+        ')';
+  }
 }
