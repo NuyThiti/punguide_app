@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
+import '../../../shared/widgets/cover_image.dart';
 import '../../saved_trips/presentation/saved_trips_notifier.dart';
 import '../../trips/domain/models/trip.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
@@ -140,7 +141,7 @@ class _HeroSection extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.network(trip.coverImage, fit: BoxFit.cover),
+          CoverImage(source: trip.coverImage, fit: BoxFit.cover),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(

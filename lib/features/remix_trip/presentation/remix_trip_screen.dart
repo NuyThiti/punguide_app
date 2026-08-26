@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
+import '../../../shared/widgets/cover_image.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 
 class RemixTripScreen extends ConsumerWidget {
@@ -33,8 +34,8 @@ class RemixTripScreen extends ConsumerWidget {
                 const SizedBox(height: 20),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    trip.coverImage,
+                  child: CoverImage(
+                    source: trip.coverImage,
                     height: 180,
                     width: double.infinity,
                     fit: BoxFit.cover,

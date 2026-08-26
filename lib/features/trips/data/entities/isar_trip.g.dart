@@ -12,7 +12,7 @@ extension GetIsarTripCollection on Isar {
 
 const IsarTripSchema = CollectionSchema(
   name: r'IsarTrip',
-  id: 3939607042902198608,
+  id: 3939607042902198,
   properties: {
     r'budget': PropertySchema(
       id: 0,
@@ -72,7 +72,7 @@ const IsarTripSchema = CollectionSchema(
   idName: r'isarId',
   indexes: {
     r'tripId': IndexSchema(
-      id: 7734156669642746260,
+      id: 7734156669642746,
       name: r'tripId',
       unique: true,
       replace: true,

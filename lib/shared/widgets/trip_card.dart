@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../features/trips/domain/models/trip.dart';
 import '../extensions/currency_extensions.dart';
+import 'cover_image.dart';
 
 class TripCard extends StatelessWidget {
   const TripCard({
@@ -44,7 +45,7 @@ class TripCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.network(trip.coverImage, fit: BoxFit.cover),
+                  CoverImage(source: trip.coverImage, fit: BoxFit.cover),
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(

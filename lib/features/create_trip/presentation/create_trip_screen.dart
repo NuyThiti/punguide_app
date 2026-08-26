@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/services/cover_image_storage.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/cover_image.dart';
 import '../../trips/domain/models/trip.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 
@@ -26,7 +29,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _coverImageController;
 
-  int? _coverIndex;
+  String? _selectedCoverImage;
   DateTime? _startDate;
   DateTime? _endDate;
   String _transport = 'flight';
@@ -38,6 +41,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   bool _aiShown = false;
   bool _isSaving = false;
   final List<String> _selectedVibes = <String>[];
+  final List<_TripDayDraft> _days = <_TripDayDraft>[];
+  final List<_PlaceDraft> _places = <_PlaceDraft>[];
+  String? _openDayId;
+  String? _editingActivityId;
 
   bool get _isEditing => widget.trip != null;
   bool get _canCreate => _destinationController.text.trim().isNotEmpty;
@@ -45,13 +52,6 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   double get _budget => double.tryParse(_budgetController.text.trim()) ?? 0;
   double get _displayBudget => _perPerson ? _budget * _travelers : _budget;
   int get _duration => int.tryParse(_durationController.text.trim()) ?? 0;
-
-  static const _coverImages = <String>[
-    'https://images.unsplash.com/photo-1603477849227-705c424d1d80?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-    'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-    'https://images.unsplash.com/photo-1535262412227-85541e910204?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-    'https://images.unsplash.com/photo-1668428202528-bf3d5ed88560?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080',
-  ];
 
   @override
   void initState() {
@@ -66,10 +66,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       text: trip == null ? '7' : trip.duration.toString(),
     );
     _descriptionController = TextEditingController(text: trip?.description ?? '');
+    _selectedCoverImage = trip?.coverImage;
     _coverImageController = TextEditingController(
       text: trip?.coverImage ?? AppConstants.defaultCoverImage,
     );
-    _coverIndex = trip == null ? null : 0;
     _destinationController.addListener(_syncGeneratedFields);
     _budgetController.addListener(_refresh);
   }
@@ -90,7 +90,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.softScreen,
+      backgroundColor: AppColors.background,
       body: Center(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -100,7 +100,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
               height: framed && constraints.maxHeight > 932
                   ? 932
                   : constraints.maxHeight,
-              color: AppColors.softScreen,
+              color: AppColors.screen,
               child: Form(
                 key: _formKey,
                 child: Stack(
@@ -114,17 +114,16 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                           startDate: _startDate,
                           endDate: _endDate,
                           duration: _duration,
-                          coverIndex: _coverIndex,
-                          coverImages: _coverImages,
+                          coverImage: _selectedCoverImage,
                           onBack: _close,
-                          onChangeCover: _cycleCover,
+                          onChangeCover: _pickCoverImage,
                         ),
                         Container(
-                          color: AppColors.softScreen,
+                          color: AppColors.screen,
                           child: Column(
                             children: [
                               _SheetSection(
-                                topPadding: 4,
+                                topPadding: 0,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -180,6 +179,30 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                                       },
                                     ),
                                   ],
+                                ),
+                              ),
+                              _SheetSection(
+                                child: _ItineraryBuilder(
+                                  days: _days,
+                                  openDayId: _openDayId,
+                                  editingActivityId: _editingActivityId,
+                                  onAddDay: _addDay,
+                                  onToggleDay: _toggleDay,
+                                  onRemoveDay: _removeDay,
+                                  onUpdateDay: _updateDay,
+                                  onAddActivity: _addActivity,
+                                  onEditActivity: _editActivity,
+                                  onUpdateActivity: _updateActivity,
+                                  onRemoveActivity: _removeActivity,
+                                ),
+                              ),
+                              _SheetSection(
+                                child: _PlacesBuilder(
+                                  destination:
+                                      _destinationController.text.trim(),
+                                  places: _places,
+                                  onAddPlace: _addPlace,
+                                  onRemovePlace: _removePlace,
                                 ),
                               ),
                               _SheetSection(
@@ -294,11 +317,24 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     _destinationController.text = destination;
   }
 
-  void _cycleCover() {
-    setState(() {
-      _coverIndex = _coverIndex == null ? 0 : (_coverIndex! + 1) % _coverImages.length;
-      _coverImageController.text = _coverImages[_coverIndex!];
-    });
+  Future<void> _pickCoverImage() async {
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+        maxWidth: 1800,
+      );
+      if (image == null) return;
+
+      final savedPath = await persistCoverImage(image);
+      if (!mounted) return;
+      setState(() {
+        _selectedCoverImage = savedPath;
+        _coverImageController.text = savedPath;
+      });
+    } catch (error) {
+      _showError('Could not open your photos. Please try again.');
+    }
   }
 
   void _toggleVibe(String vibe) {
@@ -316,6 +352,120 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       _budgetTier = tier;
       _budgetController.text = amount;
     });
+  }
+
+  String _draftId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  void _addDay() {
+    final day = _TripDayDraft(
+      id: _draftId(),
+      dayNumber: _days.length + 1,
+      title: 'New Day',
+    );
+    setState(() {
+      _days.add(day);
+      _openDayId = day.id;
+    });
+  }
+
+  void _toggleDay(String id) {
+    setState(() => _openDayId = _openDayId == id ? null : id);
+  }
+
+  void _removeDay(String id) {
+    setState(() {
+      _days.removeWhere((day) => day.id == id);
+      for (var index = 0; index < _days.length; index++) {
+        _days[index] = _days[index].copyWith(dayNumber: index + 1);
+      }
+      if (_openDayId == id) _openDayId = null;
+    });
+  }
+
+  void _updateDay(String id, String title) {
+    setState(() {
+      final index = _days.indexWhere((day) => day.id == id);
+      if (index != -1) _days[index] = _days[index].copyWith(title: title);
+    });
+  }
+
+  void _addActivity(String dayId) {
+    final activity = _TripActivityDraft(
+      id: _draftId(),
+      time: '9:00 AM',
+      title: '',
+      location: '',
+      type: 'activity',
+    );
+    setState(() {
+      final index = _days.indexWhere((day) => day.id == dayId);
+      if (index == -1) return;
+      _days[index] = _days[index].copyWith(
+        activities: [..._days[index].activities, activity],
+      );
+      _editingActivityId = activity.id;
+    });
+  }
+
+  void _editActivity(String id) {
+    setState(() {
+      _editingActivityId = _editingActivityId == id ? null : id;
+    });
+  }
+
+  void _updateActivity(
+    String dayId,
+    String activityId, {
+    String? time,
+    String? title,
+    String? location,
+    String? type,
+  }) {
+    setState(() {
+      final dayIndex = _days.indexWhere((day) => day.id == dayId);
+      if (dayIndex == -1) return;
+      final activities = [..._days[dayIndex].activities];
+      final activityIndex =
+          activities.indexWhere((activity) => activity.id == activityId);
+      if (activityIndex == -1) return;
+      activities[activityIndex] = activities[activityIndex].copyWith(
+        time: time,
+        title: title,
+        location: location,
+        type: type,
+      );
+      _days[dayIndex] = _days[dayIndex].copyWith(activities: activities);
+    });
+  }
+
+  void _removeActivity(String dayId, String activityId) {
+    setState(() {
+      final dayIndex = _days.indexWhere((day) => day.id == dayId);
+      if (dayIndex == -1) return;
+      _days[dayIndex] = _days[dayIndex].copyWith(
+        activities: _days[dayIndex]
+            .activities
+            .where((activity) => activity.id != activityId)
+            .toList(),
+      );
+      if (_editingActivityId == activityId) _editingActivityId = null;
+    });
+  }
+
+  void _addPlace() {
+    setState(() {
+      _places.add(
+        _PlaceDraft(
+          id: _draftId(),
+          name: 'New place',
+          type: 'Recommended',
+        ),
+      );
+    });
+  }
+
+  void _removePlace(String id) {
+    setState(() => _places.removeWhere((place) => place.id == id));
   }
 
   Future<void> _pickDate({required bool isStart}) async {
@@ -453,8 +603,7 @@ class _HeroCover extends StatelessWidget {
     required this.startDate,
     required this.endDate,
     required this.duration,
-    required this.coverIndex,
-    required this.coverImages,
+    required this.coverImage,
     required this.onBack,
     required this.onChangeCover,
   });
@@ -463,8 +612,7 @@ class _HeroCover extends StatelessWidget {
   final DateTime? startDate;
   final DateTime? endDate;
   final int duration;
-  final int? coverIndex;
-  final List<String> coverImages;
+  final String? coverImage;
   final VoidCallback onBack;
   final VoidCallback onChangeCover;
 
@@ -477,23 +625,24 @@ class _HeroCover extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (coverIndex == null)
+            if (coverImage == null)
               const _EmptyCover()
             else
-              Image.network(coverImages[coverIndex!], fit: BoxFit.cover),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.26),
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.58),
-                  ],
+              CoverImage(source: coverImage!, fit: BoxFit.cover),
+            if (coverImage != null)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.26),
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.58),
+                    ],
+                  ),
                 ),
               ),
-            ),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -502,7 +651,7 @@ class _HeroCover extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _GlassButton(icon: Icons.chevron_left, onTap: onBack),
-                    if (coverIndex != null)
+                    if (coverImage != null)
                       GestureDetector(
                         onTap: onChangeCover,
                         child: Container(
@@ -536,17 +685,17 @@ class _HeroCover extends StatelessWidget {
             Positioned(
               left: 20,
               right: 20,
-              bottom: 50,
+              bottom: 24,
               child: destination.isEmpty
                   ? Row(
                       children: [
                         Icon(Icons.location_on_outlined,
-                            size: 15, color: Colors.white.withOpacity(0.72)),
+                            size: 15, color: Colors.white.withOpacity(0.78)),
                         const SizedBox(width: 6),
                         Text(
                           'Choose a destination below',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.76),
+                            color: Colors.white.withOpacity(0.82),
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -601,28 +750,6 @@ class _HeroCover extends StatelessWidget {
                       ],
                     ),
             ),
-            if (coverIndex != null)
-              Positioned(
-                right: 20,
-                bottom: 54,
-                child: Row(
-                  children: List.generate(
-                    coverImages.length,
-                    (index) => AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: index == coverIndex ? 16 : 6,
-                      height: 6,
-                      margin: const EdgeInsets.only(left: 5),
-                      decoration: BoxDecoration(
-                        color: index == coverIndex
-                            ? Colors.white
-                            : Colors.white.withOpacity(0.42),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -636,8 +763,7 @@ class _HeroWithSheetCap extends StatelessWidget {
     required this.startDate,
     required this.endDate,
     required this.duration,
-    required this.coverIndex,
-    required this.coverImages,
+    required this.coverImage,
     required this.onBack,
     required this.onChangeCover,
   });
@@ -646,8 +772,7 @@ class _HeroWithSheetCap extends StatelessWidget {
   final DateTime? startDate;
   final DateTime? endDate;
   final int duration;
-  final int? coverIndex;
-  final List<String> coverImages;
+  final String? coverImage;
   final VoidCallback onBack;
   final VoidCallback onChangeCover;
 
@@ -663,8 +788,7 @@ class _HeroWithSheetCap extends StatelessWidget {
             startDate: startDate,
             endDate: endDate,
             duration: duration,
-            coverIndex: coverIndex,
-            coverImages: coverImages,
+            coverImage: coverImage,
             onBack: onBack,
             onChangeCover: onChangeCover,
           ),
@@ -685,13 +809,7 @@ class _SheetCap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: AppColors.softScreen,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SizedBox(height: 24),
-    );
+    return const SizedBox.shrink();
   }
 }
 
@@ -773,7 +891,7 @@ class _GridPainter extends CustomPainter {
 class _SheetSection extends StatelessWidget {
   const _SheetSection({
     required this.child,
-    this.topPadding = 20,
+    this.topPadding = 0,
     this.hasBorder = true,
   });
 
@@ -785,8 +903,9 @@ class _SheetSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(20, topPadding, 20, 20),
+      padding: EdgeInsets.fromLTRB(20, topPadding + 20, 20, 20),
       decoration: BoxDecoration(
+        color: AppColors.screen,
         border: hasBorder
             ? const Border(bottom: BorderSide(color: AppColors.line))
             : null,
@@ -828,6 +947,7 @@ class _SoftCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       margin: margin,
       padding: padding,
       decoration: BoxDecoration(
@@ -836,9 +956,9 @@ class _SoftCard extends StatelessWidget {
         border: Border.all(color: Colors.black.withOpacity(0.04)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1012,35 +1132,6 @@ class _DateCard extends StatelessWidget {
               ),
             ),
           ],
-          GestureDetector(
-            onTap: onPickStart,
-            child: Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 12),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8F7F5),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.black.withOpacity(0.07)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.calendar_month,
-                      size: 16, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Pick dates',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1109,40 +1200,105 @@ class _VibeCard extends StatelessWidget {
   final List<String> selected;
   final ValueChanged<String> onToggle;
 
-  static const _vibes = [
-    ['Beach', '🏖️', Color(0xFF0288D1)],
-    ['Hiking', '🥾', Color(0xFF2E7D32)],
-    ['Food Tour', '🍜', AppColors.accent],
-    ['Culture', '🏛️', Color(0xFF8B6BAE)],
-    ['Shopping', '🛍️', Color(0xFFE91E8C)],
-    ['Nightlife', '🌃', Color(0xFF1565C0)],
-    ['Arts', '🎭', Color(0xFF9B59B6)],
-    ['Adventure', '🪂', AppColors.accent],
-    ['Wellness', '💆', Color(0xFF2A9E64)],
-    ['Photography', '📸', Color(0xFF5B8DD9)],
-    ['Surfing', '🏄', Color(0xFF0097A7)],
-    ['Wildlife', '🦁', Color(0xFF795548)],
+  static const List<List<Object>> _vibes = [
+    ['Beach', Icons.beach_access, Color(0xFF0288D1)],
+    ['Hiking', Icons.hiking, Color(0xFF2E7D32)],
+    ['Food Tour', Icons.ramen_dining, AppColors.accent],
+    ['Culture', Icons.account_balance, Color(0xFF8B6BAE)],
+    ['Shopping', Icons.shopping_bag_outlined, Color(0xFFE91E8C)],
+    ['Nightlife', Icons.nightlife, Color(0xFF1565C0)],
+    ['Arts', Icons.theater_comedy_outlined, Color(0xFF9B59B6)],
+    ['Adventure', Icons.paragliding, AppColors.accent],
+    ['Wellness', Icons.spa_outlined, Color(0xFF2A9E64)],
+    ['Photography', Icons.photo_camera_outlined, Color(0xFF5B8DD9)],
+    ['Surfing', Icons.surfing, Color(0xFF0097A7)],
+    ['Wildlife', Icons.pets, Color(0xFF795548)],
   ];
 
   @override
   Widget build(BuildContext context) {
     return _SoftCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: 9,
+        runSpacing: 9,
         children: _vibes.map((item) {
           final label = item[0] as String;
-          final emoji = item[1] as String;
+          final icon = item[1] as IconData;
           final color = item[2] as Color;
           final active = selected.contains(label);
-          return _ColorPill(
-            label: '$emoji $label',
+          return _VibePill(
+            label: label,
+            icon: icon,
             active: active,
             color: color,
             onTap: () => onToggle(label),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+class _VibePill extends StatelessWidget {
+  const _VibePill({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 13),
+        decoration: BoxDecoration(
+          color: active ? color.withOpacity(0.10) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: active
+                ? color.withOpacity(0.50)
+                : const Color(0xFFE9E6E2),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.025),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 17),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (active) ...[
+              const SizedBox(width: 5),
+              Icon(Icons.check_circle, size: 13, color: color),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1223,6 +1379,1226 @@ class _TransportRow extends StatelessWidget {
       }).toList(),
     );
   }
+}
+
+class _TripDayDraft {
+  const _TripDayDraft({
+    required this.id,
+    required this.dayNumber,
+    required this.title,
+    this.activities = const <_TripActivityDraft>[],
+  });
+
+  final String id;
+  final int dayNumber;
+  final String title;
+  final List<_TripActivityDraft> activities;
+
+  _TripDayDraft copyWith({
+    int? dayNumber,
+    String? title,
+    List<_TripActivityDraft>? activities,
+  }) {
+    return _TripDayDraft(
+      id: id,
+      dayNumber: dayNumber ?? this.dayNumber,
+      title: title ?? this.title,
+      activities: activities ?? this.activities,
+    );
+  }
+}
+
+class _TripActivityDraft {
+  const _TripActivityDraft({
+    required this.id,
+    required this.time,
+    required this.title,
+    required this.location,
+    required this.type,
+  });
+
+  final String id;
+  final String time;
+  final String title;
+  final String location;
+  final String type;
+
+  _TripActivityDraft copyWith({
+    String? time,
+    String? title,
+    String? location,
+    String? type,
+  }) {
+    return _TripActivityDraft(
+      id: id,
+      time: time ?? this.time,
+      title: title ?? this.title,
+      location: location ?? this.location,
+      type: type ?? this.type,
+    );
+  }
+}
+
+class _PlaceDraft {
+  const _PlaceDraft({
+    required this.id,
+    required this.name,
+    required this.type,
+  });
+
+  final String id;
+  final String name;
+  final String type;
+}
+
+class _ItineraryBuilder extends StatelessWidget {
+  const _ItineraryBuilder({
+    required this.days,
+    required this.openDayId,
+    required this.editingActivityId,
+    required this.onAddDay,
+    required this.onToggleDay,
+    required this.onRemoveDay,
+    required this.onUpdateDay,
+    required this.onAddActivity,
+    required this.onEditActivity,
+    required this.onUpdateActivity,
+    required this.onRemoveActivity,
+  });
+
+  final List<_TripDayDraft> days;
+  final String? openDayId;
+  final String? editingActivityId;
+  final VoidCallback onAddDay;
+  final ValueChanged<String> onToggleDay;
+  final ValueChanged<String> onRemoveDay;
+  final void Function(String id, String title) onUpdateDay;
+  final ValueChanged<String> onAddActivity;
+  final ValueChanged<String> onEditActivity;
+  final void Function(
+    String dayId,
+    String activityId, {
+    String? time,
+    String? title,
+    String? location,
+    String? type,
+  }) onUpdateActivity;
+  final void Function(String dayId, String activityId) onRemoveActivity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _SectionLabel('Day by day')),
+            _OutlineActionButton(
+              icon: Icons.add,
+              label: 'Add Day',
+              onTap: onAddDay,
+            ),
+          ],
+        ),
+        if (days.isEmpty)
+          GestureDetector(
+            onTap: onAddDay,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.045),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.28),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(17),
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month_outlined,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Plan your itinerary',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Tap to add your first day',
+                    style: TextStyle(
+                      color: Color(0xFFA0A0A0),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ...days.map((day) {
+            final isOpen = day.id == openDayId;
+            return _DayCard(
+              day: day,
+              isOpen: isOpen,
+              editingActivityId: editingActivityId,
+              onToggle: () => onToggleDay(day.id),
+              onRemove: () => onRemoveDay(day.id),
+              onUpdateTitle: (title) => onUpdateDay(day.id, title),
+              onAddActivity: () => onAddActivity(day.id),
+              onEditActivity: onEditActivity,
+              onUpdateActivity: (
+                activityId, {
+                time,
+                title,
+                location,
+                type,
+              }) =>
+                  onUpdateActivity(
+                day.id,
+                activityId,
+                time: time,
+                title: title,
+                location: location,
+                type: type,
+              ),
+              onRemoveActivity: (activityId) =>
+                  onRemoveActivity(day.id, activityId),
+            );
+          }),
+      ],
+    );
+  }
+}
+
+class _DayCard extends StatelessWidget {
+  const _DayCard({
+    required this.day,
+    required this.isOpen,
+    required this.editingActivityId,
+    required this.onToggle,
+    required this.onRemove,
+    required this.onUpdateTitle,
+    required this.onAddActivity,
+    required this.onEditActivity,
+    required this.onUpdateActivity,
+    required this.onRemoveActivity,
+  });
+
+  final _TripDayDraft day;
+  final bool isOpen;
+  final String? editingActivityId;
+  final VoidCallback onToggle;
+  final VoidCallback onRemove;
+  final ValueChanged<String> onUpdateTitle;
+  final VoidCallback onAddActivity;
+  final ValueChanged<String> onEditActivity;
+  final void Function(
+    String activityId, {
+    String? time,
+    String? title,
+    String? location,
+    String? type,
+  }) onUpdateActivity;
+  final ValueChanged<String> onRemoveActivity;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SoftCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: isOpen
+                            ? AppColors.primary
+                            : const Color(0xFFF3F2F1),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${day.dayNumber}',
+                        style: TextStyle(
+                          color:
+                              isOpen ? Colors.white : const Color(0xFF8A8A8A),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'DAY ${day.dayNumber}',
+                            style: const TextStyle(
+                              color: Color(0xFFA0A0A0),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                          if (isOpen)
+                            TextFormField(
+                              initialValue: day.title,
+                              onChanged: onUpdateTitle,
+                              onTap: () {},
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.only(top: 4),
+                              ),
+                              style: const TextStyle(
+                                color: AppColors.foreground,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            )
+                          else
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                day.title.isEmpty ? 'Untitled Day' : day.title,
+                                style: const TextStyle(
+                                  color: AppColors.foreground,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (day.activities.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          '${day.activities.length} stop${day.activities.length == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    GestureDetector(
+                      onTap: onRemove,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD4183D).withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline,
+                          size: 15,
+                          color: Color(0xFFD4183D),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: isOpen ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Color(0xFFA0A0A0),
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 220),
+              crossFadeState: isOpen
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              firstChild: const SizedBox(width: double.infinity),
+              secondChild: Column(
+                children: [
+                  const Divider(height: 1, color: AppColors.line),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    child: Column(
+                      children: [
+                        ...day.activities.asMap().entries.map((entry) {
+                          final activity = entry.value;
+                          return _ActivityRow(
+                            activity: activity,
+                            drawLine: entry.key < day.activities.length - 1,
+                            editing: editingActivityId == activity.id,
+                            onEdit: () => onEditActivity(activity.id),
+                            onUpdate: ({
+                              time,
+                              title,
+                              location,
+                              type,
+                            }) =>
+                                onUpdateActivity(
+                              activity.id,
+                              time: time,
+                              title: title,
+                              location: location,
+                              type: type,
+                            ),
+                            onRemove: () =>
+                                onRemoveActivity(activity.id),
+                          );
+                        }),
+                        _DashedActionButton(
+                          icon: Icons.add,
+                          label: 'Add activity',
+                          onTap: onAddActivity,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityStyle {
+  const _ActivityStyle(this.icon, this.label, this.color);
+
+  final IconData icon;
+  final String label;
+  final Color color;
+}
+
+const Map<String, _ActivityStyle> _activityStyles = {
+  'activity': _ActivityStyle(Icons.terrain, 'Activity', AppColors.primary),
+  'food': _ActivityStyle(Icons.restaurant, 'Dining', AppColors.accent),
+  'transport':
+      _ActivityStyle(Icons.directions_bus, 'Transport', Color(0xFF6B7FD4)),
+  'hotel': _ActivityStyle(Icons.apartment, 'Stay', Color(0xFF5B9BD5)),
+  'photo': _ActivityStyle(Icons.photo_camera_outlined, 'Photo', Color(0xFF9B59B6)),
+  'coffee': _ActivityStyle(Icons.local_cafe_outlined, 'Café', Color(0xFF8B6B4A)),
+};
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({
+    required this.activity,
+    required this.drawLine,
+    required this.editing,
+    required this.onEdit,
+    required this.onUpdate,
+    required this.onRemove,
+  });
+
+  final _TripActivityDraft activity;
+  final bool drawLine;
+  final bool editing;
+  final VoidCallback onEdit;
+  final void Function({
+    String? time,
+    String? title,
+    String? location,
+    String? type,
+  }) onUpdate;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = _activityStyles[activity.type] ?? _activityStyles['activity']!;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 52,
+          child: Column(
+            children: [
+              editing
+                  ? TextFormField(
+                      initialValue: activity.time,
+                      onChanged: (value) => onUpdate(time: value),
+                      textAlign: TextAlign.center,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.only(bottom: 6),
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFFA0A0A0),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        activity.time,
+                        style: const TextStyle(
+                          color: Color(0xFFA0A0A0),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: style.color,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: style.color.withOpacity(0.18),
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
+              if (drawLine)
+                Container(
+                  width: 1.5,
+                  height: 72,
+                  margin: const EdgeInsets.only(top: 5),
+                  color: const Color(0xFFEDE9E4),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: GestureDetector(
+            onTap: onEdit,
+            child: Container(
+              margin: const EdgeInsets.only(left: 8, bottom: 14),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: editing
+                      ? style.color.withOpacity(0.35)
+                      : Colors.black.withOpacity(0.04),
+                  width: 1.4,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: style.color.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(style.icon, size: 16, color: style.color),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: editing
+                            ? Column(
+                                children: [
+                                  TextFormField(
+                                    initialValue: activity.title,
+                                    onChanged: (value) =>
+                                        onUpdate(title: value),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Activity title...',
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                    style: const TextStyle(
+                                      color: AppColors.foreground,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.location_on_outlined,
+                                        size: 12,
+                                        color: Color(0xFFC0C0C0),
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue: activity.location,
+                                          onChanged: (value) =>
+                                              onUpdate(location: value),
+                                          decoration: const InputDecoration(
+                                            hintText: 'Location...',
+                                            border: InputBorder.none,
+                                            isDense: true,
+                                            contentPadding:
+                                                EdgeInsets.only(top: 3),
+                                          ),
+                                          style: const TextStyle(
+                                            color: Color(0xFFA0A0A0),
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    activity.title.isEmpty
+                                        ? 'Tap to edit activity...'
+                                        : activity.title,
+                                    style: TextStyle(
+                                      color: activity.title.isEmpty
+                                          ? const Color(0xFFC0C0C0)
+                                          : AppColors.foreground,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  if (activity.location.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.location_on_outlined,
+                                            size: 12,
+                                            color: Color(0xFFC0C0C0),
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Flexible(
+                                            child: Text(
+                                              activity.location,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Color(0xFFA0A0A0),
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: style.color.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          style.label,
+                          style: TextStyle(
+                            color: style.color,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: onRemove,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD4183D).withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            size: 12,
+                            color: Color(0xFFD4183D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (editing) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: _activityStyles.entries.map((entry) {
+                          final active = activity.type == entry.key;
+                          final option = entry.value;
+                          return GestureDetector(
+                            onTap: () => onUpdate(type: entry.key),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? option.color
+                                    : option.color.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(99),
+                                border: Border.all(
+                                  color: option.color.withOpacity(
+                                    active ? 1 : 0.24,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    option.icon,
+                                    size: 11,
+                                    color:
+                                        active ? Colors.white : option.color,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    option.label,
+                                    style: TextStyle(
+                                      color:
+                                          active ? Colors.white : option.color,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PlacesBuilder extends StatelessWidget {
+  const _PlacesBuilder({
+    required this.destination,
+    required this.places,
+    required this.onAddPlace,
+    required this.onRemovePlace,
+  });
+
+  final String destination;
+  final List<_PlaceDraft> places;
+  final VoidCallback onAddPlace;
+  final ValueChanged<String> onRemovePlace;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionLabel('Map'),
+        _MapPreview(destination: destination),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            const Expanded(child: _SectionLabel('Recommended spots')),
+            _OutlineActionButton(
+              icon: Icons.add,
+              label: 'Add Place',
+              onTap: onAddPlace,
+            ),
+          ],
+        ),
+        if (places.isEmpty)
+          GestureDetector(
+            onTap: onAddPlace,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 26),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.045),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.28),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.add_location_alt_outlined,
+                    color: AppColors.primary,
+                    size: 26,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Add recommended spots',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Hotels, restaurants, attractions…',
+                    style: TextStyle(
+                      color: Color(0xFFA0A0A0),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: places.map((place) {
+              return Container(
+                width: 178,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.location_on_outlined,
+                        color: AppColors.primary,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            place.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.foreground,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            place.type,
+                            style: const TextStyle(
+                              color: Color(0xFFA0A0A0),
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => onRemovePlace(place.id),
+                      child: const Icon(
+                        Icons.close,
+                        color: Color(0xFFC0C0C0),
+                        size: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+}
+
+class _MapPreview extends StatelessWidget {
+  const _MapPreview({required this.destination});
+
+  final String destination;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 160,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFC8DFCA), Color(0xFFB4CEC4), Color(0xFFC2D5CE)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(child: CustomPaint(painter: _GridPainter())),
+          Positioned.fill(child: CustomPaint(painter: _MapRoadPainter())),
+          const Positioned(left: 78, top: 58, child: _MapPin(primary: true)),
+          const Positioned(left: 220, top: 86, child: _MapPin()),
+          const Positioned(right: 92, top: 40, child: _MapPin()),
+          Positioned(
+            left: 12,
+            top: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.92),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    color: AppColors.primary,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    destination.isEmpty ? 'Your destination' : destination,
+                    style: const TextStyle(
+                      color: AppColors.foreground,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(99),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.30),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    color: Colors.white,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Open Map',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapPin extends StatelessWidget {
+  const _MapPin({this.primary = false});
+
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = primary ? AppColors.primary : AppColors.accent;
+    return Container(
+      width: primary ? 20 : 14,
+      height: primary ? 20 : 14,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.24),
+            spreadRadius: primary ? 5 : 4,
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: primary
+          ? Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+class _MapRoadPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final broadRoad = Paint()
+      ..color = Colors.white.withOpacity(0.70)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    final slimRoad = Paint()
+      ..color = Colors.white.withOpacity(0.52)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+
+    final first = Path()
+      ..moveTo(-10, size.height * 0.48)
+      ..quadraticBezierTo(
+        size.width * 0.23,
+        size.height * 0.32,
+        size.width * 0.52,
+        size.height * 0.47,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.76,
+        size.height * 0.58,
+        size.width + 10,
+        size.height * 0.45,
+      );
+    final second = Path()
+      ..moveTo(-10, size.height * 0.68)
+      ..quadraticBezierTo(
+        size.width * 0.25,
+        size.height * 0.84,
+        size.width * 0.48,
+        size.height * 0.63,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.70,
+        size.height * 0.48,
+        size.width + 10,
+        size.height * 0.76,
+      );
+    canvas.drawPath(first, broadRoad);
+    canvas.drawPath(second, slimRoad);
+
+    final verticalRoad = Paint()
+      ..color = Colors.white.withOpacity(0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+    canvas.drawLine(
+      Offset(size.width * 0.40, -10),
+      Offset(size.width * 0.38, size.height + 10),
+      verticalRoad,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.73, -10),
+      Offset(size.width * 0.70, size.height + 10),
+      verticalRoad,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _OutlineActionButton extends StatelessWidget {
+  const _OutlineActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: AppColors.primary.withOpacity(0.22)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.primary),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedActionButton extends StatelessWidget {
+  const _DashedActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: CustomPaint(
+        painter: _ItineraryDashedBorderPainter(),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 17, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ItineraryDashedBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.primary.withOpacity(0.32)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Offset.zero & size,
+          const Radius.circular(18),
+        ),
+      );
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        canvas.drawPath(
+          metric.extractPath(distance, distance + 6),
+          paint,
+        );
+        distance += 10;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(
+    covariant _ItineraryDashedBorderPainter oldDelegate,
+  ) =>
+      false;
 }
 
 class _BudgetCard extends StatelessWidget {
@@ -2688,7 +4064,7 @@ class _BottomActionBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
       decoration: const BoxDecoration(
-        color: AppColors.softScreen,
+        color: AppColors.screen,
         border: Border(top: BorderSide(color: AppColors.line)),
       ),
       child: Row(
@@ -2812,10 +4188,10 @@ class _NeutralPill extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: active ? AppColors.foreground : Colors.black.withOpacity(0.05),
+          color: active ? AppColors.primary : const Color(0xFFF6F6F4),
           borderRadius: BorderRadius.circular(99),
           border: Border.all(
-            color: active ? AppColors.foreground : Colors.black.withOpacity(0.08),
+            color: active ? AppColors.primary : const Color(0xFFE6E3DE),
             width: 1.4,
           ),
         ),
@@ -2853,21 +4229,12 @@ class _ColorPill extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
-          color: active ? color : color.withOpacity(0.07),
+          color: active ? color.withOpacity(0.15) : const Color(0xFFFAFAF8),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: active ? color : color.withOpacity(0.18),
+            color: active ? color.withOpacity(0.35) : const Color(0xFFEFECE8),
             width: 1.5,
           ),
-          boxShadow: active
-              ? [
-                  BoxShadow(
-                    color: color.withOpacity(0.20),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2875,14 +4242,14 @@ class _ColorPill extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: active ? Colors.white : color,
+                color: color,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
             if (active) ...[
               const SizedBox(width: 5),
-              const Icon(Icons.check, size: 12, color: Colors.white),
+              Icon(Icons.check, size: 12, color: color),
             ],
           ],
         ),
@@ -2915,33 +4282,24 @@ class _IconChoice extends StatelessWidget {
         height: 62,
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 3),
         decoration: BoxDecoration(
-          color: selected ? color : color.withOpacity(0.055),
+          color: selected ? color.withOpacity(0.14) : const Color(0xFFFAFAF8),
           borderRadius: BorderRadius.circular(17),
           border: Border.all(
-            color: selected ? color : color.withOpacity(0.18),
+            color: selected ? color.withOpacity(0.35) : const Color(0xFFEFECE8),
             width: 1.6,
           ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: color.withOpacity(0.18),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: selected ? Colors.white : color, size: 21),
+            Icon(icon, color: color, size: 21),
             const SizedBox(height: 5),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: selected ? Colors.white : color,
+                color: selected ? AppColors.foreground : const Color(0xFF6A6A6A),
                 fontSize: 11,
                 height: 1.0,
                 fontWeight: FontWeight.w900,
