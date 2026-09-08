@@ -9,13 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pluno/main.dart';
 
 void main() {
-  testWidgets('shows the home trip discovery screen',
-      (WidgetTester tester) async {
+  testWidgets('shows the PunGuide home screen', (WidgetTester tester) async {
     debugNetworkImageHttpClientProvider = () => _MockHttpClient();
     await tester.pumpWidget(const ProviderScope(child: PlunoApp()));
     await tester.pump();
 
-    expect(find.text('Discover Trips'), findsOneWidget);
+    expect(find.text('PunGuide'), findsOneWidget);
+    expect(find.text('วันนี้อยากไปหรือปัน ?'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });

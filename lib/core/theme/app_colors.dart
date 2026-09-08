@@ -13,4 +13,24 @@ class AppColors {
   static const primary = Color(0xFF2A9E64);
   static const secondary = Color(0xFF4CAC71);
   static const accent = Color(0xFFE89A5F);
+
+  /// PunGuide brand palette (PaiGun-PunGuide Figma file).
+  /// "ไปกัน" action, active tab and the create FAB.
+  static const brandOrange = Color(0xFFF4703A);
+  static const brandOrangeDeep = Color(0xFFEF4B36);
+
+  /// "ปันไกด์" action.
+  static const brandPurple = Color(0xFF7B3FE4);
+
+  /// Iconex nav icon stroke colour.
+  static const navIcon = Color(0xFF483234);
+  static const navIconMuted = Color(0xFF9A8F8F);
+
+  /// Creator handle chip on a trip card.
+  static const handleChip = Color(0xFFEFF7C9);
+  static const handleChipRing = Color(0xFFC8E15F);
+
+  static const chipBorder = Color(0xFFE3E0DC);
+  static const chipBorderActive = Color(0xFF2B2422);
+  static const searchButton = Color(0xFF1A1614);
 }

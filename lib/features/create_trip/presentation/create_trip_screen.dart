@@ -90,183 +90,94 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFFDFCF9),
       body: Center(
         child: LayoutBuilder(
           builder: (context, constraints) {
             final framed = constraints.maxWidth > 430;
             return Container(
               width: constraints.maxWidth < 430 ? constraints.maxWidth : 430,
-              height: framed && constraints.maxHeight > 932
-                  ? 932
+              height: framed && constraints.maxHeight > 900
+                  ? 900
                   : constraints.maxHeight,
-              color: AppColors.screen,
+              color: const Color(0xFFFDFCF9),
               child: Form(
                 key: _formKey,
                 child: Stack(
                   children: [
                     ListView(
                       physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 118),
+                      padding: const EdgeInsets.only(bottom: 92),
                       children: [
-                        _HeroWithSheetCap(
-                          destination: _destinationController.text.trim(),
+                        _CreateTripHeader(
+                          destinationController: _destinationController,
                           startDate: _startDate,
                           endDate: _endDate,
-                          duration: _duration,
-                          coverImage: _selectedCoverImage,
+                          travelers: _travelers,
                           onBack: _close,
-                          onChangeCover: _pickCoverImage,
+                          onPickDate: () => _pickDate(isStart: true),
+                          onGuestTap: () => setState(() {
+                            _travelers = _travelers == 10 ? 1 : _travelers + 1;
+                          }),
                         ),
-                        Container(
-                          color: AppColors.screen,
+                        _CreateModeSwitch(
+                          aiSelected: _aiShown,
+                          onChanged: (value) =>
+                              setState(() => _aiShown = value),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _SheetSection(
-                                topPadding: 0,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel('Where to?'),
-                                    _DestinationCard(
-                                      controller: _destinationController,
-                                      onPresetSelected: _setDestination,
-                                    ),
-                                  ],
-                                ),
+                              _ThaiSectionTitle(title: 'สไตล์การเที่ยว'),
+                              _ChoiceWrap(
+                                items: const [
+                                  ['ทะเล', Icons.beach_access_outlined],
+                                  ['ภูเขา', Icons.terrain_outlined],
+                                  ['ธรรมชาติ', Icons.eco_outlined],
+                                  ['คาเฟ่', Icons.coffee_outlined],
+                                  ['เข้าถึงท้องถิ่น', Icons.storefront_outlined],
+                                  ['วัฒนธรรม', Icons.museum_outlined],
+                                  ['อาหาร', Icons.restaurant_outlined],
+                                  ['ไนท์ไลฟ์', Icons.local_bar_outlined],
+                                  ['ช้อปปิ้ง', Icons.shopping_bag_outlined],
+                                  ['ผจญภัย', Icons.hiking_outlined],
+                                ],
+                                selected: _selectedVibes,
+                                onTap: _toggleVibe,
+                                showMore: true,
                               ),
-                              _SheetSection(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel('When?'),
-                                    _DateCard(
-                                      startDate: _startDate,
-                                      endDate: _endDate,
-                                      duration: _startDate != null &&
-                                              _endDate != null
-                                          ? _duration
-                                          : 0,
-                                      onPickStart: () =>
-                                          _pickDate(isStart: true),
-                                      onPickEnd: () =>
-                                          _pickDate(isStart: false),
-                                    ),
-                                  ],
-                                ),
+                              const SizedBox(height: 22),
+                              const _ThaiSectionTitle(
+                                title: 'ความเข้มข้นของทริป',
+                                subtitle: '*จำนวนจุดท่องเที่ยว / วัน',
                               ),
-                              _SheetSection(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel("What's the vibe?"),
-                                    _VibeCard(
-                                      selected: _selectedVibes,
-                                      onToggle: _toggleVibe,
-                                    ),
-                                  ],
-                                ),
+                              _PaceGrid(
+                                selected: _budgetTier,
+                                onTap: (tier, amount) =>
+                                    _setBudgetTier(tier, amount),
                               ),
-                              _SheetSection(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel('Getting there'),
-                                    _TransportCard(
-                                      active: _transport,
-                                      onSelected: (value) {
-                                        setState(() => _transport = value);
-                                      },
-                                    ),
-                                  ],
-                                ),
+                              const SizedBox(height: 22),
+                              const _ThaiSectionTitle(title: 'การเดินทาง'),
+                              _ChoiceWrap(
+                                items: const [
+                                  ['เครื่องบิน', Icons.flight_outlined],
+                                  ['รถส่วนตัว', Icons.directions_car_outlined],
+                                  ['เช่ารถขับ', Icons.car_rental_outlined],
+                                  ['มอเตอร์ไซค์', Icons.two_wheeler_outlined],
+                                  ['รถสาธารณะท้องถิ่น', Icons.directions_bus_outlined],
+                                  ['แบบประหยัด', Icons.directions_walk_outlined],
+                                ],
+                                selected: [_transport],
+                                onTap: (value) =>
+                                    setState(() => _transport = value),
+                                showMore: true,
                               ),
-                              _SheetSection(
-                                child: _ItineraryBuilder(
-                                  days: _days,
-                                  openDayId: _openDayId,
-                                  editingActivityId: _editingActivityId,
-                                  onAddDay: _addDay,
-                                  onToggleDay: _toggleDay,
-                                  onRemoveDay: _removeDay,
-                                  onUpdateDay: _updateDay,
-                                  onAddActivity: _addActivity,
-                                  onEditActivity: _editActivity,
-                                  onUpdateActivity: _updateActivity,
-                                  onRemoveActivity: _removeActivity,
-                                ),
-                              ),
-                              _SheetSection(
-                                child: _PlacesBuilder(
-                                  destination:
-                                      _destinationController.text.trim(),
-                                  places: _places,
-                                  onAddPlace: _addPlace,
-                                  onRemovePlace: _removePlace,
-                                ),
-                              ),
-                              _SheetSection(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel('Budget'),
-                                    _BudgetCard(
-                                      activeTier: _budgetTier,
-                                      controller: _budgetController,
-                                      currency: _currency,
-                                      displayBudget: _displayBudget,
-                                      rawBudget: _budget,
-                                      travelers: _travelers,
-                                      perPerson: _perPerson,
-                                      onTierSelected: _setBudgetTier,
-                                      onCurrencyChanged: (value) {
-                                        setState(() => _currency = value);
-                                      },
-                                      onTravelerChanged: (value) {
-                                        setState(() => _travelers = value);
-                                      },
-                                      onPerPersonChanged: (value) {
-                                        setState(() => _perPerson = value);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _SheetSection(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel('Who can see this?'),
-                                    _PrivacyCard(
-                                      active: _privacy,
-                                      onSelected: (value) {
-                                        setState(() => _privacy = value);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _SheetSection(
-                                hasBorder: false,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const _SectionLabel('AI Trip Planner'),
-                                    _AiPlannerCard(
-                                      destination:
-                                          _destinationController.text.trim(),
-                                      shown: _aiShown,
-                                      onGenerate: () {
-                                        if (_destinationController.text
-                                            .trim()
-                                            .isEmpty) {
-                                          return;
-                                        }
-                                        setState(() => _aiShown = true);
-                                      },
-                                    ),
-                                  ],
-                                ),
+                              const SizedBox(height: 24),
+                              const Align(
+                                alignment: Alignment.centerRight,
+                                child: _PageIndicator(),
                               ),
                             ],
                           ),
@@ -597,6 +508,445 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   }
 }
 
+class _CreateTripHeader extends StatelessWidget {
+  const _CreateTripHeader({
+    required this.destinationController,
+    required this.startDate,
+    required this.endDate,
+    required this.travelers,
+    required this.onBack,
+    required this.onPickDate,
+    required this.onGuestTap,
+  });
+
+  final TextEditingController destinationController;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final int travelers;
+  final VoidCallback onBack;
+  final VoidCallback onPickDate;
+  final VoidCallback onGuestTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateText = startDate == null || endDate == null
+        ? 'Date'
+        : '${_fmtDate(startDate)} - ${_fmtDate(endDate)}';
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.paddingOf(context).top + 12,
+        16,
+        20,
+      ),
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/home_hero.jpg'),
+          fit: BoxFit.cover,
+        ),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(28),
+          bottomRight: Radius.circular(28),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              InkWell(
+                onTap: onBack,
+                borderRadius: BorderRadius.circular(99),
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.chevron_left,
+                      size: 22, color: Color(0xFF315B4B)),
+                ),
+              ),
+              const Expanded(
+                child: Text(
+                  'สร้างทริปของคุณ',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    shadows: [Shadow(color: Colors.black38, blurRadius: 6)],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 30),
+            ],
+          ),
+          const SizedBox(height: 26),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF668078).withValues(alpha: 0.80),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              children: [
+                _HeaderInput(
+                  icon: Icons.location_on_outlined,
+                  child: TextFormField(
+                    controller: destinationController,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Destination is required'
+                        : null,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: const InputDecoration(
+                      hintText: 'Destination',
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _HeaderInput(
+                  icon: Icons.calendar_month_outlined,
+                  label: dateText,
+                  onTap: onPickDate,
+                ),
+                const SizedBox(height: 10),
+                _HeaderInput(
+                  icon: Icons.group_outlined,
+                  label: travelers == 2 ? 'Guest' : '$travelers Guests',
+                  onTap: onGuestTap,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderInput extends StatelessWidget {
+  const _HeaderInput({
+    required this.icon,
+    this.label,
+    this.child,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String? label;
+  final Widget? child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFAFAFA),
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: SizedBox(
+          height: 54,
+          child: Row(
+            children: [
+              const SizedBox(width: 15),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFEEE7),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 18, color: const Color(0xFFFF7D63)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: child ??
+                    Text(
+                      label!,
+                      style: const TextStyle(
+                        color: Color(0xFF8C8C8C),
+                        fontSize: 14,
+                      ),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateModeSwitch extends StatelessWidget {
+  const _CreateModeSwitch({required this.aiSelected, required this.onChanged});
+
+  final bool aiSelected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      margin: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0EDE5),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        children: [
+          _ModeButton(
+            label: 'AI จัดแผนให้',
+            selected: aiSelected,
+            onTap: () => onChanged(true),
+          ),
+          _ModeButton(
+            label: 'สร้างด้วยตัวเอง',
+            selected: !aiSelected,
+            onTap: () => onChanged(false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeButton extends StatelessWidget {
+  const _ModeButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(99),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFF7D63) : Colors.transparent,
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : const Color(0xFF8B8B84),
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThaiSectionTitle extends StatelessWidget {
+  const _ThaiSectionTitle({required this.title, this.subtitle});
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+          if (subtitle != null)
+            Text(subtitle!,
+                style: const TextStyle(fontSize: 9, color: Color(0xFF8D8D87))),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChoiceWrap extends StatelessWidget {
+  const _ChoiceWrap({
+    required this.items,
+    required this.selected,
+    required this.onTap,
+    required this.showMore,
+  });
+  final List<List<Object>> items;
+  final List<String> selected;
+  final ValueChanged<String> onTap;
+  final bool showMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 9,
+      children: [
+        ...items.map((item) {
+          final label = item[0] as String;
+          final active = selected.contains(label);
+          return _OutlineChip(
+            label: label,
+            icon: item[1] as IconData,
+            active: active,
+            onTap: () => onTap(label),
+          );
+        }),
+        if (showMore)
+          _OutlineChip(
+            label: '+ เพิ่ม',
+            active: true,
+            onTap: () {},
+          ),
+      ],
+    );
+  }
+}
+
+class _OutlineChip extends StatelessWidget {
+  const _OutlineChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    this.icon,
+  });
+  final String label;
+  final IconData? icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(99),
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+            color: active ? const Color(0xFFFF7658) : const Color(0xFFE8D7B8),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 14,
+                  color: active
+                      ? const Color(0xFFFF7658)
+                      : const Color(0xFFCAB37C)),
+              const SizedBox(width: 6),
+            ],
+            Text(label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: active
+                      ? const Color(0xFFFF7658)
+                      : const Color(0xFF514D47),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PaceGrid extends StatelessWidget {
+  const _PaceGrid({required this.selected, required this.onTap});
+  final String selected;
+  final void Function(String tier, String amount) onTap;
+
+  static const items = [
+    ['Slow Life', '3 - 4 สถานที่/วัน', '4', '4000'],
+    ['Chill', '5 - 6 สถานที่/วัน', '6', '6000'],
+    ['Balance', '8 สถานที่/วัน', '8', '8000'],
+    ['Active', '9 - 11 สถานที่/วัน', '10', '10000'],
+    ['Hardcore', '12+ สถานที่/วัน', '12', '12000'],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = (constraints.maxWidth - 10) / 2;
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: items.map((item) {
+          final active = selected == item[2];
+          return InkWell(
+            onTap: () => onTap(item[2], item[3]),
+            borderRadius: BorderRadius.circular(15),
+            child: Container(
+              width: width,
+              height: 67,
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+              decoration: BoxDecoration(
+                color: active ? const Color(0xFFFFF4EF) : Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(
+                  color: active
+                      ? const Color(0xFFFF7658)
+                      : const Color(0xFFE8E1D5),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item[0],
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(item[1],
+                      style: const TextStyle(
+                          fontSize: 10, color: Color(0xFF85827D))),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      );
+    });
+  }
+}
+
+class _PageIndicator extends StatelessWidget {
+  const _PageIndicator();
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 25,
+          child: Divider(thickness: 6, color: Color(0xFFFFAA96)),
+        ),
+        SizedBox(width: 6),
+        CircleAvatar(radius: 3, backgroundColor: Color(0xFFE8E3DB)),
+        SizedBox(width: 7),
+        Text('1 จาก 2',
+            style: TextStyle(fontSize: 9, color: Color(0xFF8D8983))),
+      ],
+    );
+  }
+}
+
 class _HeroCover extends StatelessWidget {
   const _HeroCover({
     required this.destination,
@@ -636,9 +986,9 @@ class _HeroCover extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.26),
+                      Colors.black.withValues(alpha: 0.26),
                       Colors.transparent,
-                      Colors.black.withOpacity(0.58),
+                      Colors.black.withValues(alpha: 0.58),
                     ],
                   ),
                 ),
@@ -658,7 +1008,7 @@ class _HeroCover extends StatelessWidget {
                           height: 40,
                           padding: const EdgeInsets.symmetric(horizontal: 13),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.88),
+                            color: Colors.white.withValues(alpha: 0.88),
                             borderRadius: BorderRadius.circular(99),
                           ),
                           child: Row(
@@ -690,12 +1040,12 @@ class _HeroCover extends StatelessWidget {
                   ? Row(
                       children: [
                         Icon(Icons.location_on_outlined,
-                            size: 15, color: Colors.white.withOpacity(0.78)),
+                            size: 15, color: Colors.white.withValues(alpha: 0.78)),
                         const SizedBox(width: 6),
                         Text(
                           'Choose a destination below',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.82),
+                            color: Colors.white.withValues(alpha: 0.82),
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -708,7 +1058,7 @@ class _HeroCover extends StatelessWidget {
                         Text(
                           'NEW TRIP',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.72),
+                            color: Colors.white.withValues(alpha: 0.72),
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 1.0,
@@ -731,7 +1081,7 @@ class _HeroCover extends StatelessWidget {
                           Row(
                             children: [
                               Icon(Icons.calendar_today_outlined,
-                                  color: Colors.white.withOpacity(0.84),
+                                  color: Colors.white.withValues(alpha: 0.84),
                                   size: 14),
                               const SizedBox(width: 6),
                               Text(
@@ -739,7 +1089,7 @@ class _HeroCover extends StatelessWidget {
                                 '${endDate == null ? '' : ' -> ${_fmtDate(endDate)}'}'
                                 '${duration <= 0 ? '' : ' · ${duration}n'}',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.88),
+                                  color: Colors.white.withValues(alpha: 0.88),
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -837,7 +1187,7 @@ class _EmptyCover extends StatelessWidget {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.55),
+                    color: Colors.white.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Icon(Icons.photo_camera_outlined,
@@ -856,7 +1206,7 @@ class _EmptyCover extends StatelessWidget {
                 Text(
                   'Tap to choose a photo',
                   style: TextStyle(
-                    color: AppColors.primary.withOpacity(0.70),
+                    color: AppColors.primary.withValues(alpha: 0.70),
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -874,7 +1224,7 @@ class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF2A7D50).withOpacity(0.14)
+      ..color = const Color(0xFF2A7D50).withValues(alpha: 0.14)
       ..strokeWidth = 0.7;
     for (double x = 0; x <= size.width; x += 22) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
@@ -953,10 +1303,10 @@ class _SoftCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withOpacity(0.04)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.07),
+            color: Colors.black.withValues(alpha: 0.07),
             blurRadius: 18,
             offset: const Offset(0, 4),
           ),
@@ -1111,7 +1461,7 @@ class _DateCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.08),
+                color: AppColors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(99),
               ),
               child: Row(
@@ -1159,10 +1509,10 @@ class _DateBox extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: active ? AppColors.primary.withOpacity(0.06) : const Color(0xFFF8F7F5),
+          color: active ? AppColors.primary.withValues(alpha: 0.06) : const Color(0xFFF8F7F5),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: active ? AppColors.primary : Colors.black.withOpacity(0.08),
+            color: active ? AppColors.primary : Colors.black.withValues(alpha: 0.08),
             width: 1.4,
           ),
         ),
@@ -1264,17 +1614,17 @@ class _VibePill extends StatelessWidget {
         height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 13),
         decoration: BoxDecoration(
-          color: active ? color.withOpacity(0.10) : Colors.white,
+          color: active ? color.withValues(alpha: 0.10) : Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: active
-                ? color.withOpacity(0.50)
+                ? color.withValues(alpha: 0.50)
                 : const Color(0xFFE9E6E2),
             width: 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.025),
+              color: Colors.black.withValues(alpha: 0.025),
               blurRadius: 3,
               offset: const Offset(0, 1),
             ),
@@ -1507,10 +1857,10 @@ class _ItineraryBuilder extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 32),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.045),
+                color: AppColors.primary.withValues(alpha: 0.045),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: AppColors.primary.withOpacity(0.28),
+                  color: AppColors.primary.withValues(alpha: 0.28),
                   width: 1.5,
                 ),
               ),
@@ -1520,7 +1870,7 @@ class _ItineraryBuilder extends StatelessWidget {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.10),
+                      color: AppColors.primary.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(17),
                     ),
                     child: const Icon(
@@ -1706,7 +2056,7 @@ class _DayCard extends StatelessWidget {
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
+                          color: AppColors.primary.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(99),
                         ),
                         child: Text(
@@ -1724,7 +2074,7 @@ class _DayCard extends StatelessWidget {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD4183D).withOpacity(0.08),
+                          color: const Color(0xFFD4183D).withValues(alpha: 0.08),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
@@ -1888,7 +2238,7 @@ class _ActivityRow extends StatelessWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: style.color.withOpacity(0.18),
+                      color: style.color.withValues(alpha: 0.18),
                       spreadRadius: 4,
                     ),
                   ],
@@ -1915,13 +2265,13 @@ class _ActivityRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
                   color: editing
-                      ? style.color.withOpacity(0.35)
-                      : Colors.black.withOpacity(0.04),
+                      ? style.color.withValues(alpha: 0.35)
+                      : Colors.black.withValues(alpha: 0.04),
                   width: 1.4,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -1936,7 +2286,7 @@ class _ActivityRow extends StatelessWidget {
                         width: 34,
                         height: 34,
                         decoration: BoxDecoration(
-                          color: style.color.withOpacity(0.10),
+                          color: style.color.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(style.icon, size: 16, color: style.color),
@@ -2040,7 +2390,7 @@ class _ActivityRow extends StatelessWidget {
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: style.color.withOpacity(0.10),
+                          color: style.color.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(99),
                         ),
                         child: Text(
@@ -2059,7 +2409,7 @@ class _ActivityRow extends StatelessWidget {
                           width: 24,
                           height: 24,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD4183D).withOpacity(0.08),
+                            color: const Color(0xFFD4183D).withValues(alpha: 0.08),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -2091,11 +2441,11 @@ class _ActivityRow extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: active
                                     ? option.color
-                                    : option.color.withOpacity(0.08),
+                                    : option.color.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(99),
                                 border: Border.all(
-                                  color: option.color.withOpacity(
-                                    active ? 1 : 0.24,
+                                  color: option.color.withValues(
+                                    alpha: active ? 1 : 0.24,
                                   ),
                                 ),
                               ),
@@ -2174,10 +2524,10 @@ class _PlacesBuilder extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 26),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.045),
+                color: AppColors.primary.withValues(alpha: 0.045),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: AppColors.primary.withOpacity(0.28),
+                  color: AppColors.primary.withValues(alpha: 0.28),
                   width: 1.5,
                 ),
               ),
@@ -2221,10 +2571,10 @@ class _PlacesBuilder extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),
@@ -2236,7 +2586,7 @@ class _PlacesBuilder extends StatelessWidget {
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.10),
+                        color: AppColors.primary.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
@@ -2318,7 +2668,7 @@ class _MapPreview extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.92),
+                color: Colors.white.withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(99),
               ),
               child: Row(
@@ -2351,7 +2701,7 @@ class _MapPreview extends StatelessWidget {
                 borderRadius: BorderRadius.circular(99),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.30),
+                    color: AppColors.primary.withValues(alpha: 0.30),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -2399,7 +2749,7 @@ class _MapPin extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.24),
+            color: color.withValues(alpha: 0.24),
             spreadRadius: primary ? 5 : 4,
           ),
         ],
@@ -2423,12 +2773,12 @@ class _MapRoadPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final broadRoad = Paint()
-      ..color = Colors.white.withOpacity(0.70)
+      ..color = Colors.white.withValues(alpha: 0.70)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 9
       ..strokeCap = StrokeCap.round;
     final slimRoad = Paint()
-      ..color = Colors.white.withOpacity(0.52)
+      ..color = Colors.white.withValues(alpha: 0.52)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
@@ -2465,7 +2815,7 @@ class _MapRoadPainter extends CustomPainter {
     canvas.drawPath(second, slimRoad);
 
     final verticalRoad = Paint()
-      ..color = Colors.white.withOpacity(0.45)
+      ..color = Colors.white.withValues(alpha: 0.45)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4;
     canvas.drawLine(
@@ -2503,9 +2853,9 @@ class _OutlineActionButton extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.08),
+          color: AppColors.primary.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: AppColors.primary.withOpacity(0.22)),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2572,7 +2922,7 @@ class _ItineraryDashedBorderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.primary.withOpacity(0.32)
+      ..color = AppColors.primary.withValues(alpha: 0.32)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     final path = Path()
@@ -2653,7 +3003,7 @@ class _BudgetCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.30),
+                color: AppColors.primary.withValues(alpha: 0.30),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
@@ -2674,7 +3024,7 @@ class _BudgetCard extends StatelessWidget {
                               ? 'PER PERSON ESTIMATED BUDGET'
                               : 'TOTAL ESTIMATED BUDGET',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.68),
+                            color: Colors.white.withValues(alpha: 0.68),
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.8,
@@ -2700,7 +3050,7 @@ class _BudgetCard extends StatelessWidget {
                             child: Text(
                               '${_currencySymbol(currency)}${_formatNumber(rawBudget.round())} x $travelers travelers',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.62),
+                                color: Colors.white.withValues(alpha: 0.62),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -2724,7 +3074,7 @@ class _BudgetCard extends StatelessWidget {
                         vertical: 9,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.16),
+                        color: Colors.white.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
@@ -2773,10 +3123,10 @@ class _BudgetCard extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: perPerson
-                            ? Colors.white.withOpacity(0.25)
-                            : Colors.white.withOpacity(0.10),
+                            ? Colors.white.withValues(alpha: 0.25)
+                            : Colors.white.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(99),
-                        border: Border.all(color: Colors.white.withOpacity(0.20)),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
                       ),
                       child: Row(
                         children: [
@@ -2880,7 +3230,7 @@ class _BudgetCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF5FAF7),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.12)),
                 ),
                 child: Row(
                   children: [
@@ -3037,10 +3387,10 @@ class _BudgetBreakdownCardState extends State<_BudgetBreakdownCard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.04)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 14,
             offset: const Offset(0, 4),
           ),
@@ -3463,7 +3813,7 @@ class _BudgetLocationEntryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFCFDFF),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: category.color.withOpacity(0.16), width: 1.4),
+        border: Border.all(color: category.color.withValues(alpha: 0.16), width: 1.4),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -3516,7 +3866,7 @@ class _BudgetLocationEntryCard extends StatelessWidget {
               ],
             ),
           ),
-          Divider(height: 1, color: category.color.withOpacity(0.10)),
+          Divider(height: 1, color: category.color.withValues(alpha: 0.10)),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 11, 14, 12),
             child: Row(
@@ -3567,7 +3917,7 @@ class _AddLocationButton extends StatelessWidget {
       onTap: onTap,
       child: CustomPaint(
         painter: _DashedBorderPainter(
-          color: category.color.withOpacity(0.24),
+          color: category.color.withValues(alpha: 0.24),
           radius: 20,
         ),
         child: Container(
@@ -3664,16 +4014,16 @@ class _BudgetTierButton extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         decoration: BoxDecoration(
-          color: active ? color : color.withOpacity(0.08),
+          color: active ? color : color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: active ? color : color.withOpacity(0.16),
+            color: active ? color : color.withValues(alpha: 0.16),
             width: 1.4,
           ),
           boxShadow: active
               ? [
                   BoxShadow(
-                    color: color.withOpacity(0.25),
+                    color: color.withValues(alpha: 0.25),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -3745,10 +4095,10 @@ class _PrivacyCard extends StatelessWidget {
                   duration: const Duration(milliseconds: 160),
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   decoration: BoxDecoration(
-                    color: selected ? color : color.withOpacity(0.06),
+                    color: selected ? color : color.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
-                      color: selected ? color : color.withOpacity(0.14),
+                      color: selected ? color : color.withValues(alpha: 0.14),
                       width: 1.5,
                     ),
                   ),
@@ -3823,7 +4173,7 @@ class _AiPlannerCard extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0A2E1A).withOpacity(0.30),
+            color: const Color(0xFF0A2E1A).withValues(alpha: 0.30),
             blurRadius: 28,
             offset: const Offset(0, 10),
           ),
@@ -3845,7 +4195,7 @@ class _AiPlannerCard extends StatelessWidget {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
+                              color: Colors.white.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Icon(Icons.auto_awesome,
@@ -3868,7 +4218,7 @@ class _AiPlannerCard extends StatelessWidget {
                             ? 'Add a destination to get personalized ideas'
                             : 'Generate smart tips for $destination',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.65),
+                          color: Colors.white.withValues(alpha: 0.65),
                           fontSize: 12,
                           height: 1.4,
                         ),
@@ -3881,12 +4231,12 @@ class _AiPlannerCard extends StatelessWidget {
                   height: 56,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.12)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                     gradient: RadialGradient(
                       center: const Alignment(-0.4, -0.4),
                       colors: [
-                        Colors.white.withOpacity(0.25),
-                        AppColors.primary.withOpacity(0.10),
+                        Colors.white.withValues(alpha: 0.25),
+                        AppColors.primary.withValues(alpha: 0.10),
                       ],
                     ),
                   ),
@@ -3902,9 +4252,9 @@ class _AiPlannerCard extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
+                  color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withOpacity(0.20)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -3931,7 +4281,7 @@ class _AiPlannerCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
               decoration: BoxDecoration(
                 border: Border(
-                  top: BorderSide(color: Colors.white.withOpacity(0.10)),
+                  top: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
                 ),
               ),
               child: Column(
@@ -3940,7 +4290,7 @@ class _AiPlannerCard extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.08),
+                      color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -3952,7 +4302,7 @@ class _AiPlannerCard extends StatelessWidget {
                           child: Text(
                             tip,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.88),
+                              color: Colors.white.withValues(alpha: 0.88),
                               fontSize: 13,
                               height: 1.4,
                               fontWeight: FontWeight.w600,
@@ -3999,11 +4349,11 @@ class _CreateButton extends StatelessWidget {
                   colors: [AppColors.primary, AppColors.secondary],
                 )
               : null,
-          color: enabled ? null : Colors.black.withOpacity(0.08),
+          color: enabled ? null : Colors.black.withValues(alpha: 0.08),
           boxShadow: enabled
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.40),
+                    color: AppColors.primary.withValues(alpha: 0.40),
                     blurRadius: 28,
                     offset: const Offset(0, 12),
                   ),
@@ -4062,39 +4412,26 @@ class _BottomActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       decoration: const BoxDecoration(
-        color: AppColors.screen,
-        border: Border(top: BorderSide(color: AppColors.line)),
+        color: Color(0xFFFDFCF9),
+        border: Border(top: BorderSide(color: Color(0xFFE8DDBF))),
       ),
       child: Row(
         children: [
           Expanded(
-            child: GestureDetector(
+            child: InkWell(
               onTap: saving ? null : onCancel,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0xFFE8E4DF),
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                child: const Center(
+              borderRadius: BorderRadius.circular(99),
+              child: const SizedBox(
+                height: 46,
+                child: Center(
                   child: Text(
-                    'Cancel',
+                    'ข้ามไปก่อน',
                     style: TextStyle(
-                      color: Color(0xFF8A8A8A),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF96948D),
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
                 ),
@@ -4107,24 +4444,12 @@ class _BottomActionBar extends StatelessWidget {
               onTap: enabled ? onTap : null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                height: 46,
                 decoration: BoxDecoration(
-                  gradient: enabled
-                      ? const LinearGradient(
-                          colors: [AppColors.primary, AppColors.secondary],
-                        )
-                      : null,
-                  color: enabled ? null : Colors.black.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: enabled
-                      ? [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.40),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ]
-                      : null,
+                  color: enabled
+                      ? const Color(0xFFFF7D63)
+                      : const Color(0xFFFFC9BD),
+                  borderRadius: BorderRadius.circular(99),
                 ),
                 child: Center(
                   child: saving
@@ -4139,22 +4464,12 @@ class _BottomActionBar extends StatelessWidget {
                       : Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              isEditing ? Icons.check : Icons.auto_awesome,
-                              color: enabled
-                                  ? const Color(0xFFFFD700)
-                                  : const Color(0xFFC0C0C0),
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
                             Text(
-                              isEditing ? 'Save Trip' : 'Create Trip',
-                              style: TextStyle(
-                                color: enabled
-                                    ? Colors.white
-                                    : const Color(0xFFC0C0C0),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
+                              isEditing ? 'บันทึก' : 'ถัดไป',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
                           ],
@@ -4229,10 +4544,10 @@ class _ColorPill extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
-          color: active ? color.withOpacity(0.15) : const Color(0xFFFAFAF8),
+          color: active ? color.withValues(alpha: 0.15) : const Color(0xFFFAFAF8),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: active ? color.withOpacity(0.35) : const Color(0xFFEFECE8),
+            color: active ? color.withValues(alpha: 0.35) : const Color(0xFFEFECE8),
             width: 1.5,
           ),
         ),
@@ -4282,10 +4597,10 @@ class _IconChoice extends StatelessWidget {
         height: 62,
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 3),
         decoration: BoxDecoration(
-          color: selected ? color.withOpacity(0.14) : const Color(0xFFFAFAF8),
+          color: selected ? color.withValues(alpha: 0.14) : const Color(0xFFFAFAF8),
           borderRadius: BorderRadius.circular(17),
           border: Border.all(
-            color: selected ? color.withOpacity(0.35) : const Color(0xFFEFECE8),
+            color: selected ? color.withValues(alpha: 0.35) : const Color(0xFFEFECE8),
             width: 1.6,
           ),
         ),
@@ -4326,7 +4641,7 @@ class _TinyRoundButton extends StatelessWidget {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          color: Colors.white.withValues(alpha: 0.15),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 13),
@@ -4349,7 +4664,7 @@ class _GlassButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.88),
+          color: Colors.white.withValues(alpha: 0.88),
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: AppColors.foreground, size: 24),
@@ -4370,7 +4685,7 @@ class _IconBubble extends StatelessWidget {
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Icon(icon, color: color, size: 20),

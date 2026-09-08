@@ -4,11 +4,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
-import '../../../shared/widgets/trip_card.dart';
 import '../../saved_trips/presentation/saved_trips_notifier.dart';
 import '../../trips/domain/models/trip.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
+import '../data/mock_destinations.dart';
+import 'widgets/destination_card.dart';
+import 'widgets/home_filter_bar.dart';
+import 'widgets/home_hero.dart';
+import 'widgets/pun_guide_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key, this.activeRoute = AppRoute.home});
@@ -21,93 +26,137 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _categoryIndex = 0;
-  String _language = 'en';
 
-  static const _categories = <String>[
-    'All',
-    'Beach',
-    'Mountain',
-    'City',
-    'Culture',
-    'Adventure',
-    'Budget',
-  ];
+  static const _categories = <String>['All', 'Top Destination', 'Top PunGuide'];
+
+  static const _heroImage = 'assets/images/home_hero.jpg';
+  static const _avatarImage =
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?crop=faces&cs=tinysrgb&fit=crop&fm=jpg&q=80&w=160&h=160';
 
   @override
   Widget build(BuildContext context) {
     final trips = ref.watch(tripListProvider);
-    final isThai = _language == 'th';
-    final title = widget.activeRoute == AppRoute.discover
-        ? (isThai ? 'กำลังฮิต' : 'Trending Now')
-        : (isThai ? 'ค้นพบทริป' : 'Discover Trips');
+    final showDestinations = _categoryIndex != 2;
+    final showPunGuide = _categoryIndex != 1;
 
     return AppFrame(
       background: AppColors.screen,
       child: Stack(
         children: [
-          Column(
+          ListView(
+            padding:
+                EdgeInsets.only(bottom: AppBottomNav.heightOf(context) + 16),
+            physics: const BouncingScrollPhysics(),
             children: [
-              _HomeHeader(
-                title: title,
-                language: _language,
-                onLanguageChanged: () {
-                  setState(() => _language = isThai ? 'en' : 'th');
-                },
+              HomeHero(
+                coverImage: _heroImage,
+                avatarImage: _avatarImage,
+                onProfile: () => context.goNamed(AppRoute.profile.name),
+                onFindTrip: () => context.goNamed(AppRoute.discover.name),
+                onShareTrip: () => context.goNamed(AppRoute.createTrip.name),
               ),
-              _CategoryRail(
+              const SizedBox(height: 18),
+              HomeFilterBar(
                 categories: _categories,
                 activeIndex: _categoryIndex,
                 onSelected: (index) => setState(() => _categoryIndex = index),
+                onSearch: () => context.goNamed(AppRoute.discover.name),
               ),
-              Expanded(
-                child: trips.when(
-                  data: (items) {
-                    final filteredItems = _filterTrips(items);
-                    if (filteredItems.isEmpty) {
-                      return _EmptyState(
-                        title: isThai ? 'ไม่พบทริป' : 'No trips found',
-                        subtitle: isThai
-                            ? 'ลองเลือกหมวดหมู่อื่น'
-                            : 'Try another category',
-                      );
-                    }
-
-                    return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 112),
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: filteredItems.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 16),
-                      itemBuilder: (context, index) {
-                        final trip = filteredItems[index];
-                        return TripCard(
-                          trip: trip,
-                          onTap: () => context.goNamed(
-                            AppRoute.tripDetail.name,
-                            params: {'tripId': trip.id},
-                          ),
-                          onSave: () => _toggleSaved(trip),
-                        );
-                      },
-                    );
-                  },
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
+              if (showDestinations) ...[
+                const SizedBox(height: 22),
+                HomeSectionHeader(
+                  title: 'Top Destination',
+                  onSeeAll: () => context.goNamed(AppRoute.discover.name),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: DestinationCard.height,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: mockDestinations.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) => DestinationCard(
+                      destination: mockDestinations[index],
+                      onTap: () => context.goNamed(AppRoute.discover.name),
+                    ),
+                  ),
+                ),
+              ],
+              if (showPunGuide) ...[
+                const SizedBox(height: 24),
+                HomeSectionHeader(
+                  title: 'Top PunGuide',
+                  onSeeAll: () => context.goNamed(AppRoute.discover.name),
+                ),
+                const SizedBox(height: 12),
+                trips.when(
+                  data: _buildPunGuideGrid,
+                  loading: () => const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
                   error: (error, _) => _ErrorState(message: error.toString()),
                 ),
-              ),
+              ],
             ],
           ),
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: _BottomNav(
+            child: AppBottomNav(
               active: widget.activeRoute,
               onTap: (route) => context.goNamed(route.name),
+              onCreate: () => context.goNamed(AppRoute.createTrip.name),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPunGuideGrid(List<Trip> items) {
+    if (items.isEmpty) {
+      return const _EmptyState(
+        title: 'ยังไม่มีทริป',
+        subtitle: 'เริ่มปันไกด์ทริปแรกของคุณได้เลย',
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The text block under the cover is a fixed height, so size each tile
+        // from the cover's own aspect ratio instead of a single ratio that
+        // only fits one screen width.
+        final tileWidth = (constraints.maxWidth - 32 - 12) / 2;
+        final extent = PunGuideCard.tileExtentFor(tileWidth);
+
+        return GridView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: items.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 14,
+            mainAxisExtent: extent,
+          ),
+          itemBuilder: (context, index) {
+            final trip = items[index];
+            return PunGuideCard(
+              trip: trip,
+              onTap: () => context.goNamed(
+                AppRoute.tripDetail.name,
+                params: {'tripId': trip.id},
+              ),
+              onSave: () => _toggleSaved(trip),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -118,308 +167,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       notifier.saveTrip(trip);
     }
-  }
-
-  List<Trip> _filterTrips(List<Trip> trips) {
-    final category = _categories[_categoryIndex];
-    if (category == 'All') return trips;
-
-    return trips.where((trip) {
-      final haystack = '${trip.title} ${trip.destination} ${trip.description}'
-          .toLowerCase();
-      switch (category) {
-        case 'Beach':
-          return haystack.contains('beach') ||
-              haystack.contains('maldives') ||
-              haystack.contains('thailand') ||
-              haystack.contains('island');
-        case 'Mountain':
-          return haystack.contains('alpine') ||
-              haystack.contains('swiss') ||
-              haystack.contains('mountain');
-        case 'City':
-          return haystack.contains('brussels') ||
-              haystack.contains('city') ||
-              haystack.contains('zurich');
-        case 'Culture':
-          return haystack.contains('culture') ||
-              haystack.contains('museum') ||
-              haystack.contains('chocolate');
-        case 'Adventure':
-          return haystack.contains('adventure') ||
-              haystack.contains('hike') ||
-              haystack.contains('snorkel');
-        case 'Budget':
-          return trip.budget <= 1800;
-        default:
-          return true;
-      }
-    }).toList();
-  }
-}
-
-class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.title,
-    required this.language,
-    required this.onLanguageChanged,
-  });
-
-  final String title;
-  final String language;
-  final VoidCallback onLanguageChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 54, 20, 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.foreground,
-                fontSize: 28,
-                height: 1.1,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: onLanguageChanged,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Row(
-                children: [
-                  _LanguagePill(label: 'EN', active: language == 'en'),
-                  _LanguagePill(label: 'TH', active: language == 'th'),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.10),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.search, color: AppColors.primary, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LanguagePill extends StatelessWidget {
-  const _LanguagePill({required this.label, required this.active});
-
-  final String label;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: active ? AppColors.primary : Colors.transparent,
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: active ? Colors.white : AppColors.muted,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryRail extends StatelessWidget {
-  const _CategoryRail({
-    required this.categories,
-    required this.activeIndex,
-    required this.onSelected,
-  });
-
-  final List<String> categories;
-  final int activeIndex;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 50,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-        itemBuilder: (context, index) {
-          final active = activeIndex == index;
-          return GestureDetector(
-            onTap: () => onSelected(index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color:
-                    active ? AppColors.primary : Colors.black.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                categories[index],
-                style: TextStyle(
-                  color: active ? Colors.white : AppColors.muted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          );
-        },
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemCount: categories.length,
-      ),
-    );
-  }
-}
-
-class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.active, required this.onTap});
-
-  final AppRoute active;
-  final ValueChanged<AppRoute> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 80,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black.withOpacity(0.06))),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          _NavItem(
-            icon: Icons.home,
-            label: 'Home',
-            selected: active == AppRoute.home,
-            onTap: () => onTap(AppRoute.home),
-          ),
-          _NavItem(
-            icon: Icons.explore,
-            label: 'Discover',
-            selected: active == AppRoute.discover,
-            onTap: () => onTap(AppRoute.discover),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: GestureDetector(
-                onTap: () => onTap(AppRoute.createTrip),
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppColors.primary, AppColors.secondary],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.50),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.add, color: Colors.white, size: 28),
-                ),
-              ),
-            ),
-          ),
-          _NavItem(
-            icon: Icons.bookmark_border,
-            label: 'Saved',
-            selected: active == AppRoute.savedTrips,
-            onTap: () => onTap(AppRoute.savedTrips),
-          ),
-          _NavItem(
-            icon: Icons.person_outline,
-            label: 'Profile',
-            selected: active == AppRoute.profile,
-            onTap: () => onTap(AppRoute.profile),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? AppColors.primary : AppColors.muted;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: SizedBox(
-          height: 65,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 22, color: color),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -432,9 +179,8 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 96),
+      padding: const EdgeInsets.symmetric(vertical: 40),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Text('🗺️', style: TextStyle(fontSize: 40)),
           const SizedBox(height: 10),
@@ -460,13 +206,11 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'Could not load trips.\n$message',
-          textAlign: TextAlign.center,
-        ),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Text(
+        'Could not load trips.\n$message',
+        textAlign: TextAlign.center,
       ),
     );
   }

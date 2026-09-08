@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../features/trips/domain/models/trip.dart';
 import '../extensions/currency_extensions.dart';
+import '../models/trip_social_meta.dart';
 import 'cover_image.dart';
 
 class TripCard extends StatelessWidget {
@@ -19,7 +20,7 @@ class TripCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final meta = _TripCardMeta.fromTrip(trip);
+    final meta = TripSocialMeta.fromTrip(trip);
 
     return GestureDetector(
       onTap: onTap,
@@ -27,10 +28,10 @@ class TripCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.black.withOpacity(0.04)),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 20,
               offset: const Offset(0, 2),
             ),
@@ -53,7 +54,7 @@ class TripCard extends StatelessWidget {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.25),
+                          Colors.black.withValues(alpha: 0.25),
                         ],
                       ),
                     ),
@@ -67,7 +68,7 @@ class TripCard extends StatelessWidget {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.92),
+                          color: Colors.white.withValues(alpha: 0.92),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -95,7 +96,7 @@ class TripCard extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.86),
+                            color: Colors.white.withValues(alpha: 0.86),
                             borderRadius: BorderRadius.circular(99),
                           ),
                           child: Text(
@@ -179,19 +180,19 @@ class TripCard extends StatelessWidget {
                         icon: Icons.attach_money,
                         label: trip.budget.asBudget,
                         color: AppColors.primary,
-                        background: AppColors.primary.withOpacity(0.08),
+                        background: AppColors.primary.withValues(alpha: 0.08),
                       ),
                       const SizedBox(width: 8),
                       _InfoPill(
                         icon: Icons.access_time,
                         label: '${trip.duration} days',
                         color: AppColors.muted,
-                        background: Colors.black.withOpacity(0.04),
+                        background: Colors.black.withValues(alpha: 0.04),
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Divider(height: 1, color: Colors.black.withOpacity(0.05)),
+                  Divider(height: 1, color: Colors.black.withValues(alpha: 0.05)),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -200,7 +201,7 @@ class TripCard extends StatelessWidget {
                         height: 28,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
+                          color: AppColors.primary.withValues(alpha: 0.10),
                           shape: BoxShape.circle,
                         ),
                         child: Text(
@@ -225,7 +226,7 @@ class TripCard extends StatelessWidget {
                         icon: Icons.call_split,
                         label: '${meta.remixes} remixes',
                         color: AppColors.accent,
-                        background: AppColors.accent.withOpacity(0.10),
+                        background: AppColors.accent.withValues(alpha: 0.10),
                       ),
                     ],
                   ),
@@ -275,71 +276,6 @@ class _InfoPill extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _TripCardMeta {
-  const _TripCardMeta({
-    required this.tags,
-    required this.avatar,
-    required this.handle,
-    required this.saves,
-    required this.remixes,
-  });
-
-  final List<String> tags;
-  final String avatar;
-  final String handle;
-  final String saves;
-  final int remixes;
-
-  factory _TripCardMeta.fromTrip(Trip trip) {
-    final text = '${trip.title} ${trip.destination} ${trip.description}'
-        .toLowerCase();
-
-    if (text.contains('maldives')) {
-      return const _TripCardMeta(
-        tags: ['Beach', 'Luxury'],
-        avatar: '🌺',
-        handle: '@sofiatravel',
-        saves: '1.2k',
-        remixes: 87,
-      );
-    }
-    if (text.contains('swiss') || text.contains('alpine')) {
-      return const _TripCardMeta(
-        tags: ['Mountain', 'Adventure'],
-        avatar: '🏔️',
-        handle: '@marcohikes',
-        saves: '892',
-        remixes: 124,
-      );
-    }
-    if (text.contains('brussels')) {
-      return const _TripCardMeta(
-        tags: ['City', 'Culture'],
-        avatar: '🍫',
-        handle: '@leaexplores',
-        saves: '567',
-        remixes: 43,
-      );
-    }
-    if (text.contains('thailand') || text.contains('samui')) {
-      return const _TripCardMeta(
-        tags: ['Beach', 'Budget'],
-        avatar: '🌴',
-        handle: '@budgettravels',
-        saves: '2.1k',
-        remixes: 215,
-      );
-    }
-    return const _TripCardMeta(
-      tags: ['Adventure', 'Culture'],
-      avatar: '✈️',
-      handle: '@pluno',
-      saves: '128',
-      remixes: 12,
     );
   }
 }

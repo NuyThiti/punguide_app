@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "FlutterGeneratedPluginSwiftPackage", type: .static, targets: ["FlutterGeneratedPluginSwiftPackage"])
     ],
     dependencies: [
+        .package(name: "flutter_secure_storage_darwin", path: "../.packages/flutter_secure_storage_darwin-0.4.1"),
         .package(name: "image_picker_ios", path: "../.packages/image_picker_ios-0.8.13+6"),
         .package(name: "FlutterFramework", path: "../.packages/FlutterFramework")
     ],
@@ -22,6 +23,7 @@ let package = Package(
         .target(
             name: "FlutterGeneratedPluginSwiftPackage",
             dependencies: [
+                .product(name: "flutter-secure-storage-darwin", package: "flutter_secure_storage_darwin"),
                 .product(name: "image-picker-ios", package: "image_picker_ios"),
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ]

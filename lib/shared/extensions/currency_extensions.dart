@@ -1,5 +1,5 @@
 extension BudgetFormat on double {
-  String get asBudget {
+  String get _grouped {
     final whole = round().toString();
     final buffer = StringBuffer();
     for (var i = 0; i < whole.length; i++) {
@@ -9,6 +9,10 @@ extension BudgetFormat on double {
         buffer.write(',');
       }
     }
-    return '\$$buffer';
+    return buffer.toString();
   }
+
+  String get asBudget => '\$$_grouped';
+
+  String get asBaht => '฿$_grouped';
 }

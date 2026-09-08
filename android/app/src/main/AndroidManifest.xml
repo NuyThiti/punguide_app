@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.pluno">
+    <!-- Release builds need this explicitly; Flutter only adds it to the
+         debug and profile manifests. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
    <application
         android:label="pluno"
         android:icon="@mipmap/ic_launcher">

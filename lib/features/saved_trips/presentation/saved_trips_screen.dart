@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/trip_card.dart';
 import 'saved_trips_notifier.dart';
@@ -30,7 +31,12 @@ class SavedTripsScreen extends ConsumerWidget {
                     }
 
                     return ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 112),
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        0,
+                        16,
+                        AppBottomNav.heightOf(context) + 16,
+                      ),
                       physics: const BouncingScrollPhysics(),
                       itemCount: trips.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 16),
@@ -60,9 +66,10 @@ class SavedTripsScreen extends ConsumerWidget {
             left: 0,
             right: 0,
             bottom: 0,
-            child: _BottomNav(
+            child: AppBottomNav(
               active: AppRoute.savedTrips,
               onTap: (route) => context.goNamed(route.name),
+              onCreate: () => context.goNamed(AppRoute.createTrip.name),
             ),
           ),
         ],
@@ -110,141 +117,13 @@ class _SavedHeader extends StatelessWidget {
   }
 }
 
-class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.active, required this.onTap});
-
-  final AppRoute active;
-  final ValueChanged<AppRoute> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 80,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black.withOpacity(0.06))),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          _NavItem(
-            icon: Icons.home,
-            label: 'Home',
-            selected: active == AppRoute.home,
-            onTap: () => onTap(AppRoute.home),
-          ),
-          _NavItem(
-            icon: Icons.explore,
-            label: 'Discover',
-            selected: active == AppRoute.discover,
-            onTap: () => onTap(AppRoute.discover),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: GestureDetector(
-                onTap: () => onTap(AppRoute.createTrip),
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppColors.primary, AppColors.secondary],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.50),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.add, color: Colors.white, size: 28),
-                ),
-              ),
-            ),
-          ),
-          _NavItem(
-            icon: Icons.bookmark_border,
-            label: 'Saved',
-            selected: active == AppRoute.savedTrips,
-            onTap: () => onTap(AppRoute.savedTrips),
-          ),
-          _NavItem(
-            icon: Icons.person_outline,
-            label: 'Profile',
-            selected: active == AppRoute.profile,
-            onTap: () => onTap(AppRoute.profile),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? AppColors.primary : AppColors.muted;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: SizedBox(
-          height: 65,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 22, color: color),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SavedEmptyState extends StatelessWidget {
   const _SavedEmptyState();
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 96),
+      padding: EdgeInsets.only(bottom: AppBottomNav.heightOf(context)),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: const [
