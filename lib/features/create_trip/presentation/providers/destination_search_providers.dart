@@ -11,6 +11,7 @@ class DestinationOption {
     required this.label,
     required this.sublabel,
     required this.value,
+    this.placeId,
   });
 
   /// Built from a type-ahead hit: Google already splits the place from the
@@ -21,6 +22,7 @@ class DestinationOption {
       label: suggestion.mainText,
       sublabel: suggestion.secondaryText,
       value: suggestion.description,
+      placeId: suggestion.externalRef,
     );
   }
 
@@ -33,6 +35,26 @@ class DestinationOption {
 
   /// What lands in the Destination field — "ปูซาน, เกาหลีใต้".
   final String value;
+
+  /// Google's `externalRef`, from the type-ahead. Null on a row derived from
+  /// the feed or picked out of recents — those are names, not resolved places.
+  final String? placeId;
+
+  /// What `POST /trips` wants under `destinationPlace`, or null when there is
+  /// no resolved place and the backend has only the free text to go on.
+  ///
+  /// No lat/lng: the backend resolves those from [placeId] itself.
+  ///
+  /// Only ever built from a type-ahead hit, where [label] is the place and
+  /// [sublabel] the region around it. A trending row carries the country in
+  /// [label] instead, but never a [placeId], so it cannot reach here.
+  DestinationPlace? get place => placeId == null
+      ? null
+      : DestinationPlace(
+          placeId: placeId,
+          name: label,
+          country: sublabel.isEmpty ? null : sublabel,
+        );
 }
 
 final destinationLookupProvider = Provider<DestinationLookup>((ref) {

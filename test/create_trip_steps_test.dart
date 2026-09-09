@@ -10,65 +10,43 @@ import 'package:pluno/features/create_trip/presentation/providers/destination_se
 import 'package:pluno/features/trips/domain/models/trip.dart';
 import 'package:pluno/features/trips/presentation/providers/trip_providers.dart';
 
+import 'package:pluno/core/api/api_providers.dart';
+
+import 'support/fake_api.dart';
 import 'support/home_feed_fixtures.dart';
 
-/// Captures what step two adds up to, without a repository behind it.
-class _CapturingActions extends TripActions {
-  _CapturingActions(super.ref);
-
-  double? budget;
-
-  @override
-  Future<Trip> createTrip({
-    required String title,
-    required String destination,
-    required String coverImage,
-    required double budget,
-    required int duration,
-    required String description,
-  }) async {
-    this.budget = budget;
-    final now = DateTime.now();
-    return Trip(
-      id: 'stub',
-      title: title,
-      destination: destination,
-      coverImage: coverImage,
-      budget: budget,
-      duration: duration,
-      description: description,
-      createdAt: now,
-      updatedAt: now,
-      isSaved: true,
-    );
-  }
+/// Keeps the local store out of it — the create path posts to the API, and
+/// the edit path is not what these tests exercise.
+class _NoRepoActions extends TripActions {
+  _NoRepoActions(super.ref);
 
   @override
   Future<void> saveTrip(Trip trip) async {}
 }
 
-/// The picker's type-ahead is not what these tests are about.
-class _NoLookup implements DestinationLookup {
-  const _NoLookup();
+/// Answers the type-ahead with whatever [suggestions] holds.
+class _StubLookup implements DestinationLookup {
+  const _StubLookup();
 
   @override
   Future<List<PlaceSuggestion>> search(
     String query, {
     required String sessionToken,
   }) async =>
-      const [];
+      suggestions;
 }
 
-_CapturingActions? lastActions;
+List<PlaceSuggestion> suggestions = const [];
+
+late FakeAdapter adapter;
 
 Widget _harness() {
   return ProviderScope(
     overrides: [
       ...homeOverrides(const []),
-      destinationLookupProvider.overrideWithValue(const _NoLookup()),
-      tripActionsProvider.overrideWith((ref) {
-        return lastActions = _CapturingActions(ref);
-      }),
+      destinationLookupProvider.overrideWithValue(const _StubLookup()),
+      plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+      tripActionsProvider.overrideWith(_NoRepoActions.new),
     ],
     child: MaterialApp.router(
       routerConfig: GoRouter(
@@ -107,7 +85,10 @@ void main() {
         TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
     view.physicalSize = const Size(390 * 3, 1400 * 3);
     view.devicePixelRatio = 3;
-    lastActions = null;
+    suggestions = const [];
+    adapter = FakeAdapter(<String, List<FakeReply>>{
+      'POST /trips': [FakeReply(201, createdTripJson())],
+    });
   });
 
   tearDown(() {
@@ -297,34 +278,156 @@ void main() {
     });
   });
 
-  testWidgets('a bracket sets the budget, and ระบุเอง overrides it',
-      (tester) async {
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await _setDestination(tester);
-    await tester.tap(find.text('ถัดไป'));
-    await tester.pumpAndSettle();
+  group('POST /trips', () {
+    Future<void> fillAndSubmit(
+      WidgetTester tester, {
+      List<String> styles = const [],
+      String? pace,
+      String? bracket,
+      String? custom,
+      List<String> constraints = const [],
+    }) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await _setDestination(tester);
 
-    await tester.tap(find.text('Comfort'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('สร้างแผน'));
-    await tester.pumpAndSettle();
-    // ฿3,000 per person per day, one traveller, the default seven days.
-    expect(lastActions?.budget, 3000 * 7);
+      for (final style in styles) {
+        await tester.tap(find.text(style));
+        await tester.pumpAndSettle();
+      }
+      if (pace != null) {
+        await tester.tap(find.text(pace));
+        await tester.pumpAndSettle();
+      }
 
-    // An exact figure beats the bracket.
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await _setDestination(tester);
-    await tester.tap(find.text('ถัดไป'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('ถัดไป'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Comfort'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, '฿'), '500');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('สร้างแผน'));
-    await tester.pumpAndSettle();
-    expect(lastActions?.budget, 500 * 7);
+      if (bracket != null) {
+        await tester.tap(find.text(bracket));
+        await tester.pumpAndSettle();
+      }
+      if (custom != null) {
+        await tester.enterText(find.widgetWithText(TextField, '฿'), custom);
+        await tester.pumpAndSettle();
+      }
+      for (final constraint in constraints) {
+        await tester.tap(find.text(constraint));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.text('สร้างแผน'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('sends the wizard as a manual draft', (tester) async {
+      await fillAndSubmit(
+        tester,
+        styles: ['วัฒนธรรม', 'อาหาร'],
+        pace: 'Chill',
+        bracket: 'Comfort',
+      );
+
+      final body = adapter.bodyOf('POST /trips');
+      expect(body, isNotNull);
+      expect(body!['planMode'], 'manual');
+      expect(body['destination'], 'ดานัง, เวียดนาม');
+      expect(body['guestCount'], 1);
+      expect(body['travelStyles'], ['culture', 'food']);
+      expect(body['pace'], 'chill');
+      expect(body['budgetTier'], 'comfort');
+      // ฿3,000 a head a day — the middle of the bracket — over seven days.
+      expect(body['budgetLimit'], 3000 * 7);
+    });
+
+    testWidgets('never sends status: the backend rejects the field',
+        (tester) async {
+      await fillAndSubmit(tester, bracket: 'Comfort');
+      expect(adapter.bodyOf('POST /trips')!.containsKey('status'), isFalse);
+    });
+
+    testWidgets('constraints with no enum ride in specialNotes, not the array',
+        (tester) async {
+      await fillAndSubmit(
+        tester,
+        constraints: ['เดินเยอะไม่ได้', 'อิสลาม', 'มังสวิรัติ'],
+      );
+
+      final body = adapter.bodyOf('POST /trips')!;
+      // Sending the dietary ones as constraints would be a 400.
+      expect(body['constraints'], ['limited_walking']);
+      expect(body['specialNotes'], 'อิสลาม, มังสวิรัติ');
+    });
+
+    testWidgets('an amount typed with no bracket still lands in one',
+        (tester) async {
+      await fillAndSubmit(tester, custom: '7000');
+
+      final body = adapter.bodyOf('POST /trips')!;
+      expect(body['budgetTier'], 'premium');
+      expect(body['budgetLimit'], 7000 * 7);
+    });
+
+    testWidgets('a picked suggestion sends destinationPlace, without lat/lng',
+        (tester) async {
+      suggestions = [
+        PlaceSuggestion.fromJson(<String, dynamic>{
+          'description': 'ดานัง, เวียดนาม',
+          'mainText': 'ดานัง',
+          'secondaryText': 'เวียดนาม',
+          'externalRef': 'ChIJ-place-ref',
+        }),
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextFormField, 'Destination').first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'ดานัง');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('เวียดนาม'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('ถัดไป'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('สร้างแผน'));
+      await tester.pumpAndSettle();
+
+      final place = adapter.bodyOf('POST /trips')!['destinationPlace']
+          as Map<String, dynamic>;
+      expect(place['placeId'], 'ChIJ-place-ref');
+      expect(place['name'], 'ดานัง');
+      expect(place['country'], 'เวียดนาม');
+      // The backend resolves coordinates from the placeId itself.
+      expect(place.containsKey('latitude'), isFalse);
+      expect(place.containsKey('longitude'), isFalse);
+    });
+
+    testWidgets('จำนวนคืน goes up as a duration, with no dates',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await _setDestination(tester);
+
+      await tester.tap(find.text('Date'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('จำนวนคืน'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ยืนยัน'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('ถัดไป'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('สร้างแผน'));
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('POST /trips')!;
+      expect(body['durationNights'], 2);
+      expect(body['durationDays'], 3);
+      expect(body.containsKey('startDate'), isFalse);
+      expect(body.containsKey('endDate'), isFalse);
+    });
   });
 }

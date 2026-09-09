@@ -101,8 +101,7 @@ void main() {
     expect(adapter.authHeaders.last, 'Bearer token-1');
   });
 
-  test('an optional-auth call is still authenticated, for the quota',
-      () async {
+  test('an optional-auth call is still authenticated, for the quota', () async {
     final store = AuthTokenStore(storage: InMemorySecretStore());
     await store.save(accessToken: 'token-1', expiresIn: '15m');
     final adapter = _FakeAdapter(<String, List<_Reply>>{
@@ -156,9 +155,8 @@ void main() {
       api.trips.saved(),
     ]);
 
-    final refreshes = adapter.paths
-        .where((path) => path == 'POST /auth/refresh')
-        .length;
+    final refreshes =
+        adapter.paths.where((path) => path == 'POST /auth/refresh').length;
     expect(refreshes, 1);
   });
 

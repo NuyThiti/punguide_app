@@ -14,7 +14,8 @@ Widget _harness() {
     overrides: [
       // These cases all start from a signed-in profile. The controller only
       // reaches the API when one is injected, so this session stays local.
-      authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo)),
+      authSessionProvider
+          .overrideWith((ref) => AuthController(AuthSession.demo)),
     ],
     child: MaterialApp.router(
       routerConfig: GoRouter(
@@ -106,7 +107,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // The dialog title and the row share the label, so confirm via the dialog.
-    expect(find.text('ทริปที่บันทึกไว้จะยังอยู่ในเครื่องของคุณ'), findsOneWidget);
+    expect(
+        find.text('ทริปที่บันทึกไว้จะยังอยู่ในเครื่องของคุณ'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, 'ออกจากระบบ'));
     await tester.pumpAndSettle();
 
@@ -119,7 +121,8 @@ void main() {
     expect(find.text('นักปันไกด์'), findsNothing);
   });
 
-  testWidgets('cancelling the sign-out dialog keeps the session', (tester) async {
+  testWidgets('cancelling the sign-out dialog keeps the session',
+      (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);

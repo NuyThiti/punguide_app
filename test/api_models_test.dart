@@ -356,7 +356,8 @@ void main() {
   group('AuthTokenStore.parseExpiresIn', () {
     test('reads the API spellings', () {
       expect(AuthTokenStore.parseExpiresIn('15m'), const Duration(minutes: 15));
-      expect(AuthTokenStore.parseExpiresIn('900s'), const Duration(seconds: 900));
+      expect(
+          AuthTokenStore.parseExpiresIn('900s'), const Duration(seconds: 900));
       expect(AuthTokenStore.parseExpiresIn('1h'), const Duration(hours: 1));
       expect(AuthTokenStore.parseExpiresIn('90'), const Duration(seconds: 90));
       expect(AuthTokenStore.parseExpiresIn('soon'), isNull);

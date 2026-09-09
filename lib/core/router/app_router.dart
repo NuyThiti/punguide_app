@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/create_trip/presentation/create_trip_screen.dart';
+import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -19,6 +20,7 @@ enum AppRoute {
   tripDetail,
   createTrip,
   editTrip,
+  editTripBrief,
   savedTrips,
   remixTrip,
   profile,
@@ -67,6 +69,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _instantPage(
         state,
         EditTripScreen(tripId: state.params['tripId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/trips/:tripId/edit/brief',
+      name: AppRoute.editTripBrief.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        EditTripBriefScreen(tripId: state.params['tripId']!),
       ),
     ),
     GoRoute(

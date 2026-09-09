@@ -79,7 +79,8 @@ void main() {
     expect(find.text('หลวงพระบาง 3 วัน 2 คืน'), findsNothing);
   });
 
-  testWidgets('a query matches the creator and the country too, not just the title',
+  testWidgets(
+      'a query matches the creator and the country too, not just the title',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);
     tester.view.devicePixelRatio = 3;
@@ -133,10 +134,12 @@ void main() {
     // one chip that carries the history icon.
     expect(
       find.descendant(
-        of: find.ancestor(
-          of: find.byIcon(Icons.history),
-          matching: find.byType(Row),
-        ).first,
+        of: find
+            .ancestor(
+              of: find.byIcon(Icons.history),
+              matching: find.byType(Row),
+            )
+            .first,
         matching: find.text('ไทย'),
       ),
       findsOneWidget,

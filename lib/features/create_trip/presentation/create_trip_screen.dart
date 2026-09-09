@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api/api_providers.dart';
+import '../../../core/api/pluno_api.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
+import '../../home/presentation/providers/home_feed_providers.dart';
+import '../domain/plan_labels.dart';
 import '../../trips/domain/models/trip.dart';
 import 'providers/destination_search_providers.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
@@ -38,6 +42,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   String _lodging = '';
   final List<String> _constraints = <String>[];
 
+  /// The resolved place behind the destination text, when the type-ahead
+  /// found one. `POST /trips` takes it under `destinationPlace`.
+  DestinationPlace? _destinationPlace;
+
   /// 0 until the traveller picks something. Kept beside the dates because
   /// "จำนวนคืน" sets a length with no dates attached.
   int _nights = 0;
@@ -57,13 +65,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   bool get _isEditing => widget.trip != null;
   bool get _canCreate => _destinationController.text.trim().isNotEmpty;
 
-  /// The midpoint of each bracket, in THB per person per day.
-  static const _budgetTierAmounts = <String, double>{
-    'economy': 800,
-    'comfort': 3000,
-    'premium': 7500,
-    'luxury': 12000,
-  };
+  BudgetTier? get _tier => BudgetTier.from(_budgetTier);
 
   /// What "ระบุเอง" holds wins over the bracket, so a traveller can pick a
   /// tier for the feel of it and then be exact.
@@ -71,7 +73,51 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     final typed =
         double.tryParse(_budgetController.text.trim().replaceAll(',', ''));
     if (typed != null && typed > 0) return typed;
-    return _budgetTierAmounts[_budgetTier] ?? 0;
+
+    // The middle of the chosen bracket, straight off the enum so the figures
+    // on screen and the ones sent up cannot drift apart. Luxury has no
+    // ceiling, so its floor is the estimate.
+    final tier = _tier;
+    if (tier == null) return 0;
+    final min = tier.minPerPersonPerDay ?? 0;
+    final max = tier.maxPerPersonPerDay;
+    return max == null ? min : (min + max) / 2;
+  }
+
+  /// The bracket to send. An amount typed with no bracket tapped still lands
+  /// in one, rather than going up unlabelled.
+  BudgetTier? get _tierToSave {
+    final chosen = _tier;
+    if (chosen != null) return chosen;
+
+    final amount = _perPersonPerDay;
+    if (amount <= 0) return null;
+    return BudgetTier.values.firstWhere(
+      (tier) =>
+          tier != BudgetTier.custom &&
+          amount >= (tier.minPerPersonPerDay ?? 0) &&
+          (tier.maxPerPersonPerDay == null ||
+              amount < tier.maxPerPersonPerDay!),
+      orElse: () => BudgetTier.luxury,
+    );
+  }
+
+  List<TravelStyle> get _wireStyles => _selectedVibes
+      .map((label) => styleByLabel[label])
+      .whereType<TravelStyle>()
+      .toList(growable: false);
+
+  List<TripConstraint> get _wireConstraints => _constraints
+      .map((label) => constraintByLabel[label])
+      .whereType<TripConstraint>()
+      .toList(growable: false);
+
+  /// The constraint chips with no enum behind them, kept as free text so the
+  /// traveller's answer is not silently dropped on the way to the server.
+  String? get _specialNotes {
+    final extra =
+        _constraints.where((label) => !constraintByLabel.containsKey(label));
+    return extra.isEmpty ? null : extra.join(', ');
   }
 
   int get _days {
@@ -256,12 +302,14 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         subtitle: '*จำนวนจุดท่องเที่ยว / วัน',
       ),
       _TierGrid(
+        // Keyed by the wire value of TripIntensity, so the selection goes
+        // straight up as `pace` with nothing to translate.
         items: const [
-          ['4', 'Slow Life', '3 - 4 สถานที่/วัน'],
-          ['6', 'Chill', '5 - 6 สถานที่/วัน'],
-          ['8', 'Balance', '8 สถานที่/วัน'],
-          ['10', 'Active', '9 - 11 สถานที่/วัน'],
-          ['12', 'Hardcore', '12+ สถานที่/วัน'],
+          ['slow_life', 'Slow Life', '3 - 4 สถานที่/วัน'],
+          ['chill', 'Chill', '5 - 6 สถานที่/วัน'],
+          ['balance', 'Balance', '8 สถานที่/วัน'],
+          ['active', 'Active', '9 - 11 สถานที่/วัน'],
+          ['hardcore', 'Hardcore', '12+ สถานที่/วัน'],
         ],
         selected: _paceTier,
         onTap: _setPace,
@@ -403,12 +451,15 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   }
 
   Future<void> _showDestinationSearch() async {
-    final selected = await Navigator.of(context).push<String>(
+    final selected = await Navigator.of(context).push<DestinationOption>(
       MaterialPageRoute(builder: (_) => const _DestinationSearchPage()),
     );
-    if (selected != null && mounted) {
-      _destinationController.text = selected;
-    }
+    if (selected == null || !mounted) return;
+
+    setState(() {
+      _destinationController.text = selected.value;
+      _destinationPlace = selected.place;
+    });
   }
 
   Future<void> _showGuestSheet() async {
@@ -443,73 +494,75 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   Future<void> _submit() async {
     if (_isSaving) return;
     if (!_canCreate) {
-      _showError('Please add a destination before creating your trip.');
+      _showError('เลือกจุดหมายก่อนสร้างแผน');
       _formKey.currentState?.validate();
       return;
     }
-
-    if (!_formKey.currentState!.validate()) {
-      _showError('Please check the trip details and try again.');
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
-    final actions = ref.read(tripActionsProvider);
-    final existing = widget.trip;
-    final now = DateTime.now();
     final destination = _destinationController.text.trim();
     final title = _titleController.text.trim().isEmpty
-        ? '$destination Trip'
+        ? destination
         : _titleController.text.trim();
-    final description = _descriptionController.text.trim().isEmpty
-        ? 'A personalized Pluno plan for $destination with saved places, budget notes, and flexible daily ideas.'
-        : _descriptionController.text.trim();
 
-    Trip trip;
     try {
-      trip = existing == null
-          ? await actions.createTrip(
-              title: title,
-              destination: destination,
-              coverImage: _coverImageController.text.trim(),
-              budget: _budgetToSave,
-              duration: int.parse(_durationController.text.trim()),
-              description: description,
-            )
-          : existing.copyWith(
-              title: title,
-              destination: destination,
-              coverImage: _coverImageController.text.trim(),
-              budget: _budgetToSave,
-              duration: int.parse(_durationController.text.trim()),
-              description: description,
-              updatedAt: now,
-              isSaved: true,
-            );
-
+      final existing = widget.trip;
       if (existing != null) {
-        await actions.saveTrip(trip);
+        // Editing still goes through the local store; PATCH /trips/:id is a
+        // separate job from this wizard.
+        await ref.read(tripActionsProvider).saveTrip(
+              existing.copyWith(
+                title: title,
+                destination: destination,
+                coverImage: _coverImageController.text.trim(),
+                budget: _budgetToSave,
+                duration: _days,
+                updatedAt: DateTime.now(),
+                isSaved: true,
+              ),
+            );
+      } else {
+        final api = await ref.read(plunoApiProvider.future);
+        // POST /trips — the manual-mode draft. `status` is never sent: the
+        // backend always creates a draft and rejects the field outright.
+        await api.trips.createDraft(
+          title: title,
+          destination: destination,
+          destinationPlace: _destinationPlace,
+          startDate: _startDate,
+          endDate: _endDate,
+          guestCount: (_travelers + _children).clamp(1, 50),
+          // Only read while the trip has no real dates; with dates the server
+          // derives them and ignores these, so they can always be sent.
+          durationDays: _nights > 0 ? _nights + 1 : null,
+          durationNights: _nights > 0 ? _nights : null,
+          planMode: PlanMode.manual,
+          travelStyles: _wireStyles,
+          pace: TripIntensity.from(_paceTier),
+          constraints: _wireConstraints,
+          budgetLimit: _budgetToSave > 0 ? _budgetToSave : null,
+          budgetTier: _tierToSave,
+          specialNotes: _specialNotes,
+        );
+        // The new draft belongs in the feed the rest of the app reads.
+        ref.invalidate(homeFeedProvider);
       }
+    } on ApiException catch (failure) {
+      _showError(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนสร้างแผน'
+          : 'สร้างแผนไม่สำเร็จ: ${failure.message}');
+      return;
     } catch (error, stackTrace) {
-      debugPrint('Trip submit failed while saving: $error');
+      debugPrint('Trip submit failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _showError('Could not create trip: $error');
+      _showError('สร้างแผนไม่สำเร็จ: $error');
       return;
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
 
-    if (!mounted) return;
-
-    try {
-      context.goNamed(AppRoute.home.name);
-    } catch (error, stackTrace) {
-      debugPrint('Trip submit failed while navigating: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      _showError('Trip was saved, but could not open home: $error');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
+    if (mounted) context.goNamed(AppRoute.home.name);
   }
 
   void _showError(String message) {
@@ -1246,22 +1299,28 @@ class _DestinationSearchPageState
     super.dispose();
   }
 
-  /// Hands [value] back to the create-plan form, remembering it on the way.
-  void _select(String value) {
-    final trimmed = value.trim();
+  /// Hands [option] back to the create-plan form, remembering it on the way.
+  ///
+  /// The whole option travels, not just its text: `POST /trips` wants the
+  /// resolved `placeId` under `destinationPlace`, and only a type-ahead hit
+  /// carries one.
+  void _select(DestinationOption option) {
+    final trimmed = option.value.trim();
     if (trimmed.isEmpty) return;
 
     ref.read(recentDestinationsProvider.notifier).record(trimmed);
     // The autocomplete session ends with the picker: popping drops the last
     // listener on `placesSessionProvider`, which auto-disposes.
-    Navigator.of(context).pop(trimmed);
+    Navigator.of(context).pop(option);
   }
 
   /// Enter accepts what was typed even when the type-ahead found nothing —
   /// the API knows cities, and a traveller may be heading somewhere vaguer.
   void _submitTyped() {
     final typed = _searchController.text.trim();
-    if (typed.isNotEmpty) _select(typed);
+    if (typed.isEmpty) return;
+    // Free text the type-ahead did not match: a name with no place behind it.
+    _select(DestinationOption(label: typed, sublabel: '', value: typed));
   }
 
   @override
@@ -1335,7 +1394,11 @@ class _DestinationSearchPageState
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: ActionChip(
-                              onPressed: () => _select(label),
+                              onPressed: () => _select(DestinationOption(
+                                label: label,
+                                sublabel: '',
+                                value: label,
+                              )),
                               avatar: const Icon(Icons.history,
                                   size: 14, color: Color(0xFF8C928E)),
                               label: Text(label),
@@ -1422,7 +1485,7 @@ class _DestinationSearchPageState
         .map((option) => _DestinationResultTile(
               primary: option.label,
               secondary: option.sublabel,
-              onTap: () => _select(option.value),
+              onTap: () => _select(option),
             ))
         .toList();
   }
@@ -1442,7 +1505,7 @@ class _DestinationSearchPageState
         .map((option) => _DestinationResultTile(
               primary: option.label,
               secondary: option.sublabel,
-              onTap: () => _select(option.value),
+              onTap: () => _select(option),
             ))
         .toList();
   }

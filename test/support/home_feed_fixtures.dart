@@ -24,7 +24,10 @@ TripListItem feedTrip({
     'title': title,
     'destination': destination,
     if (country != null)
-      'destinationPlace': <String, dynamic>{'name': destination, 'country': country},
+      'destinationPlace': <String, dynamic>{
+        'name': destination,
+        'country': country
+      },
     'status': 'draft',
     'schedule': <String, dynamic>{
       if (durationDays != null) 'durationDays': durationDays,
