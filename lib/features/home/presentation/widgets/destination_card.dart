@@ -28,7 +28,10 @@ class DestinationCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              CoverImage(source: destination.coverImage, fit: BoxFit.cover),
+              if (destination.coverImage case final image?)
+                CoverImage(source: image, fit: BoxFit.cover)
+              else
+                const ColoredBox(color: Color(0xFFE6E2DC)),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(

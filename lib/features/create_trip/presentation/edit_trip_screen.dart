@@ -21,7 +21,8 @@ class EditTripScreen extends ConsumerWidget {
       },
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (error, _) => Scaffold(body: Center(child: Text(error.toString()))),
+      error: (error, _) =>
+          Scaffold(body: Center(child: Text(error.toString()))),
     );
   }
 }

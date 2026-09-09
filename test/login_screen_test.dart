@@ -81,6 +81,10 @@ Future<void> _fillCredentials(
   await tester.pump();
 }
 
+Future<void> _tapSubmit(WidgetTester tester) async {
+  await tester.tap(find.widgetWithText(GestureDetector, 'เข้าสู่ระบบ').first);
+}
+
 /// Flips the screen from signing in to signing up via the bottom link.
 Future<void> _switchToRegister(WidgetTester tester) async {
   await tester.ensureVisible(find.text('สมัครสมาชิก'));
@@ -89,22 +93,17 @@ Future<void> _switchToRegister(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('login renders the brand header, both fields and every action',
+  testWidgets('login renders the account header, both fields and every action',
       (tester) async {
     _phone(tester);
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
-    expect(find.text('PunGuide'), findsOneWidget);
-    expect(find.text('ชื่อผู้ใช้'), findsOneWidget);
-    expect(find.text('อีเมล'), findsNothing);
+    expect(find.text('บัญชีผู้ใช้'), findsOneWidget);
+    expect(find.text('อีเมลหรือชื่อผู้ใช้'), findsOneWidget);
     expect(find.text('รหัสผ่าน'), findsOneWidget);
-    expect(find.text('จำฉันไว้'), findsOneWidget);
-    expect(find.text('ลืมรหัสผ่าน?'), findsOneWidget);
-    expect(find.text('เข้าสู่ระบบ'), findsOneWidget);
-    expect(find.text('ดำเนินการต่อด้วย Google'), findsOneWidget);
-    expect(find.text('ดำเนินการต่อด้วย Apple'), findsOneWidget);
-    expect(find.text('เข้าใช้แบบผู้เยี่ยมชม'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบ'), findsNWidgets(2));
+    expect(find.text('เข้าสู่ระบบด้วย Google'), findsOneWidget);
     expect(find.text('สมัครสมาชิก'), findsOneWidget);
   });
 
@@ -114,11 +113,12 @@ void main() {
     await tester.pumpWidget(_harness(container));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('เข้าสู่ระบบ'));
+    await _tapSubmit(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('กรอกชื่อผู้ใช้ของคุณ'), findsOneWidget);
-    expect(find.text('กรอกรหัสผ่าน'), findsOneWidget);
+    // The same copy is used for the placeholder and the validation message.
+    expect(find.text('กรอกรหัสผ่าน'), findsNWidgets(2));
     expect(container.read(authSessionProvider), isNull);
     expect(find.text('home-stub'), findsNothing);
   });
@@ -131,7 +131,7 @@ void main() {
 
     // '@' and '-' are outside the API's [a-zA-Z0-9._] set.
     await _fillCredentials(tester, username: 'som-chai@x', password: '123');
-    await tester.tap(find.text('เข้าสู่ระบบ'));
+    await _tapSubmit(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('ใช้ได้เฉพาะ a-z 0-9 จุด และขีดล่าง'), findsOneWidget);
@@ -144,7 +144,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _fillCredentials(tester, username: 'so', password: 'secret1234');
-    await tester.tap(find.text('เข้าสู่ระบบ'));
+    await _tapSubmit(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('ชื่อผู้ใช้ต้องยาว 3-30 ตัวอักษร'), findsOneWidget);
@@ -162,7 +162,7 @@ void main() {
       username: 'somchai.jai',
       password: 'secret1234',
     );
-    await tester.tap(find.text('เข้าสู่ระบบ'));
+    await _tapSubmit(tester);
 
     // The pending state holds while the credential exchange runs.
     await tester.pump();
@@ -192,7 +192,8 @@ void main() {
     // Remember-me belongs to signing in; the password rule replaces it here.
     expect(find.text('จำฉันไว้'), findsNothing);
     expect(
-      find.text('ตั้งรหัสผ่าน 8-72 ตัวอักษร และชื่อผู้ใช้จะเปลี่ยนภายหลังไม่ได้'),
+      find.text(
+          'ตั้งรหัสผ่าน 8-72 ตัวอักษร และชื่อผู้ใช้จะเปลี่ยนภายหลังไม่ได้'),
       findsOneWidget,
     );
   });
@@ -223,7 +224,7 @@ void main() {
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('เข้าสู่ระบบ'));
+    await _tapSubmit(tester);
     await tester.pumpAndSettle();
     expect(find.text('กรอกชื่อผู้ใช้ของคุณ'), findsOneWidget);
 
@@ -266,30 +267,15 @@ void main() {
     expect(passwordField().obscureText, isTrue);
   });
 
-  testWidgets('the guest action drops any session and goes home',
+  testWidgets('secondary actions omitted by the new design stay hidden',
       (tester) async {
-    _phone(tester);
-    final container = _container(tester, session: AuthSession.demo);
-    await tester.pumpWidget(_harness(container));
-    await tester.pumpAndSettle();
-
-    await tester.ensureVisible(find.text('เข้าใช้แบบผู้เยี่ยมชม'));
-    await tester.tap(find.text('เข้าใช้แบบผู้เยี่ยมชม'));
-    await tester.pumpAndSettle();
-
-    expect(container.read(authSessionProvider), isNull);
-    expect(find.text('home-stub'), findsOneWidget);
-  });
-
-  testWidgets('the remember-me box toggles', (tester) async {
     _phone(tester);
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.check), findsOneWidget);
-    await tester.tap(find.text('จำฉันไว้'));
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.text('จำฉันไว้'), findsNothing);
+    expect(find.text('เข้าใช้แบบผู้เยี่ยมชม'), findsNothing);
+    expect(find.text('ดำเนินการต่อด้วย Apple'), findsNothing);
   });
 
   testWidgets('the Google button exchanges an ID token for a session',
@@ -302,8 +288,8 @@ void main() {
     await tester.pumpWidget(_harness(container));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('ดำเนินการต่อด้วย Google'));
-    await tester.tap(find.text('ดำเนินการต่อด้วย Google'));
+    await tester.ensureVisible(find.text('เข้าสู่ระบบด้วย Google'));
+    await tester.tap(find.text('เข้าสู่ระบบด้วย Google'));
     await tester.pumpAndSettle();
 
     expect(container.read(authSessionProvider), isNotNull);
@@ -318,8 +304,8 @@ void main() {
     await tester.pumpWidget(_harness(container));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('ดำเนินการต่อด้วย Google'));
-    await tester.tap(find.text('ดำเนินการต่อด้วย Google'));
+    await tester.ensureVisible(find.text('เข้าสู่ระบบด้วย Google'));
+    await tester.tap(find.text('เข้าสู่ระบบด้วย Google'));
     await tester.pumpAndSettle();
 
     expect(container.read(authSessionProvider), isNull);
@@ -340,8 +326,8 @@ void main() {
     await tester.pumpWidget(_harness(container));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('ดำเนินการต่อด้วย Google'));
-    await tester.tap(find.text('ดำเนินการต่อด้วย Google'));
+    await tester.ensureVisible(find.text('เข้าสู่ระบบด้วย Google'));
+    await tester.tap(find.text('เข้าสู่ระบบด้วย Google'));
     await tester.pumpAndSettle();
 
     expect(find.text('ยังตั้งค่า Firebase ไม่เสร็จ'), findsOneWidget);
@@ -356,8 +342,8 @@ void main() {
     await tester.pumpWidget(_harness(container));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('ดำเนินการต่อด้วย Google'));
-    await tester.tap(find.text('ดำเนินการต่อด้วย Google'));
+    await tester.ensureVisible(find.text('เข้าสู่ระบบด้วย Google'));
+    await tester.tap(find.text('เข้าสู่ระบบด้วย Google'));
     await tester.pumpAndSettle();
 
     expect(find.byType(SnackBar), findsOneWidget);

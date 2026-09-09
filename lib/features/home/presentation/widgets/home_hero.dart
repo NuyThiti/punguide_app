@@ -16,7 +16,9 @@ class HomeHero extends StatelessWidget {
   });
 
   final String coverImage;
-  final String avatarImage;
+
+  /// Null while signed out, or when the account has no photo.
+  final String? avatarImage;
   final VoidCallback onProfile;
   final VoidCallback onFindTrip;
   final VoidCallback onShareTrip;
@@ -111,7 +113,7 @@ class HomeHero extends StatelessWidget {
 class _TitleBar extends StatelessWidget {
   const _TitleBar({required this.avatarImage, required this.onProfile});
 
-  final String avatarImage;
+  final String? avatarImage;
   final VoidCallback onProfile;
 
   @override
@@ -144,7 +146,16 @@ class _TitleBar extends StatelessWidget {
                     width: 1.5,
                   ),
                 ),
-                child: CoverImage(source: avatarImage, fit: BoxFit.cover),
+                child: avatarImage != null
+                    ? CoverImage(source: avatarImage!, fit: BoxFit.cover)
+                    : const ColoredBox(
+                        color: Colors.white24,
+                        child: Icon(
+                          Icons.person,
+                          size: 20,
+                          color: Colors.white,
+                        ),
+                      ),
               ),
             ),
           ),

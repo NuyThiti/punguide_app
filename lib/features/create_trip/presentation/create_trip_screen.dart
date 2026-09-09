@@ -1241,9 +1241,7 @@ class _GridPainter extends CustomPainter {
 class _SheetSection extends StatelessWidget {
   const _SheetSection({
     required this.child,
-    this.topPadding = 0,
-    this.hasBorder = true,
-  });
+  }) : topPadding = 0 : hasBorder = true;
 
   final Widget child;
   final double topPadding;

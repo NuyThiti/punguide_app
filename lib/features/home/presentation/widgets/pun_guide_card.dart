@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/extensions/currency_extensions.dart';
-import '../../../../shared/models/trip_social_meta.dart';
 import '../../../../shared/widgets/cover_image.dart';
-import '../../../trips/domain/models/trip.dart';
 
 /// Compact two-per-row trip card used by the "Top PunGuide" grid.
+///
+/// Reads a feed row straight from the API, so every optional field the backend
+/// may omit — cover, schedule, creator — has to degrade rather than blank the
+/// card.
 class PunGuideCard extends StatelessWidget {
   const PunGuideCard({
     super.key,
@@ -15,25 +18,18 @@ class PunGuideCard extends StatelessWidget {
     required this.onSave,
   });
 
-  final Trip trip;
+  final TripListItem trip;
   final VoidCallback onTap;
   final VoidCallback onSave;
 
-  /// Cover proportions, and the fixed height of everything below it. The cover
-  /// runs to the card edges, so its width is the tile width.
-  ///
-  /// [contentHeight] must clear a two-line title: 115 overflows such a tile by
-  /// 7pt. Lowering it further means capping the title at one line first.
+  /// The cover runs to the card edges, so its width is the card width. Only
+  /// the cover has a fixed shape — the card itself is as tall as whatever the
+  /// text under it needs.
   static const double coverAspectRatio = 0.950;
-  static const double contentHeight = 124;
-
-  /// Tile height the grid should give a card of [tileWidth].
-  static double tileExtentFor(double tileWidth) =>
-      tileWidth / coverAspectRatio + contentHeight;
 
   @override
   Widget build(BuildContext context) {
-    final meta = TripSocialMeta.fromTrip(trip);
+    final cover = trip.coverImage?.urls.large;
 
     return GestureDetector(
       onTap: onTap,
@@ -59,8 +55,12 @@ class PunGuideCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CoverImage(source: trip.coverImage, fit: BoxFit.cover),
-                  const Positioned(top: 10, left: 10, child: _RemixBadge()),
+                  if (cover != null)
+                    CoverImage(source: cover, fit: BoxFit.cover)
+                  else
+                    const _MissingCover(),
+                  if (trip.remixCount > 0)
+                    const Positioned(top: 10, left: 10, child: _RemixBadge()),
                   Positioned(
                     top: 10,
                     right: 10,
@@ -99,7 +99,7 @@ class PunGuideCard extends StatelessWidget {
                     children: [
                       // The chip takes whatever the stats leave, and the stats
                       // are capped so a long handle can never push them out.
-                      Expanded(child: _HandleChip(meta: meta)),
+                      Expanded(child: _CreatorChip(creator: trip.creator)),
                       const SizedBox(width: 6),
                       ConstrainedBox(
                         // Capped low enough that the chip still clears its own
@@ -113,12 +113,12 @@ class PunGuideCard extends StatelessWidget {
                             children: [
                               _Stat(
                                 icon: Icons.shuffle,
-                                label: '${meta.remixes}',
+                                label: _compact(trip.remixCount),
                               ),
                               const SizedBox(width: 8),
                               _Stat(
-                                icon: Icons.bookmark_border,
-                                label: meta.saves,
+                                icon: Icons.favorite_border,
+                                label: _compact(trip.likeCount),
                               ),
                             ],
                           ),
@@ -131,6 +131,28 @@ class PunGuideCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+String _compact(int value) {
+  if (value < 1000) return '$value';
+  final thousands = value / 1000;
+  return thousands >= 10
+      ? '${thousands.round()}k'
+      : '${thousands.toStringAsFixed(1)}k';
+}
+
+class _MissingCover extends StatelessWidget {
+  const _MissingCover();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFEDEAE6),
+      child: Center(
+        child: Icon(Icons.photo_outlined, color: Color(0xFFB4ADA6), size: 26),
       ),
     );
   }
@@ -194,13 +216,22 @@ class _SaveButton extends StatelessWidget {
 }
 
 /// Location, duration and price on one run of text, split by bullets.
+///
+/// Duration and price are dropped rather than shown as zero — a feed row can
+/// arrive with no schedule, and a trip with no costed plan totals 0.
 class _MetaLine extends StatelessWidget {
   const _MetaLine({required this.trip});
 
-  final Trip trip;
+  final TripListItem trip;
 
   @override
   Widget build(BuildContext context) {
+    final days = trip.schedule.durationDays;
+    final facts = <String>[
+      if (days != null && days > 0) '$days วัน',
+      if (trip.totalBudget > 0) '${trip.totalBudget.asBaht} /คน',
+    ];
+
     return Text.rich(
       TextSpan(
         children: [
@@ -216,10 +247,10 @@ class _MetaLine extends StatelessWidget {
             ),
           ),
           TextSpan(text: trip.destination),
-          const TextSpan(text: ' • '),
-          TextSpan(text: '${trip.duration} วัน'),
-          const TextSpan(text: ' • '),
-          TextSpan(text: '${trip.budget.asBaht} /คน'),
+          for (final fact in facts) ...[
+            const TextSpan(text: ' • '),
+            TextSpan(text: fact),
+          ],
         ],
       ),
       maxLines: 2,
@@ -234,13 +265,16 @@ class _MetaLine extends StatelessWidget {
   }
 }
 
-class _HandleChip extends StatelessWidget {
-  const _HandleChip({required this.meta});
+class _CreatorChip extends StatelessWidget {
+  const _CreatorChip({required this.creator});
 
-  final TripSocialMeta meta;
+  /// Absent once the owner deletes their account.
+  final TripCreator? creator;
 
   @override
   Widget build(BuildContext context) {
+    final avatar = creator?.avatarUrl;
+
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -255,18 +289,25 @@ class _HandleChip extends StatelessWidget {
             Container(
               width: 18,
               height: 18,
+              clipBehavior: Clip.antiAlias,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(color: AppColors.handleChipRing, width: 1.5),
               ),
-              child: Text(meta.avatar, style: const TextStyle(fontSize: 9)),
+              child: avatar != null
+                  ? CoverImage(source: avatar, fit: BoxFit.cover)
+                  : const Icon(
+                      Icons.person,
+                      size: 11,
+                      color: AppColors.navIconMuted,
+                    ),
             ),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
-                meta.handle,
+                creator?.name ?? 'ผู้ใช้ที่ถูกลบ',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

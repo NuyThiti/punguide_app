@@ -191,6 +191,31 @@ class TripListItem {
   final TripCreator? creator;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Echoes a save/unsave the server has accepted locally.
+  ///
+  /// `POST /trips/:id/save` returns nothing, so a list that wants to show the
+  /// new bookmark state without re-reading the whole feed patches the one row.
+  TripListItem withSaved(bool saved) => TripListItem(
+        id: id,
+        title: title,
+        destination: destination,
+        destinationPlace: destinationPlace,
+        status: status,
+        schedule: schedule,
+        budgetLimit: budgetLimit,
+        totalBudget: totalBudget,
+        budgetTier: budgetTier,
+        tags: tags,
+        coverImage: coverImage,
+        isSaved: saved,
+        isLiked: isLiked,
+        likeCount: likeCount,
+        remixCount: remixCount,
+        creator: creator,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
 }
 
 /// A full trip, including its itinerary.

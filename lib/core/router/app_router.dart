@@ -8,12 +8,14 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/remix_trip/presentation/remix_trip_screen.dart';
 import '../../features/saved_trips/presentation/saved_trips_screen.dart';
+import '../../features/search/presentation/search_screen.dart';
 import '../../features/trip_detail/presentation/trip_detail_screen.dart';
 
 enum AppRoute {
   home,
   login,
   discover,
+  search,
   tripDetail,
   createTrip,
   editTrip,
@@ -41,6 +43,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _instantPage(
         state,
         const HomeScreen(activeRoute: AppRoute.discover),
+      ),
+    ),
+    GoRoute(
+      path: '/search',
+      name: AppRoute.search.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        SearchScreen(initialQuery: state.queryParams['q']),
       ),
     ),
     GoRoute(

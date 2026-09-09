@@ -148,9 +148,9 @@ class _HeroSection extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.06),
-                  Colors.black.withOpacity(0.12),
-                  Colors.black.withOpacity(0.62),
+                  Colors.black.withValues(alpha: 0.06),
+                  Colors.black.withValues(alpha: 0.12),
+                  Colors.black.withValues(alpha: 0.62),
                 ],
               ),
             ),
@@ -165,7 +165,7 @@ class _HeroSection extends StatelessWidget {
                   _CircleIconButton(
                     icon: Icons.arrow_back,
                     onTap: onBack,
-                    background: Colors.white.withOpacity(0.92),
+                    background: Colors.white.withValues(alpha: 0.92),
                     color: AppColors.foreground,
                   ),
                   Row(
@@ -173,7 +173,7 @@ class _HeroSection extends StatelessWidget {
                       _CircleIconButton(
                         icon: Icons.ios_share,
                         onTap: () {},
-                        background: Colors.white.withOpacity(0.92),
+                        background: Colors.white.withValues(alpha: 0.92),
                         color: AppColors.foreground,
                       ),
                       const SizedBox(width: 10),
@@ -182,7 +182,7 @@ class _HeroSection extends StatelessWidget {
                             ? Icons.bookmark
                             : Icons.bookmark_border,
                         onTap: onSave,
-                        background: Colors.white.withOpacity(0.92),
+                        background: Colors.white.withValues(alpha: 0.92),
                         color: trip.isSaved
                             ? AppColors.primary
                             : AppColors.foreground,
@@ -234,7 +234,7 @@ class _HeroSection extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.90),
+                          color: Colors.white.withValues(alpha: 0.90),
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
@@ -289,9 +289,9 @@ class _TagPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.34),
+        color: color.withValues(alpha: 0.34),
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: Colors.white.withOpacity(0.68)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.68)),
       ),
       child: Text(
         label,
@@ -320,7 +320,7 @@ class _CreatorRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -333,7 +333,7 @@ class _CreatorRow extends StatelessWidget {
             height: 42,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
+              color: AppColors.primary.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Text(meta.avatar, style: const TextStyle(fontSize: 22)),
@@ -415,7 +415,7 @@ class _StatsCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.04)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
       ),
       child: Row(
         children: [
@@ -454,7 +454,7 @@ class _StatDivider extends StatelessWidget {
     return Container(
       width: 1,
       height: 72,
-      color: Colors.black.withOpacity(0.06),
+      color: Colors.black.withValues(alpha: 0.06),
     );
   }
 }
@@ -535,7 +535,7 @@ class _DetailTabs extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(selected ? 0.18 : 0.05),
+                    color: Colors.black.withValues(alpha: selected ? 0.18 : 0.05),
                     blurRadius: selected ? 18 : 12,
                     offset: const Offset(0, 5),
                   ),
@@ -615,7 +615,7 @@ class _DayCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 18,
             offset: const Offset(0, 5),
           ),
@@ -630,7 +630,7 @@ class _DayCard extends StatelessWidget {
                 height: 42,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(expanded ? 1 : 0.10),
+                  color: AppColors.primary.withValues(alpha: expanded ? 1 : 0.10),
                   shape: BoxShape.circle,
                 ),
                 child: Text(
@@ -673,7 +673,7 @@ class _DayCard extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -696,7 +696,7 @@ class _DayCard extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.08),
+                  color: AppColors.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
@@ -752,7 +752,7 @@ class _TimelineItem extends StatelessWidget {
               Expanded(
                 child: Container(
                   width: 1,
-                  color: Colors.black.withOpacity(0.07),
+                  color: Colors.black.withValues(alpha: 0.07),
                 ),
               ),
             ],
@@ -765,7 +765,7 @@ class _TimelineItem extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xFFFAFBFA),
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.black.withOpacity(0.04)),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
               ),
               child: Row(
                 children: [
@@ -773,7 +773,7 @@ class _TimelineItem extends StatelessWidget {
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                      color: item.color.withOpacity(0.12),
+                      color: item.color.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(item.icon, size: 17, color: item.color),
@@ -831,7 +831,7 @@ class _TypeChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
@@ -895,7 +895,7 @@ class _BudgetLine extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.payments_outlined, color: color, size: 19),
@@ -947,7 +947,7 @@ class _PlacesPanel extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.10),
+                  color: AppColors.primary.withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -992,11 +992,11 @@ class _BottomActions extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.96),
+        color: Colors.white.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.14),
+            color: Colors.black.withValues(alpha: 0.14),
             blurRadius: 26,
             offset: const Offset(0, 10),
           ),
@@ -1050,7 +1050,7 @@ class _ActionButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: filled
               ? AppColors.primary
-              : AppColors.primary.withOpacity(0.10),
+              : AppColors.primary.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Row(

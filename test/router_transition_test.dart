@@ -4,14 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/features/profile/presentation/profile_screen.dart';
-import 'package:pluno/features/trips/presentation/providers/trip_providers.dart';
+
+import 'support/home_feed_fixtures.dart';
 
 void main() {
   testWidgets('navigation swaps pages on the first frame, with no transition',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [tripListProvider.overrideWith((ref) async => [])],
+        overrides: homeOverrides(const []),
         child: MaterialApp.router(routerConfig: appRouter),
       ),
     );

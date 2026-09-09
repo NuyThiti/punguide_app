@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "113430056181",
+    "project_id": "punguide-65ad8",
+    "storage_bucket": "punguide-65ad8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:113430056181:android:0b5661d5d89e4b564249bc",
+        "android_client_info": {
+          "package_name": "tech.fullteam.punguide"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "113430056181-leqb59ki9ivln5sj6ndgmo5dtt4qcl0o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "tech.fullteam.punguide",
+            "certificate_hash": "f950552db90259417b5ad412aa33dcbabe3c33e1"
+          }
+        },
+        {
+          "client_id": "113430056181-lss0bid8p3okrkdgieu4l3vh907di2oo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdaGoABVpiK1mEPpfR0adAplxfvOdRXLs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "113430056181-lss0bid8p3okrkdgieu4l3vh907di2oo.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "113430056181-qlvjh3bpie7q8q5ma0gk5t8c7prban33.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "tech.fullteam.punguide"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

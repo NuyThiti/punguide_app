@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
+import '../../../../core/api/api_providers.dart';
+import '../../../../core/api/pluno_api.dart' as api;
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/isar_service.dart';
 import '../../data/datasources/isar_trip_local_data_source.dart';
 import '../../data/datasources/trip_local_data_source.dart';
@@ -41,11 +44,51 @@ final savedTripsProvider = FutureProvider<List<Trip>>((ref) async {
   return repository.getSavedTrips();
 });
 
+/// A trip for the detail screen, local cache first.
+///
+/// Feed rows come from the server and were never written to Isar, so a miss
+/// falls back to `GET /trips/:id` rather than showing "not found".
 final selectedTripProvider =
     FutureProvider.family<Trip?, String>((ref, tripId) async {
   final repository = await ref.watch(tripRepositoryProvider.future);
-  return repository.getTrip(tripId);
+  final local = await repository.getTrip(tripId);
+  if (local != null) return local;
+
+  try {
+    final client = await ref.watch(plunoApiProvider.future);
+    return _tripFromApi(await client.trips.byId(tripId));
+  } on api.ApiException catch (failure) {
+    if (failure.isNotFound || failure.isForbidden) return null;
+    rethrow;
+  }
 });
+
+/// Flattens the API trip onto the local model the detail screen renders.
+///
+/// The itinerary is dropped on purpose — the local [Trip] has no days, so the
+/// screen shows the header facts until it is ported to [api.ApiTrip].
+Trip _tripFromApi(api.ApiTrip trip) => Trip(
+      id: trip.id,
+      title: trip.title,
+      destination: trip.destination,
+      coverImage:
+          trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
+      budget: trip.totalBudget,
+      duration: trip.schedule.durationDays ?? 0,
+      description: _briefLine(trip.brief),
+      createdAt: trip.createdAt,
+      updatedAt: trip.updatedAt,
+      isSaved: trip.isSaved,
+    );
+
+/// The planner's style tags as one line; empty when they filled in nothing.
+String _briefLine(api.TripPlanBrief? brief) {
+  if (brief == null) return '';
+  return <String>[
+    ...brief.styles.map((style) => style.name),
+    ...brief.customStyles,
+  ].join(' · ');
+}
 
 final tripActionsProvider = Provider<TripActions>((ref) => TripActions(ref));
 

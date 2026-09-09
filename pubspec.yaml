@@ -35,7 +35,10 @@ dependencies:
   dio: ^5.11.1
   dio_cookie_manager: ^3.5.0
   cookie_jar: ^4.0.9
-  flutter_secure_storage: ^11.0.0
+  flutter_secure_storage: ^10.0.0
+  firebase_core: ^4.14.0
+  firebase_auth: ^6.6.1
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:

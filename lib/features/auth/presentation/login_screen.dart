@@ -28,7 +28,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   _AuthMode _mode = _AuthMode.signIn;
   bool _obscurePassword = true;
-  bool _rememberMe = true;
   bool _isSubmitting = false;
 
   /// Errors stay quiet until the first submit, then follow every keystroke.
@@ -188,16 +187,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
   }
 
-  void _continueAsGuest() {
-    ref.read(authSessionProvider.notifier).signOut();
-    context.goNamed(AppRoute.home.name);
-  }
-
-  void _notYet(String what) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('$what ยังไม่เปิดให้ใช้งาน')));
-  }
-
   void _close() {
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
@@ -221,16 +210,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           children: [
             _LoginHeader(
               onClose: _close,
-              subtitle: _isRegistering
-                  ? 'สร้างบัญชีใหม่ เก็บทริปของคุณไว้\nและปันไกด์ให้เพื่อน ๆ'
-                  : 'ยินดีต้อนรับกลับ เข้าสู่ระบบเพื่อบันทึกทริป\nและปันไกด์ให้เพื่อน ๆ',
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _FieldLabel('ชื่อผู้ใช้'),
+                  const Center(child: _LoginIntro()),
+                  const SizedBox(height: 28),
+                  const _FieldLabel('อีเมลหรือชื่อผู้ใช้'),
                   TextFormField(
                     controller: _usernameController,
                     keyboardType: TextInputType.text,
@@ -243,8 +231,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     validator: _validateUsername,
                     style: _inputTextStyle,
                     decoration: _fieldDecoration(
-                      hintText: 'somchai',
-                      icon: Icons.person_outline,
+                      hintText: 'name@example.com',
+                      icon: Icons.mail_outline,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -266,7 +254,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     validator: _validatePassword,
                     style: _inputTextStyle,
                     decoration: _fieldDecoration(
-                      hintText: 'อย่างน้อย 8 ตัวอักษร',
+                      hintText: 'กรอกรหัสผ่าน',
                       icon: Icons.lock_outline,
                       suffix: IconButton(
                         onPressed: () => setState(
@@ -279,61 +267,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           size: 20,
                           color: AppColors.navIconMuted,
                         ),
-                        tooltip: _obscurePassword
-                            ? 'แสดงรหัสผ่าน'
-                            : 'ซ่อนรหัสผ่าน',
+                        tooltip:
+                            _obscurePassword ? 'แสดงรหัสผ่าน' : 'ซ่อนรหัสผ่าน',
                       ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  if (_isRegistering)
-                    const _PasswordHint()
-                  else
-                    _RememberRow(
-                      remember: _rememberMe,
-                      onChanged: (value) => setState(() => _rememberMe = value),
-                      onForgot: () => _notYet('การกู้รหัสผ่าน'),
-                    ),
+                  if (_isRegistering) const _PasswordHint(),
                   const SizedBox(height: 18),
                   _PrimaryButton(
                     label: _isRegistering ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ',
                     busy: _isSubmitting,
                     onPressed: _submit,
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 24),
                   const _OrDivider(),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   _SocialButton(
-                    label: 'ดำเนินการต่อด้วย Google',
+                    label: 'เข้าสู่ระบบด้วย Google',
                     leading: const _GoogleGlyph(),
                     onPressed: _isSubmitting ? null : _signInWithGoogle,
                   ),
-                  const SizedBox(height: 10),
-                  _SocialButton(
-                    label: 'ดำเนินการต่อด้วย Apple',
-                    leading: const Icon(
-                      Icons.apple,
-                      size: 22,
-                      color: AppColors.foreground,
-                    ),
-                    onPressed:
-                        _isSubmitting ? null : () => _notYet('Apple Sign-In'),
-                  ),
-                  const SizedBox(height: 18),
-                  Center(
-                    child: TextButton(
-                      onPressed: _isSubmitting ? null : _continueAsGuest,
-                      child: const Text(
-                        'เข้าใช้แบบผู้เยี่ยมชม',
-                        style: TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 20),
+                  const Divider(height: 1, color: AppColors.line),
+                  const SizedBox(height: 14),
                   _SwitchModeRow(
                     registering: _isRegistering,
                     onPressed: _isSubmitting ? null : _switchMode,
@@ -381,7 +337,7 @@ InputDecoration _fieldDecoration({
     border: border(AppColors.chipBorder, 1),
     enabledBorder: border(AppColors.chipBorder, 1),
     disabledBorder: border(AppColors.chipBorder, 1),
-    focusedBorder: border(AppColors.brandOrange, 1.6),
+    focusedBorder: border(AppColors.primary, 1.4),
     errorBorder: border(AppColors.brandOrangeDeep, 1),
     focusedErrorBorder: border(AppColors.brandOrangeDeep, 1.6),
     errorStyle: const TextStyle(
@@ -394,89 +350,90 @@ InputDecoration _fieldDecoration({
 
 /// Brand-orange cap that carries the wordmark, matching the profile hero.
 class _LoginHeader extends StatelessWidget {
-  const _LoginHeader({required this.onClose, required this.subtitle});
+  const _LoginHeader({required this.onClose});
 
   final VoidCallback onClose;
-  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        20,
-        MediaQuery.of(context).padding.top + 12,
-        20,
-        30,
-      ),
+          20, MediaQuery.of(context).padding.top + 14, 20, 14),
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.brandOrange, AppColors.brandOrangeDeep],
-        ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              onTap: onClose,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.close, color: Colors.white, size: 20),
-              ),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('บัญชีผู้ใช้',
+                    style: TextStyle(
+                        color: AppColors.foreground,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800)),
+                SizedBox(height: 2),
+                Text('โปรไฟล์ การตั้งค่า และการเข้าสู่ระบบ',
+                    style: TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400)),
+              ],
             ),
           ),
-          const SizedBox(height: 22),
-          Container(
-            width: 54,
-            height: 54,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Text(
-              'ป',
-              style: TextStyle(
-                color: AppColors.brandOrange,
-                fontSize: 26,
-                height: 1.1,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'PunGuide',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 26,
-              height: 1.15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 13,
-              height: 1.45,
-              fontWeight: FontWeight.w600,
+          GestureDetector(
+            onTap: onClose,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFF4F6F5), shape: BoxShape.circle),
+              child: const Icon(Icons.close, color: AppColors.muted, size: 20),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LoginIntro extends StatelessWidget {
+  const _LoginIntro();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+              color: Color(0xFFE7F5EF), shape: BoxShape.circle),
+          child: const Icon(Icons.login, color: Color(0xFF159566), size: 28),
+        ),
+        const SizedBox(height: 16),
+        const Text('เข้าสู่ระบบ',
+            style: TextStyle(
+                color: AppColors.foreground,
+                fontSize: 20,
+                fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        const Text(
+          'เข้าสู่ระบบเพื่อบันทึกทริป สร้างแพลน และจัดการโปรไฟล์',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              color: AppColors.muted,
+              fontSize: 13,
+              height: 1.4,
+              fontWeight: FontWeight.w400),
+        ),
+      ],
     );
   }
 }
@@ -502,91 +459,6 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-class _RememberRow extends StatelessWidget {
-  const _RememberRow({
-    required this.remember,
-    required this.onChanged,
-    required this.onForgot,
-  });
-
-  final bool remember;
-  final ValueChanged<bool> onChanged;
-  final VoidCallback onForgot;
-
-  @override
-  Widget build(BuildContext context) {
-    // The checkbox side is flexible so a long label ellipsizes instead of
-    // pushing the link off a narrow phone.
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Flexible(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onChanged(!remember),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 20,
-                    height: 20,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: remember ? AppColors.brandOrange : Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: remember
-                            ? AppColors.brandOrange
-                            : AppColors.chipBorder,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: remember
-                        ? const Icon(Icons.check, size: 14, color: Colors.white)
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  const Flexible(
-                    child: Text(
-                      'จำฉันไว้',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.foreground,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        TextButton(
-          onPressed: onForgot,
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            minimumSize: const Size(0, 36),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: const Text(
-            'ลืมรหัสผ่าน?',
-            style: TextStyle(
-              color: AppColors.brandOrange,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _PrimaryButton extends StatelessWidget {
   const _PrimaryButton({
     required this.label,
@@ -607,18 +479,7 @@ class _PrimaryButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppColors.brandOrange, AppColors.brandOrangeDeep],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.brandOrange.withValues(alpha: busy ? 0.15 : 0.38),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          color: AppColors.primary,
         ),
         child: busy
             ? const SizedBox(
@@ -658,7 +519,7 @@ class _OrDivider extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: Text(
-              'หรือดำเนินการต่อด้วย',
+              'หรือ',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -698,7 +559,7 @@ class _SocialButton extends StatelessWidget {
           height: 50,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.chipBorder),
+            border: Border.all(color: const Color(0xFFEBCF9E)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -725,29 +586,20 @@ class _SocialButton extends StatelessWidget {
   }
 }
 
-/// Stands in for the Google mark — the app ships no brand SVG for it yet.
 class _GoogleGlyph extends StatelessWidget {
   const _GoogleGlyph();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return const SizedBox(
       width: 22,
       height: 22,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: AppColors.softScreen,
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.chipBorder),
-      ),
-      child: const Text(
-        'G',
-        style: TextStyle(
-          color: Color(0xFF4285F4),
-          fontSize: 13,
-          height: 1.1,
-          fontWeight: FontWeight.w800,
-        ),
+      child: Center(
+        child: Text('G',
+            style: TextStyle(
+                color: Color(0xFF4285F4),
+                fontSize: 16,
+                fontWeight: FontWeight.w900)),
       ),
     );
   }
@@ -809,7 +661,7 @@ class _SwitchModeRow extends StatelessWidget {
           child: Text(
             registering ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก',
             style: const TextStyle(
-              color: AppColors.brandPurple,
+              color: AppColors.primary,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),

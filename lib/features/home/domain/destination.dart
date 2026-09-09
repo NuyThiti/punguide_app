@@ -5,10 +5,12 @@ class Destination {
   const Destination({
     required this.id,
     required this.name,
-    required this.coverImage,
+    this.coverImage,
   });
 
   final String id;
   final String name;
-  final String coverImage;
+
+  /// Null when no trip to this place has a cover yet.
+  final String? coverImage;
 }

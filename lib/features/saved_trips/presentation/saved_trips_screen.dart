@@ -102,7 +102,7 @@ class _SavedHeader extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.10),
+              color: AppColors.primary.withValues(alpha: 0.10),
               shape: BoxShape.circle,
             ),
             child: const Icon(
