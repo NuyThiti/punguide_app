@@ -96,8 +96,9 @@ class DestinationSuggestionsNotifier
 ///
 /// There is no trending-destinations endpoint, so this is the same trick
 /// [topDestinationsProvider] plays: the places people actually planned trips
-/// to, most-planned first. That rail groups by country; a picker wants the
-/// city, so these are grouped one level finer.
+/// to, most-planned first. That rail collapses to one row per country; here
+/// each city keeps its own row, under a country heading — so Japan can appear
+/// twice, once for Osaka and once for Tokyo, as the design shows.
 final trendingDestinationsProvider = Provider<List<DestinationOption>>((ref) {
   final trips = ref.watch(homeFeedProvider).valueOrNull;
   if (trips == null || trips.isEmpty) return const <DestinationOption>[];
@@ -141,9 +142,11 @@ DestinationOption? _optionFor(TripListItem trip) {
       ? parts.last
       : (trip.destinationPlace?.country?.trim() ?? '');
 
+  // The country headlines the row and the city sits under it, which is the
+  // opposite of a type-ahead hit — there the place you typed has to lead.
   return DestinationOption(
-    label: city,
-    sublabel: country == city ? '' : country,
+    label: country.isEmpty ? city : country,
+    sublabel: country.isEmpty || country == city ? '' : city,
     value: country.isEmpty || country == city ? city : '$city, $country',
   );
 }

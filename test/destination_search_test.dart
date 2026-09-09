@@ -68,7 +68,8 @@ Future<void> _openPicker(WidgetTester tester) async {
 void main() {
   setUp(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    final view = TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
+    final view =
+        TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
     view.physicalSize = const Size(390 * 3, 844 * 3);
     view.devicePixelRatio = 3;
   });
@@ -98,7 +99,6 @@ void main() {
     await _openPicker(tester);
 
     expect(find.text('Search Trend มาแรง'), findsOneWidget);
-    // Most-planned first: เชียงใหม่ has two trips, หลวงพระบาง one.
     final tiles = tester
         .widgetList<Text>(find.descendant(
           of: find.byType(ListView),
@@ -106,8 +106,10 @@ void main() {
         ))
         .map((t) => t.data)
         .toList();
-    expect(tiles.indexOf('เชียงใหม่'), lessThan(tiles.indexOf('หลวงพระบาง')));
-    expect(find.text('ไทย'), findsOneWidget);
+    // Most-planned first: ไทย has two trips, ลาว one.
+    expect(tiles.indexOf('ไทย'), lessThan(tiles.indexOf('ลาว')));
+    // The country headlines the row, the city sits beneath it.
+    expect(tiles.indexOf('ไทย') + 1, equals(tiles.indexOf('เชียงใหม่')));
   });
 
   testWidgets('a burst of keystrokes costs one request, on one session',
@@ -201,6 +203,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('เกาหลีใต้'), findsOneWidget);
+  });
+
+  testWidgets('the header survives a notch', (tester) async {
+    // The default test view has no safe-area inset, which is why a fixed
+    // header height that ignored one rendered fine here while collapsing the
+    // search pill to nothing on a real iPhone.
+    tester.view.padding = const FakeViewPadding(top: 59 * 3);
+    addTearDown(() => tester.view.resetPadding());
+
+    await tester.pumpWidget(_harness(_FakeLookup(), [feedTrip()]));
+    await tester.pumpAndSettle();
+    await _openPicker(tester);
+
+    expect(tester.takeException(), isNull);
+    // The pill keeps its full height, below the inset rather than under it.
+    final pill = tester.getRect(find.byType(TextField));
+    expect(pill.height, greaterThan(20));
+    expect(pill.top, greaterThan(59));
   });
 
   testWidgets('a destination the API does not know is still usable',

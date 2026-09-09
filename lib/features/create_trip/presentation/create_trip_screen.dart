@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../trips/domain/models/trip.dart';
 import 'providers/destination_search_providers.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
@@ -30,19 +29,67 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   String _transport = 'flight';
+
+  /// Step one: how many stops a day the traveller wants.
+  String _paceTier = '';
+
+  /// Step two.
   String _budgetTier = '';
+  String _lodging = '';
+  final List<String> _constraints = <String>[];
+
+  /// 0 until the traveller picks something. Kept beside the dates because
+  /// "จำนวนคืน" sets a length with no dates attached.
+  int _nights = 0;
+
   int _travelers = 1;
   int _children = 0;
-  bool _perPerson = false;
   bool _aiShown = false;
   bool _isSaving = false;
+
+  /// 0 = preferences, 1 = budget and constraints. The header and the mode
+  /// switch stay put; only the body and the action bar change.
+  int _step = 0;
+
   final List<String> _selectedVibes = <String>[];
+  final _scrollController = ScrollController();
 
   bool get _isEditing => widget.trip != null;
   bool get _canCreate => _destinationController.text.trim().isNotEmpty;
 
-  double get _budget => double.tryParse(_budgetController.text.trim()) ?? 0;
-  double get _displayBudget => _perPerson ? _budget * _travelers : _budget;
+  /// The midpoint of each bracket, in THB per person per day.
+  static const _budgetTierAmounts = <String, double>{
+    'economy': 800,
+    'comfort': 3000,
+    'premium': 7500,
+    'luxury': 12000,
+  };
+
+  /// What "ระบุเอง" holds wins over the bracket, so a traveller can pick a
+  /// tier for the feel of it and then be exact.
+  double get _perPersonPerDay {
+    final typed =
+        double.tryParse(_budgetController.text.trim().replaceAll(',', ''));
+    if (typed != null && typed > 0) return typed;
+    return _budgetTierAmounts[_budgetTier] ?? 0;
+  }
+
+  int get _days {
+    final parsed = int.tryParse(_durationController.text.trim()) ?? 0;
+    return parsed > 0 ? parsed : 1;
+  }
+
+  /// The trip total the API stores. The section is headed "งบต่อคน / วัน", so
+  /// the figure on screen has to be multiplied back up by heads and days.
+  double get _displayBudget =>
+      _perPersonPerDay * (_travelers + _children) * _days;
+
+  /// Leaving step two untouched must not wipe the budget off a trip being
+  /// edited, so the stored total stands until something is actually chosen.
+  double get _budgetToSave {
+    final computed = _displayBudget;
+    return computed > 0 ? computed : (widget.trip?.budget ?? 0);
+  }
 
   @override
   void initState() {
@@ -51,9 +98,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     _titleController = TextEditingController(text: trip?.title ?? '');
     _destinationController =
         TextEditingController(text: trip?.destination ?? '');
-    _budgetController = TextEditingController(
-      text: trip == null ? '0' : trip.budget.round().toString(),
-    );
+    // Empty, not '0': this is the "ระบุเอง" box, and a seeded zero hid its ฿
+    // hint. An existing trip's stored total is a whole-trip figure, which does
+    // not belong in a per-person-per-day field either.
+    _budgetController = TextEditingController();
     _durationController = TextEditingController(
       text: trip == null ? '7' : trip.duration.toString(),
     );
@@ -70,6 +118,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   void dispose() {
     _destinationController.removeListener(_syncGeneratedFields);
     _budgetController.removeListener(_refresh);
+    _scrollController.dispose();
     _titleController.dispose();
     _destinationController.dispose();
     _budgetController.dispose();
@@ -98,18 +147,24 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                 child: Stack(
                   children: [
                     ListView(
+                      controller: _scrollController,
                       physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 92),
+                      // Clears the pinned action bar, which is now taller by
+                      // the home-indicator inset it absorbs.
+                      padding: EdgeInsets.only(
+                        bottom: 92 + MediaQuery.paddingOf(context).bottom,
+                      ),
                       children: [
                         _CreateTripHeader(
                           destinationController: _destinationController,
                           startDate: _startDate,
                           endDate: _endDate,
+                          nights: _nights,
                           travelers: _travelers,
                           children: _children,
                           onBack: _close,
                           onDestinationTap: _showDestinationSearch,
-                          onPickDate: () => _pickDate(isStart: true),
+                          onPickDate: _showDatesDialog,
                           onGuestTap: _showGuestSheet,
                         ),
                         _CreateModeSwitch(
@@ -122,63 +177,13 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _ThaiSectionTitle(title: 'สไตล์การเที่ยว'),
-                              _ChoiceWrap(
-                                items: const [
-                                  ['ทะเล', Icons.beach_access_outlined],
-                                  ['ภูเขา', Icons.terrain_outlined],
-                                  ['ธรรมชาติ', Icons.eco_outlined],
-                                  ['คาเฟ่', Icons.coffee_outlined],
-                                  [
-                                    'เข้าถึงท้องถิ่น',
-                                    Icons.storefront_outlined
-                                  ],
-                                  ['วัฒนธรรม', Icons.museum_outlined],
-                                  ['อาหาร', Icons.restaurant_outlined],
-                                  ['ไนท์ไลฟ์', Icons.local_bar_outlined],
-                                  ['ช้อปปิ้ง', Icons.shopping_bag_outlined],
-                                  ['ผจญภัย', Icons.hiking_outlined],
-                                ],
-                                selected: _selectedVibes,
-                                onTap: _toggleVibe,
-                                showMore: true,
-                              ),
-                              const SizedBox(height: 22),
-                              const _ThaiSectionTitle(
-                                title: 'ความเข้มข้นของทริป',
-                                subtitle: '*จำนวนจุดท่องเที่ยว / วัน',
-                              ),
-                              _PaceGrid(
-                                selected: _budgetTier,
-                                onTap: (tier, amount) =>
-                                    _setBudgetTier(tier, amount),
-                              ),
-                              const SizedBox(height: 22),
-                              const _ThaiSectionTitle(title: 'การเดินทาง'),
-                              _ChoiceWrap(
-                                items: const [
-                                  ['เครื่องบิน', Icons.flight_outlined],
-                                  ['รถส่วนตัว', Icons.directions_car_outlined],
-                                  ['เช่ารถขับ', Icons.car_rental_outlined],
-                                  ['มอเตอร์ไซค์', Icons.two_wheeler_outlined],
-                                  [
-                                    'รถสาธารณะท้องถิ่น',
-                                    Icons.directions_bus_outlined
-                                  ],
-                                  [
-                                    'แบบประหยัด',
-                                    Icons.directions_walk_outlined
-                                  ],
-                                ],
-                                selected: [_transport],
-                                onTap: (value) =>
-                                    setState(() => _transport = value),
-                                showMore: true,
-                              ),
+                              ...(_step == 0
+                                  ? _preferenceStep()
+                                  : _budgetStep()),
                               const SizedBox(height: 24),
-                              const Align(
+                              Align(
                                 alignment: Alignment.centerRight,
-                                child: _PageIndicator(),
+                                child: _PageIndicator(step: _step),
                               ),
                             ],
                           ),
@@ -189,15 +194,29 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      child: SafeArea(
-                        top: false,
-                        child: _BottomActionBar(
-                          enabled: _canCreate && !_isSaving,
-                          saving: _isSaving,
-                          isEditing: _isEditing,
-                          onCancel: _close,
-                          onTap: _submit,
-                        ),
+                      // No SafeArea here — the bar takes the inset into its own
+                      // padding, so its background reaches the screen edge
+                      // instead of floating above a strip of scrolled content.
+                      child: Builder(
+                        builder: (context) => _step == 0
+                            ? _BottomActionBar(
+                                enabled: _canCreate && !_isSaving,
+                                saving: false,
+                                secondaryLabel: 'ข้ามไปก่อน',
+                                primaryLabel: 'ถัดไป',
+                                onSecondary: _close,
+                                onTap: () => _goToStep(1),
+                              )
+                            : _BottomActionBar(
+                                enabled: _canCreate && !_isSaving,
+                                saving: _isSaving,
+                                secondaryLabel: 'ย้อนกลับ',
+                                primaryLabel:
+                                    _isEditing ? 'บันทึก' : 'สร้างแผน',
+                                showArrow: true,
+                                onSecondary: () => _goToStep(0),
+                                onTap: _submit,
+                              ),
                       ),
                     ),
                   ],
@@ -208,6 +227,103 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         ),
       ),
     );
+  }
+
+  /// Step one: how the traveller likes to travel.
+  List<Widget> _preferenceStep() {
+    return [
+      const _ThaiSectionTitle(title: 'สไตล์การเที่ยว'),
+      _ChoiceWrap(
+        items: const [
+          ['ทะเล', Icons.beach_access_outlined],
+          ['ภูเขา', Icons.terrain_outlined],
+          ['ธรรมชาติ', Icons.eco_outlined],
+          ['คาเฟ่', Icons.coffee_outlined],
+          ['เข้าถึงท้องถิ่น', Icons.storefront_outlined],
+          ['วัฒนธรรม', Icons.museum_outlined],
+          ['อาหาร', Icons.restaurant_outlined],
+          ['ไนท์ไลฟ์', Icons.local_bar_outlined],
+          ['ช้อปปิ้ง', Icons.shopping_bag_outlined],
+          ['ผจญภัย', Icons.hiking_outlined],
+        ],
+        selected: _selectedVibes,
+        onTap: _toggleVibe,
+        showMore: true,
+      ),
+      const SizedBox(height: 22),
+      const _ThaiSectionTitle(
+        title: 'ความเข้มข้นของทริป',
+        subtitle: '*จำนวนจุดท่องเที่ยว / วัน',
+      ),
+      _TierGrid(
+        items: const [
+          ['4', 'Slow Life', '3 - 4 สถานที่/วัน'],
+          ['6', 'Chill', '5 - 6 สถานที่/วัน'],
+          ['8', 'Balance', '8 สถานที่/วัน'],
+          ['10', 'Active', '9 - 11 สถานที่/วัน'],
+          ['12', 'Hardcore', '12+ สถานที่/วัน'],
+        ],
+        selected: _paceTier,
+        onTap: _setPace,
+      ),
+      const SizedBox(height: 22),
+      const _ThaiSectionTitle(title: 'การเดินทาง'),
+      _ChoiceWrap(
+        items: const [
+          ['เครื่องบิน', Icons.flight_outlined],
+          ['รถส่วนตัว', Icons.directions_car_outlined],
+          ['เช่ารถขับ', Icons.car_rental_outlined],
+          ['มอเตอร์ไซค์', Icons.two_wheeler_outlined],
+          ['รถสาธารณะท้องถิ่น', Icons.directions_bus_outlined],
+          ['แบบประหยัด', Icons.directions_walk_outlined],
+        ],
+        selected: [_transport],
+        onTap: (value) => setState(() => _transport = value),
+        showMore: true,
+      ),
+    ];
+  }
+
+  /// Step two: what it may cost, where they are sleeping, and what the plan
+  /// has to work around.
+  List<Widget> _budgetStep() {
+    return [
+      const _ThaiSectionTitle(
+        title: 'งบต่อคน / วัน',
+        subtitle: '* ยังไม่รวมค่าที่พัก',
+      ),
+      _TierGrid(
+        items: const [
+          ['economy', 'Economy', '<1,000฿'],
+          ['comfort', 'Comfort', '฿1,000 - ฿5,000'],
+          ['premium', 'Premium', '฿5,000 - ฿10,000'],
+          ['luxury', 'Luxury', '฿10,000+'],
+        ],
+        selected: _budgetTier,
+        onTap: _setBudgetTier,
+      ),
+      const SizedBox(height: 10),
+      _CustomBudgetCard(controller: _budgetController),
+      const SizedBox(height: 22),
+      const _ThaiSectionTitle(title: 'ที่พัก / โรงแรม'),
+      _LodgingChoice(selected: _lodging, onTap: _setLodging),
+      const SizedBox(height: 22),
+      const _ThaiSectionTitle(title: 'เงื่อนไข / ข้อจำกัด'),
+      _ChoiceWrap(
+        items: const [
+          ['มีผู้สูงอายุ'],
+          ['ผู้ใช้รถเข็น'],
+          ['อิสลาม'],
+          ['มังสวิรัติ'],
+          ['เดินเยอะไม่ได้'],
+          ['มีเด็กเล็ก'],
+        ],
+        selected: _constraints,
+        onTap: _toggleConstraint,
+        showMore: true,
+        moreLabel: '+ เพิ่มเติม',
+      ),
+    ];
   }
 
   void _refresh() {
@@ -235,46 +351,54 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     });
   }
 
-  void _setBudgetTier(String tier, String amount) {
+  void _setPace(String tier) => setState(() => _paceTier = tier);
+
+  /// Picking a bracket clears anything typed under "ระบุเอง", otherwise the
+  /// old figure would silently keep overriding the tier just chosen.
+  void _setBudgetTier(String tier) {
     setState(() {
       _budgetTier = tier;
-      _budgetController.text = amount;
+      _budgetController.clear();
     });
   }
 
-  Future<void> _pickDate({required bool isStart}) async {
-    final now = DateTime.now();
-    final firstDate = DateTime(now.year, now.month, now.day);
-    final initialStart = _startDate != null && !_startDate!.isBefore(firstDate)
-        ? _startDate!
-        : firstDate;
-    final initialEnd = _endDate != null && _endDate!.isAfter(initialStart)
-        ? _endDate!
-        : initialStart.add(const Duration(days: 7));
-    final picked = await showDateRangePicker(
-      context: context,
-      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
-      firstDate: firstDate,
-      lastDate: DateTime(now.year + 3),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-                  primary: AppColors.primary,
-                  secondary: AppColors.secondary,
-                ),
-          ),
-          child: child!,
-        );
-      },
-    );
+  void _setLodging(String value) => setState(() => _lodging = value);
 
-    if (picked == null) return;
+  void _toggleConstraint(String label) {
+    setState(() {
+      if (!_constraints.remove(label)) _constraints.add(label);
+    });
+  }
+
+  /// No destination guard here: `_canCreate` already disables the button that
+  /// calls this, the same way it gates submitting.
+  void _goToStep(int step) {
+    setState(() => _step = step);
+    // The two steps are one scroll view, so without this the traveller lands
+    // partway down the next step.
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  Future<void> _showDatesDialog() async {
+    final picked = await showModalBottomSheet<_TripDates>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (_) => _TripDatesSheet(
+        start: _startDate,
+        end: _endDate,
+        nights: _nights,
+      ),
+    );
+    if (picked == null || !mounted) return;
+
     setState(() {
       _startDate = picked.start;
       _endDate = picked.end;
-      _durationController.text =
-          picked.end.difference(picked.start).inDays.toString();
+      _nights = picked.nights;
+      // A single day is zero nights but still one day of budget.
+      _durationController.text = picked.nights.toString();
     });
   }
 
@@ -348,7 +472,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
               title: title,
               destination: destination,
               coverImage: _coverImageController.text.trim(),
-              budget: _displayBudget,
+              budget: _budgetToSave,
               duration: int.parse(_durationController.text.trim()),
               description: description,
             )
@@ -356,7 +480,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
               title: title,
               destination: destination,
               coverImage: _coverImageController.text.trim(),
-              budget: _displayBudget,
+              budget: _budgetToSave,
               duration: int.parse(_durationController.text.trim()),
               description: description,
               updatedAt: now,
@@ -425,84 +549,85 @@ class _GuestPickerSheetState extends State<_GuestPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(28, 24, 28, 26),
-        decoration: const BoxDecoration(
-          color: Color(0xFFFDFDFD),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(32),
-            topRight: Radius.circular(32),
+    // The inset lives in the padding, not in a SafeArea around the sheet:
+    // wrapping the outside lifts the white panel clear of the bottom edge and
+    // leaves a strip of the dimmed page showing beneath it.
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(28, 24, 28, 26 + bottomInset),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFDFDFD),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(32),
+          topRight: Radius.circular(32),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _GuestCountRow(
+            title: 'ผู้ใหญ่',
+            subtitle: 'อายุ 18 ปีขึ้นไป',
+            value: _adults,
+            canDecrease: _adults > 1,
+            onDecrease: () => setState(() => _adults--),
+            onIncrease: () => setState(() => _adults++),
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _GuestCountRow(
-              title: 'ผู้ใหญ่',
-              subtitle: 'อายุ 18 ปีขึ้นไป',
-              value: _adults,
-              canDecrease: _adults > 1,
-              onDecrease: () => setState(() => _adults--),
-              onIncrease: () => setState(() => _adults++),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Divider(height: 1, color: Color(0xFFE8D8B6)),
-            ),
-            _GuestCountRow(
-              title: 'เด็ก',
-              subtitle: 'อายุ 0-17 ปี',
-              value: _children,
-              canDecrease: _children > 0,
-              onDecrease: () => setState(() => _children--),
-              onIncrease: () => setState(() => _children++),
-            ),
-            const SizedBox(height: 36),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(58),
-                      foregroundColor: const Color(0xFF202020),
-                      side: const BorderSide(
-                        color: Color(0xFFE5D2A5),
-                        width: 1.5,
-                      ),
-                      shape: const StadiumBorder(),
-                      textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, color: Color(0xFFE8D8B6)),
+          ),
+          _GuestCountRow(
+            title: 'เด็ก',
+            subtitle: 'อายุ 0-17 ปี',
+            value: _children,
+            canDecrease: _children > 0,
+            onDecrease: () => setState(() => _children--),
+            onIncrease: () => setState(() => _children++),
+          ),
+          const SizedBox(height: 36),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(58),
+                    foregroundColor: const Color(0xFF202020),
+                    side: const BorderSide(
+                      color: Color(0xFFE5D2A5),
+                      width: 1.5,
                     ),
-                    child: const Text('ยกเลิก'),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop((_adults, _children)),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(58),
-                      backgroundColor: const Color(0xFF2D7757),
-                      foregroundColor: Colors.white,
-                      shape: const StadiumBorder(),
-                      textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    shape: const StadiumBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
                     ),
-                    child: const Text('ยืนยัน'),
                   ),
+                  child: const Text('ยกเลิก'),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () =>
+                      Navigator.of(context).pop((_adults, _children)),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(58),
+                    backgroundColor: const Color(0xFFFF765E),
+                    foregroundColor: Colors.white,
+                    shape: const StadiumBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: const Text('ยืนยัน'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -617,6 +742,492 @@ class _GuestStepperButton extends StatelessWidget {
   }
 }
 
+/// What the date dialog hands back: either an exact range, or a night count
+/// with no dates attached.
+class _TripDates {
+  const _TripDates({this.start, this.end, required this.nights});
+
+  final DateTime? start;
+  final DateTime? end;
+  final int nights;
+}
+
+const _thaiMonths = [
+  'มกราคม',
+  'กุมภาพันธ์',
+  'มีนาคม',
+  'เมษายน',
+  'พฤษภาคม',
+  'มิถุนายน',
+  'กรกฎาคม',
+  'สิงหาคม',
+  'กันยายน',
+  'ตุลาคม',
+  'พฤศจิกายน',
+  'ธันวาคม',
+];
+
+/// Sunday first, matching the grid.
+const _thaiWeekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+const _pickerPrimary = Color(0xFFFF765E);
+
+/// The primary at rest behind a disabled confirm, matching the action bar.
+const _pickerPrimaryMuted = Color(0xFFFFC9BD);
+
+/// The band drawn under the days between the two endpoints.
+const _pickerRangeBand = Color(0xFFFFEDE8);
+const _pickerOutline = Color(0xFFE5D2A5);
+
+/// "ระบุวันที่ / จำนวนคืน" — pick the exact days, or just say how many
+/// nights. Shown as a bottom sheet, like the guest picker.
+class _TripDatesSheet extends StatefulWidget {
+  const _TripDatesSheet({this.start, this.end, this.nights = 0});
+
+  final DateTime? start;
+  final DateTime? end;
+  final int nights;
+
+  @override
+  State<_TripDatesSheet> createState() => _TripDatesSheetState();
+}
+
+class _TripDatesSheetState extends State<_TripDatesSheet> {
+  late bool _byDate;
+  late DateTime _month;
+  late DateTime? _start;
+  late DateTime? _end;
+  late int _nights;
+
+  /// Midnight today: everything before it is unpickable.
+  late final DateTime _today;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _today = DateTime(now.year, now.month, now.day);
+    _start = widget.start;
+    _end = widget.end;
+    _nights = widget.nights > 0 ? widget.nights : 1;
+    // Reopening on a chosen range should show it, not this month.
+    _byDate = widget.start != null || widget.nights == 0;
+    _month = DateTime(
+      (_start ?? _today).year,
+      (_start ?? _today).month,
+    );
+  }
+
+  bool get _canConfirm => _byDate ? _start != null : _nights > 0;
+
+  void _shiftMonth(int by) {
+    final next = DateTime(_month.year, _month.month + by);
+    // Nothing to pick in a month that has already gone.
+    if (next.isBefore(DateTime(_today.year, _today.month))) return;
+    setState(() => _month = next);
+  }
+
+  void _pick(DateTime day) {
+    setState(() {
+      // A third tap starts a new range rather than extending the old one.
+      if (_start == null || _end != null || day.isBefore(_start!)) {
+        _start = day;
+        _end = null;
+      } else {
+        _end = day;
+      }
+    });
+  }
+
+  void _confirm() {
+    if (!_canConfirm) return;
+    if (_byDate) {
+      final start = _start!;
+      final end = _end ?? start;
+      Navigator.of(context).pop(
+        _TripDates(
+          start: start,
+          end: end,
+          nights: end.difference(start).inDays,
+        ),
+      );
+      return;
+    }
+    // Nights only: the traveller has not committed to dates yet.
+    Navigator.of(context).pop(_TripDates(nights: _nights));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      // Never taller than the screen: a long month plus a large text scale
+      // would otherwise push the buttons off the bottom.
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(32),
+          topRight: Radius.circular(32),
+        ),
+      ),
+      // The inset goes in the padding, not a SafeArea around the sheet.
+      padding: EdgeInsets.fromLTRB(
+        16,
+        18,
+        16,
+        18 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ModeToggle(
+            byDate: _byDate,
+            onChanged: (value) => setState(() => _byDate = value),
+          ),
+          const SizedBox(height: 18),
+          Flexible(
+            child: SingleChildScrollView(
+              child: _byDate ? _calendar() : _nightsPicker(),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    foregroundColor: const Color(0xFF202020),
+                    side: const BorderSide(color: _pickerOutline, width: 1.5),
+                    shape: const StadiumBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: const Text('ยกเลิก'),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _canConfirm ? _confirm : null,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    backgroundColor: _pickerPrimary,
+                    disabledBackgroundColor: _pickerPrimaryMuted,
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: Colors.white,
+                    shape: const StadiumBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: const Text('ยืนยัน'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _calendar() {
+    final firstOfMonth = DateTime(_month.year, _month.month);
+    final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
+    // DateTime.sunday is 7; the grid starts on Sunday.
+    final leading = firstOfMonth.weekday % 7;
+    final atFirstMonth =
+        _month.year == _today.year && _month.month == _today.month;
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _MonthArrow(
+              icon: Icons.chevron_left,
+              enabled: !atFirstMonth,
+              onTap: () => _shiftMonth(-1),
+            ),
+            Expanded(
+              child: Text(
+                // Thai dates are written in the Buddhist era.
+                '${_thaiMonths[_month.month - 1]} ${_month.year + 543}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1B1B1B),
+                ),
+              ),
+            ),
+            _MonthArrow(
+              icon: Icons.chevron_right,
+              enabled: true,
+              onTap: () => _shiftMonth(1),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            for (final label in _thaiWeekdays)
+              Expanded(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF8E8B84),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        GridView.count(
+          crossAxisCount: 7,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 1.05,
+          children: [
+            for (var i = 0; i < leading; i++) const SizedBox.shrink(),
+            for (var day = 1; day <= daysInMonth; day++)
+              _DayCell(
+                date: DateTime(_month.year, _month.month, day),
+                start: _start,
+                end: _end,
+                today: _today,
+                onTap: _pick,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _nightsPicker() {
+    return Column(
+      children: [
+        const SizedBox(height: 14),
+        const Text(
+          'เลือกจำนวนคืนที่ต้องการพัก',
+          style: TextStyle(fontSize: 15, color: Color(0xFF9C988F)),
+        ),
+        const SizedBox(height: 22),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _GuestStepperButton(
+              icon: Icons.remove,
+              enabled: _nights > 1,
+              onTap: () => setState(() => _nights--),
+            ),
+            SizedBox(
+              width: 130,
+              child: Text(
+                '$_nights คืน',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: _pickerPrimary,
+                ),
+              ),
+            ),
+            _GuestStepperButton(
+              icon: Icons.add,
+              enabled: true,
+              onTap: () => setState(() => _nights++),
+            ),
+          ],
+        ),
+        const SizedBox(height: 26),
+      ],
+    );
+  }
+}
+
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({required this.byDate, required this.onChanged});
+
+  final bool byDate;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: _pickerOutline, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          _ModeToggleHalf(
+            label: 'ระบุวันที่',
+            active: byDate,
+            onTap: () => onChanged(true),
+          ),
+          _ModeToggleHalf(
+            label: 'จำนวนคืน',
+            active: !byDate,
+            onTap: () => onChanged(false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeToggleHalf extends StatelessWidget {
+  const _ModeToggleHalf({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? _pickerPrimary : Colors.transparent,
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: active ? Colors.white : const Color(0xFF1F1F1F),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthArrow extends StatelessWidget {
+  const _MonthArrow({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: enabled ? onTap : null,
+      icon: Icon(icon),
+      iconSize: 26,
+      color: const Color(0xFF1B1B1B),
+      disabledColor: const Color(0xFFD3D0C9),
+      splashRadius: 22,
+    );
+  }
+}
+
+class _DayCell extends StatelessWidget {
+  const _DayCell({
+    required this.date,
+    required this.start,
+    required this.end,
+    required this.today,
+    required this.onTap,
+  });
+
+  final DateTime date;
+  final DateTime? start;
+  final DateTime? end;
+  final DateTime today;
+  final ValueChanged<DateTime> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final past = date.isBefore(today);
+    final isStart = start != null && _sameDay(date, start!);
+    final isEnd = end != null && _sameDay(date, end!);
+    final inRange = start != null &&
+        end != null &&
+        date.isAfter(start!) &&
+        date.isBefore(end!);
+
+    return Stack(
+      children: [
+        // The connecting band sits behind the endpoints so a range reads as one
+        // run rather than two circles.
+        if (inRange || (isStart && end != null) || isEnd)
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.center,
+              child: Container(
+                height: 38,
+                margin: EdgeInsets.only(
+                  left: isStart && end != null ? 14 : 0,
+                  right: isEnd ? 14 : 0,
+                ),
+                color: _pickerRangeBand,
+              ),
+            ),
+          ),
+        Positioned.fill(
+          child: Center(
+            child: GestureDetector(
+              onTap: past ? null : () => onTap(date),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isStart || isEnd ? _pickerPrimary : Colors.transparent,
+                ),
+                child: Text(
+                  '${date.day}',
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: isStart || isEnd
+                        ? Colors.white
+                        : past
+                            ? const Color(0xFFC7C4BD)
+                            : const Color(0xFF1B1B1B),
+                    fontWeight:
+                        isStart || isEnd ? FontWeight.w800 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
 class _DestinationSearchPage extends ConsumerStatefulWidget {
   const _DestinationSearchPage();
 
@@ -696,15 +1307,22 @@ class _DestinationSearchPageState
                             ),
                           ),
                         ),
-                        TextButton(
-                          onPressed: () => ref
+                        InkWell(
+                          onTap: () => ref
                               .read(recentDestinationsProvider.notifier)
                               .clear(),
-                          child: const Text(
-                            'ล้าง',
-                            style: TextStyle(
-                              color: Color(0xFFA5A5A1),
-                              fontSize: 12,
+                          borderRadius: BorderRadius.circular(6),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
+                            child: Text(
+                              'ล้าง',
+                              style: TextStyle(
+                                color: Color(0xFFA5A5A1),
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         ),
@@ -848,14 +1466,13 @@ class _SearchHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The hero runs behind the status bar, so its height has to include that
+    // inset as well: at a fixed 118 the padding below the notch exceeded the
+    // box and collapsed the search pill to nothing on any device with one.
+    final topInset = MediaQuery.paddingOf(context).top;
     return Container(
-      height: 118,
-      padding: EdgeInsets.fromLTRB(
-        20,
-        MediaQuery.paddingOf(context).top + 42,
-        20,
-        22,
-      ),
+      height: topInset + 118,
+      padding: EdgeInsets.fromLTRB(20, topInset + 42, 20, 22),
       decoration: const BoxDecoration(
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(24),
@@ -892,6 +1509,7 @@ class _SearchHeader extends StatelessWidget {
                     child: TextField(
                       controller: controller,
                       autofocus: true,
+                      textAlign: TextAlign.center,
                       textInputAction: TextInputAction.search,
                       onChanged: onChanged,
                       onSubmitted: (_) => onSubmit(),
@@ -1086,6 +1704,7 @@ class _CreateTripHeader extends StatelessWidget {
     required this.destinationController,
     required this.startDate,
     required this.endDate,
+    required this.nights,
     required this.travelers,
     required this.children,
     required this.onBack,
@@ -1097,6 +1716,7 @@ class _CreateTripHeader extends StatelessWidget {
   final TextEditingController destinationController;
   final DateTime? startDate;
   final DateTime? endDate;
+  final int nights;
   final int travelers;
   final int children;
   final VoidCallback onBack;
@@ -1106,9 +1726,11 @@ class _CreateTripHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateText = startDate == null || endDate == null
-        ? 'Date'
-        : '${_fmtDate(startDate)} - ${_fmtDate(endDate)}';
+    final dateText = startDate != null && endDate != null
+        ? '${_fmtDate(startDate)} - ${_fmtDate(endDate)}'
+        : nights > 0
+            ? '$nights คืน'
+            : 'Date';
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -1195,9 +1817,9 @@ class _CreateTripHeader extends StatelessWidget {
                 const SizedBox(height: 10),
                 _HeaderInput(
                   icon: Icons.group_outlined,
-                  label: travelers + children == 1
-                      ? '1 Guest'
-                      : '${travelers + children} Guests',
+                  label: children == 0
+                      ? 'ผู้ใหญ่, $travelers คน'
+                      : 'ผู้ใหญ่ $travelers, เด็ก $children คน',
                   onTap: onGuestTap,
                 ),
               ],
@@ -1365,11 +1987,15 @@ class _ChoiceWrap extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.showMore,
+    this.moreLabel = '+ เพิ่ม',
   });
+
+  /// `[label]`, or `[label, icon]`. The constraint chips carry no icon.
   final List<List<Object>> items;
   final List<String> selected;
   final ValueChanged<String> onTap;
   final bool showMore;
+  final String moreLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1382,14 +2008,14 @@ class _ChoiceWrap extends StatelessWidget {
           final active = selected.contains(label);
           return _OutlineChip(
             label: label,
-            icon: item[1] as IconData,
+            icon: item.length > 1 ? item[1] as IconData : null,
             active: active,
             onTap: () => onTap(label),
           );
         }),
         if (showMore)
           _OutlineChip(
-            label: '+ เพิ่ม',
+            label: moreLabel,
             active: true,
             onTap: () {},
           ),
@@ -1450,18 +2076,18 @@ class _OutlineChip extends StatelessWidget {
   }
 }
 
-class _PaceGrid extends StatelessWidget {
-  const _PaceGrid({required this.selected, required this.onTap});
-  final String selected;
-  final void Function(String tier, String amount) onTap;
+/// The two-column card grid shared by "ความเข้มข้นของทริป" and "งบต่อคน / วัน".
+class _TierGrid extends StatelessWidget {
+  const _TierGrid({
+    required this.items,
+    required this.selected,
+    required this.onTap,
+  });
 
-  static const items = [
-    ['Slow Life', '3 - 4 สถานที่/วัน', '4', '4000'],
-    ['Chill', '5 - 6 สถานที่/วัน', '6', '6000'],
-    ['Balance', '8 สถานที่/วัน', '8', '8000'],
-    ['Active', '9 - 11 สถานที่/วัน', '10', '10000'],
-    ['Hardcore', '12+ สถานที่/วัน', '12', '12000'],
-  ];
+  /// `[key, title, subtitle]`.
+  final List<List<String>> items;
+  final String selected;
+  final ValueChanged<String> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1471,9 +2097,9 @@ class _PaceGrid extends StatelessWidget {
         spacing: 10,
         runSpacing: 10,
         children: items.map((item) {
-          final active = selected == item[2];
+          final active = selected == item[0];
           return InkWell(
-            onTap: () => onTap(item[2], item[3]),
+            onTap: () => onTap(item[0]),
             borderRadius: BorderRadius.circular(15),
             child: Container(
               width: width,
@@ -1494,11 +2120,11 @@ class _PaceGrid extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item[0],
+                  Text(item[1],
                       style: const TextStyle(
                           fontSize: 13, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
-                  Text(item[1],
+                  Text(item[2],
                       style: const TextStyle(
                           fontSize: 10, color: Color(0xFF85827D))),
                 ],
@@ -1511,22 +2137,183 @@ class _PaceGrid extends StatelessWidget {
   }
 }
 
-class _PageIndicator extends StatelessWidget {
-  const _PageIndicator();
+/// "ระบุเอง" — an exact figure, which overrides whichever bracket is selected.
+class _CustomBudgetCard extends StatelessWidget {
+  const _CustomBudgetCard({required this.controller});
+
+  final TextEditingController controller;
+
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(15, 11, 15, 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFE8E1D5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('ระบุเอง',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F2EC),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontSize: 12),
+                decoration: const InputDecoration(
+                  hintText: '฿',
+                  hintStyle: TextStyle(color: Color(0xFF9A968E), fontSize: 12),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "ที่พัก / โรงแรม": booked already, or still looking.
+class _LodgingChoice extends StatelessWidget {
+  const _LodgingChoice({required this.selected, required this.onTap});
+
+  final String selected;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F1E9),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          _LodgingOption(
+            icon: Icons.confirmation_number_outlined,
+            title: 'จองแล้ว',
+            subtitle: 'แนบไฟล์การจองหรือลิงก์',
+            active: selected == 'booked',
+            onTap: () => onTap('booked'),
+          ),
+          const SizedBox(height: 10),
+          _LodgingOption(
+            icon: Icons.search,
+            title: 'ยังไม่จอง',
+            subtitle: 'บอกสไตล์กับเกรดคร่าวๆ',
+            active: selected == 'searching',
+            onTap: () => onTap('searching'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LodgingOption extends StatelessWidget {
+  const _LodgingOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(13),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFFFF4EF) : Colors.white,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: active ? const Color(0xFFFF7658) : const Color(0xFFEDE7DB),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF6F3EC),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                size: 18,
+                color:
+                    active ? const Color(0xFFFF7658) : const Color(0xFFB3AB99),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          fontSize: 10, color: Color(0xFF8D8A83))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PageIndicator extends StatelessWidget {
+  const _PageIndicator({required this.step});
+
+  /// 0-based. A step reached is a dash; one still ahead is a dot.
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: 25,
-          child: Divider(thickness: 6, color: Color(0xFFFFAA96)),
-        ),
-        SizedBox(width: 6),
-        CircleAvatar(radius: 3, backgroundColor: Color(0xFFE8E3DB)),
-        SizedBox(width: 7),
-        Text('1 จาก 2',
-            style: TextStyle(fontSize: 9, color: Color(0xFF8D8983))),
+        for (var i = 0; i < 2; i++) ...[
+          if (i <= step)
+            const SizedBox(
+              width: 25,
+              child: Divider(thickness: 6, color: Color(0xFFFFAA96)),
+            )
+          else
+            const CircleAvatar(radius: 3, backgroundColor: Color(0xFFE8E3DB)),
+          SizedBox(width: i <= step ? 6 : 7),
+        ],
+        Text('${step + 1} จาก 2',
+            style: const TextStyle(fontSize: 9, color: Color(0xFF8D8983))),
       ],
     );
   }
@@ -1536,21 +2323,30 @@ class _BottomActionBar extends StatelessWidget {
   const _BottomActionBar({
     required this.enabled,
     required this.saving,
-    required this.isEditing,
-    required this.onCancel,
+    required this.secondaryLabel,
+    required this.primaryLabel,
+    required this.onSecondary,
     required this.onTap,
+    this.showArrow = false,
   });
 
   final bool enabled;
   final bool saving;
-  final bool isEditing;
-  final VoidCallback onCancel;
+  final String secondaryLabel;
+  final String primaryLabel;
+  final VoidCallback onSecondary;
   final VoidCallback onTap;
+  final bool showArrow;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        10,
+        16,
+        10 + MediaQuery.paddingOf(context).bottom,
+      ),
       decoration: const BoxDecoration(
         color: Color(0xFFFDFCF9),
         border: Border(top: BorderSide(color: Color(0xFFE8DDBF))),
@@ -1559,14 +2355,14 @@ class _BottomActionBar extends StatelessWidget {
         children: [
           Expanded(
             child: InkWell(
-              onTap: saving ? null : onCancel,
+              onTap: saving ? null : onSecondary,
               borderRadius: BorderRadius.circular(99),
-              child: const SizedBox(
+              child: SizedBox(
                 height: 46,
                 child: Center(
                   child: Text(
-                    'ข้ามไปก่อน',
-                    style: TextStyle(
+                    secondaryLabel,
+                    style: const TextStyle(
                       color: Color(0xFF96948D),
                       fontSize: 12,
                       decoration: TextDecoration.underline,
@@ -1603,13 +2399,29 @@ class _BottomActionBar extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              isEditing ? 'บันทึก' : 'ถัดไป',
+                              primaryLabel,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
+                            if (showArrow) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white70),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_forward,
+                                  size: 12,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                 ),
@@ -1622,21 +2434,10 @@ class _BottomActionBar extends StatelessWidget {
   }
 }
 
+/// dd/MM/yyyy, as the header reads it back.
 String _fmtDate(DateTime? date) {
   if (date == null) return '--';
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${months[date.month - 1]} ${date.day}';
+  final d = date.day.toString().padLeft(2, '0');
+  final m = date.month.toString().padLeft(2, '0');
+  return '$d/$m/${date.year}';
 }
