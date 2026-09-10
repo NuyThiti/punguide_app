@@ -56,7 +56,8 @@ void main() {
     expect(find.text('Top Destination'), findsNWidgets(2));
     expect(find.text('Top PunGuide'), findsNWidgets(2));
     expect(find.text('Home'), findsOneWidget);
-    expect(find.text('My Trip'), findsOneWidget);
+    expect(find.text('Paigun'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
     expect(find.text('Puntok'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
     expect(find.text(_trips.first.title), findsOneWidget);

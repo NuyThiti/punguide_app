@@ -44,6 +44,20 @@ final savedTripsProvider = FutureProvider<List<Trip>>((ref) async {
   return repository.getSavedTrips();
 });
 
+/// The full trip off `GET /trips/:id`, for any page that renders more than a
+/// feed card.
+///
+/// The local [Trip] flattens away the schedule, the brief, the budget tier and
+/// the itinerary, all of which the view and edit plan pages render — so both
+/// read this instead of the cached flattening. They deliberately share one
+/// entry per id: two providers on the same endpoint would fetch twice and
+/// could leave the two pages disagreeing about the same trip.
+final apiTripProvider =
+    FutureProvider.family<api.ApiTrip, String>((ref, tripId) async {
+  final client = await ref.watch(plunoApiProvider.future);
+  return client.trips.byId(tripId);
+});
+
 /// A trip for the detail screen, local cache first.
 ///
 /// Feed rows come from the server and were never written to Isar, so a miss
@@ -55,8 +69,7 @@ final selectedTripProvider =
   if (local != null) return local;
 
   try {
-    final client = await ref.watch(plunoApiProvider.future);
-    return _tripFromApi(await client.trips.byId(tripId));
+    return _tripFromApi(await ref.watch(apiTripProvider(tripId).future));
   } on api.ApiException catch (failure) {
     if (failure.isNotFound || failure.isForbidden) return null;
     rethrow;

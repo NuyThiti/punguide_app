@@ -14,6 +14,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../trips/presentation/itinerary_display.dart';
+import '../../trips/presentation/providers/trip_providers.dart';
 import '../domain/plan_labels.dart';
 import 'providers/edit_plan_providers.dart';
 
@@ -49,7 +51,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final trip = ref.watch(editPlanProvider(widget.tripId));
+    final trip = ref.watch(apiTripProvider(widget.tripId));
 
     return Scaffold(
       backgroundColor: AppColors.softScreen,
@@ -68,7 +70,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorBody(
           error: error,
-          onRetry: () => ref.invalidate(editPlanProvider(widget.tripId)),
+          onRetry: () => ref.invalidate(apiTripProvider(widget.tripId)),
         ),
       ),
     );
@@ -1215,7 +1217,7 @@ class _StopCard extends StatelessWidget {
               children: [
                 if (stop.time != null)
                   Text(
-                    _clockLabel(stop.time!),
+                    clockLabel(stop.time!),
                     style: const TextStyle(
                       color: AppColors.muted,
                       fontSize: 11,
@@ -1307,7 +1309,7 @@ class _StopThumbnail extends StatelessWidget {
                   ? ColoredBox(
                       color: _panel,
                       child: Icon(
-                        _categoryIcon(stop.category),
+                        categoryIcon(stop.category),
                         size: 22,
                         color: AppColors.muted,
                       ),
@@ -1431,12 +1433,12 @@ class _LegRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(_legIcon(stop, segment),
+            Icon(legIcon(stop, segment),
                 size: 15, color: AppColors.foreground),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                _legLabel(stop, segment),
+                legLabel(stop, segment),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1546,100 +1548,6 @@ class _RailPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RailPainter oldDelegate) => false;
-}
-
-IconData _categoryIcon(ActivityCategory category) => switch (category) {
-      ActivityCategory.food => Icons.restaurant,
-      ActivityCategory.hotel => Icons.hotel_outlined,
-      ActivityCategory.transport => Icons.directions_bus_filled_outlined,
-      ActivityCategory.sightseeing => Icons.photo_camera_outlined,
-      ActivityCategory.activity => Icons.hiking,
-      ActivityCategory.other => Icons.place_outlined,
-    };
-
-IconData _travelTypeIcon(TravelType type) => switch (type) {
-      TravelType.walk => Icons.directions_walk,
-      TravelType.bicycle => Icons.directions_bike,
-      TravelType.tukTuk => Icons.electric_rickshaw,
-      TravelType.privateTransfer => Icons.local_taxi,
-      TravelType.rentalCar => Icons.directions_car,
-      TravelType.boat => Icons.directions_boat,
-      TravelType.train => Icons.train,
-      TravelType.airplane => Icons.flight,
-      TravelType.other => Icons.more_horiz,
-    };
-
-IconData _travelModeIcon(TravelMode mode) => switch (mode) {
-      TravelMode.drive => Icons.directions_car,
-      TravelMode.walk => Icons.directions_walk,
-      TravelMode.bicycle => Icons.directions_bike,
-      TravelMode.transit => Icons.directions_bus_filled_outlined,
-    };
-
-IconData _legIcon(Activity stop, TravelSegment? segment) {
-  final planned = stop.travelFromPrevious?.type;
-  if (planned != null) return _travelTypeIcon(planned);
-  if (segment != null) return _travelModeIcon(segment.travelMode);
-  return Icons.trending_flat;
-}
-
-/// The pieces of a leg description, most specific source first: what the
-/// traveller wrote, then what the server measured.
-List<String> _legParts(
-  Activity stop,
-  TravelSegment? segment, {
-  required bool withDistance,
-  required bool withCost,
-}) {
-  final leg = stop.travelFromPrevious;
-  return <String>[
-    if (leg?.customType != null && leg!.customType!.isNotEmpty)
-      leg.customType!
-    else if (leg?.type != null)
-      travelTypeLabels[leg!.type!]!
-    else if (segment != null)
-      travelModeLabels[segment.travelMode]!,
-    if (leg?.durationMin != null)
-      '${leg!.durationMin} นาที'
-    else if (segment?.durationMinutes != null)
-      '${segment!.durationMinutes} นาที',
-    if (withDistance)
-      if (leg?.distanceKm != null)
-        '${_trimZero(leg!.distanceKm!)} กม.'
-      else if (segment?.distanceKilometers != null)
-        '${_trimZero(segment!.distanceKilometers!)} กม.',
-    if (withCost && leg?.costAmount != null && leg!.costAmount! > 0)
-      leg.costAmount!.asBaht,
-  ];
-}
-
-/// "รถเช่า • 15 นาที • ฿3,500", for the rail on จัดแผน.
-String _legLabel(Activity stop, TravelSegment? segment) {
-  final parts = _legParts(stop, segment, withDistance: true, withCost: true);
-  if (parts.isNotEmpty) return parts.join(' • ');
-  // [Activity.travelNote] is the legacy pre-composed string; it is the last
-  // thing to fall back on, not the first.
-  return stop.travelNote ?? 'ยังไม่ได้ระบุการเดินทาง';
-}
-
-/// "รถเช่า • 15 นาที", for the chip on ทริปของฉัน, where cost has its own chip.
-String _legShortLabel(Activity stop, TravelSegment? segment) {
-  final parts = _legParts(stop, segment, withDistance: false, withCost: false);
-  return parts.isEmpty ? 'ยังไม่ระบุ' : parts.join(' • ');
-}
-
-String _trimZero(double value) => value == value.roundToDouble()
-    ? value.round().toString()
-    : value.toStringAsFixed(1);
-
-/// "08:30" as the design's "08:30 AM". The API sends 24-hour `HH:mm`.
-String _clockLabel(String time) {
-  final parts = time.split(':');
-  final hour = int.tryParse(parts.first);
-  if (hour == null || parts.length < 2) return time;
-  final suffix = hour < 12 ? 'AM' : 'PM';
-  final display = hour % 12 == 0 ? 12 : hour % 12;
-  return '${_two(display)}:${parts[1]} $suffix';
 }
 
 class _WhiteRow extends StatelessWidget {
@@ -1807,7 +1715,7 @@ class _PlanView {
       coverImage: trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
       dateLine: start == null || end == null
           ? 'ยังไม่ระบุวันที่'
-          : '${_slashDate(start)} - ${_slashDate(end)}',
+          : '${slashDate(start)} - ${slashDate(end)}',
       durationLine: dayCount > 0 ? '$dayCount วัน $nightCount คืน' : '',
       chips: _chipsOf(trip.brief),
       sightCount: sights,
@@ -1850,7 +1758,7 @@ class _PlanView {
         for (final day in ordered)
           _PlanDay(
             number: day.dayNumber,
-            dateLabel: _weekdayDate(
+            dateLabel: weekdayDate(
               day.date ?? start?.add(Duration(days: day.dayNumber - 1)),
             ),
             stops: [...day.activities]
@@ -1863,40 +1771,12 @@ class _PlanView {
       for (var i = 0; i < dayCount; i++)
         _PlanDay(
           number: i + 1,
-          dateLabel: _weekdayDate(start?.add(Duration(days: i))),
+          dateLabel: weekdayDate(start?.add(Duration(days: i))),
         ),
     ];
   }
 }
 
-const _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const _monthNames = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-String _slashDate(DateTime date) =>
-    '${_two(date.day)}/${_two(date.month)}/${date.year}';
-
-/// "Sat, 20 Aug". Empty when the trip has no dates to hang the day off.
-String _weekdayDate(DateTime? date) {
-  if (date == null) return '';
-  return '${_weekdayNames[date.weekday - 1]}, '
-      '${date.day} ${_monthNames[date.month - 1]}';
-}
-
-String _two(int value) => value.toString().padLeft(2, '0');
 
 /// The day's stops on a Google map, with the design's own chrome over it.
 ///
@@ -2023,7 +1903,7 @@ class _TripMapCardState extends State<_TripMapCard> {
             infoWindow: InfoWindow(
               title: '${i + 1}. ${stops[i].title}',
               snippet:
-                  stops[i].time == null ? null : _clockLabel(stops[i].time!),
+                  stops[i].time == null ? null : clockLabel(stops[i].time!),
             ),
           ),
       };
@@ -2313,7 +2193,7 @@ class _MyTripStopCard extends StatelessWidget {
                     if (stop.time != null) ...[
                       const SizedBox(height: 3),
                       Text(
-                        _clockLabel(stop.time!),
+                        clockLabel(stop.time!),
                         style: const TextStyle(
                           color: AppColors.brandOrange,
                           fontSize: 13,
@@ -2327,8 +2207,8 @@ class _MyTripStopCard extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         _InfoChip(
-                          icon: _legIcon(stop, segment),
-                          label: _legShortLabel(stop, segment),
+                          icon: legIcon(stop, segment),
+                          label: legShortLabel(stop, segment),
                         ),
                         _InfoChip(
                           icon: Icons.monetization_on_outlined,

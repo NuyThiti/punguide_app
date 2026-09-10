@@ -45,34 +45,36 @@ class AppBottomNav extends StatelessWidget {
             height: barHeight,
             child: Padding(
               padding: EdgeInsets.only(bottom: bottomInset > 0 ? 0 : 6),
-              child: Row(
-                children: [
-                  _NavItem(
-                    asset: 'assets/icons/nav_home.svg',
-                    label: 'Home',
-                    selected: active == AppRoute.home,
-                    onTap: () => onTap(AppRoute.home),
-                  ),
-                  _NavItem(
-                    asset: 'assets/icons/nav_my_trip.svg',
-                    label: 'My Trip',
-                    selected: active == AppRoute.savedTrips,
-                    onTap: () => onTap(AppRoute.savedTrips),
-                  ),
+            child: Row(
+              children: [
+                _NavItem(
+                  asset: active == AppRoute.home
+                      ? 'assets/icons/nav_home_filled.svg'
+                      : 'assets/icons/nav_home.svg',
+                  label: 'Home',
+                  selected: active == AppRoute.home,
+                  onTap: () => onTap(AppRoute.home),
+                ),
+                _NavItem(
+                  asset: 'assets/icons/nav_paigun.svg',
+                  label: 'Paigun',
+                  selected: active == AppRoute.search,
+                  onTap: () => onTap(AppRoute.search),
+                ),
                   const SizedBox(width: fabSize + 24),
-                  _NavItem(
-                    asset: 'assets/icons/nav_puntok.svg',
-                    label: 'Puntok',
-                    selected: active == AppRoute.discover,
-                    onTap: () => onTap(AppRoute.discover),
-                  ),
-                  _NavItem(
-                    asset: 'assets/icons/nav_profile.svg',
-                    label: 'Profile',
-                    selected: active == AppRoute.profile,
-                    onTap: () => onTap(AppRoute.profile),
-                  ),
-                ],
+                _NavItem(
+                  asset: 'assets/icons/nav_puntok.svg',
+                  label: 'Puntok',
+                  selected: active == AppRoute.discover,
+                  onTap: () => onTap(AppRoute.discover),
+                ),
+                _NavItem(
+                  asset: 'assets/icons/nav_profile.svg',
+                  label: 'Profile',
+                  selected: active == AppRoute.profile,
+                  onTap: () => onTap(AppRoute.profile),
+                ),
+              ],
               ),
             ),
           ),
@@ -149,14 +151,14 @@ class _NavItem extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
                 color: color,
                 fontSize: 11,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      ),
             ),
           ],
         ),

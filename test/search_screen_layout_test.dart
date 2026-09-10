@@ -146,6 +146,37 @@ void main() {
     );
   });
 
+  testWidgets('the sort row stays put while the results scroll',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 640 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    // Enough rows that the wall is taller than the frame.
+    final many = <TripListItem>[
+      for (var i = 0; i < 10; i++)
+        feedTrip(id: 'trip-$i', title: 'ทริปทดสอบ $i วัน'),
+    ];
+
+    await tester.pumpWidget(_harness(many));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'วัน');
+    await tester.pumpAndSettle();
+
+    final sortChip = find.text('แนะนำ');
+    expect(sortChip, findsOneWidget);
+    final before = tester.getTopLeft(sortChip);
+
+    // Scroll the result wall, not the chip strip.
+    await tester.drag(find.text('พบ 10 ทริป'), const Offset(0, -400));
+    await tester.pumpAndSettle();
+
+    // The count scrolled away; the sort row did not move.
+    expect(find.text('พบ 10 ทริป'), findsNothing);
+    expect(sortChip, findsOneWidget);
+    expect(tester.getTopLeft(sortChip), before);
+  });
+
   testWidgets('the sort chips reorder the same results', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);
     tester.view.devicePixelRatio = 3;

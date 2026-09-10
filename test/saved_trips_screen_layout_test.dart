@@ -50,7 +50,8 @@ void main() {
 
     expect(find.byType(AppBottomNav), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
-    expect(find.text('My Trip'), findsOneWidget);
+    expect(find.text('Paigun'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
     expect(find.text('Puntok'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
     // The old private nav is gone, so none of its labels should remain.

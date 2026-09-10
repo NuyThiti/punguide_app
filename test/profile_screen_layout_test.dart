@@ -61,7 +61,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AppBottomNav), findsOneWidget);
-    expect(find.text('My Trip'), findsOneWidget);
+    expect(find.text('Paigun'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
     expect(find.text('Puntok'), findsOneWidget);
     // 'Home' and 'Profile' also appear in the nav; the old labels do not.
     expect(find.text('Discover'), findsNothing);

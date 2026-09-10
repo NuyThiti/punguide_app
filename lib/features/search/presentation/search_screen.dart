@@ -96,6 +96,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 onClear: _clear,
                 onBack: _close,
               ),
+              // Pinned under the field: scrolling the wall of results must
+              // not take the sort control off screen with it.
+              if (query.isNotEmpty && (results.valueOrNull?.isNotEmpty ?? false))
+                _SortRow(
+                  selected: ref.watch(searchSortProvider),
+                  onSelected: (option) =>
+                      ref.read(searchSortProvider.notifier).state = option,
+                ),
               Expanded(
                 child: results.when(
                   data: (trips) => query.isEmpty
@@ -206,36 +214,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// The typing face: sort chips, a count, and the result wall.
+  /// The typing face: a count and the result wall. The sort chips are pinned
+  /// above this by [build], so they are deliberately absent here.
   Widget _buildResults(String query, List<TripListItem> trips) {
-    final sort = ref.watch(searchSortProvider);
-
     return ListView(
       padding: EdgeInsets.only(bottom: AppBottomNav.heightOf(context) + 16),
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
       ),
       children: [
-        const SizedBox(height: 4),
-        SizedBox(
-          height: 44,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: SearchSort.values.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final option = SearchSort.values[index];
-              return _SortChip(
-                label: option.label,
-                selected: option == sort,
-                onTap: () =>
-                    ref.read(searchSortProvider.notifier).state = option,
-              );
-            },
-          ),
-        ),
         if (trips.isEmpty)
           _SearchEmptyState(
             title: 'ไม่พบทริปสำหรับ "$query"',
@@ -534,6 +521,45 @@ class _RecentChip extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The sort chips, pinned under the search field.
+///
+/// Carries its own background and hairline so results scrolling underneath
+/// stay behind it rather than showing through.
+class _SortRow extends StatelessWidget {
+  const _SortRow({required this.selected, required this.onSelected});
+
+  final SearchSort selected;
+  final ValueChanged<SearchSort> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: AppColors.screen,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      child: SizedBox(
+        height: 48,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: SearchSort.values.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            final option = SearchSort.values[index];
+            return _SortChip(
+              label: option.label,
+              selected: option == selected,
+              onTap: () => onSelected(option),
+            );
+          },
         ),
       ),
     );
