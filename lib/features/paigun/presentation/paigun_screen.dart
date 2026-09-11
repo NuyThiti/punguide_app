@@ -42,54 +42,71 @@ class PaigunScreen extends ConsumerWidget {
       background: AppColors.screen,
       child: Stack(
         children: [
-          RefreshIndicator(
-            onRefresh: () => ref.read(homeFeedProvider.notifier).refresh(),
-            child: ListView(
-              padding:
-                  EdgeInsets.only(bottom: AppBottomNav.heightOf(context) + 16),
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
+          Column(
+            children: [
+              PaigunHeader(
+                origin: origin,
+                onBack: () => _close(context),
+                onTune: () => context.goNamed(AppRoute.search.name),
+                onEditLocation: () =>
+                    context.goNamed(AppRoute.locationPicker.name),
               ),
-              children: [
-                PaigunHeader(
-                  origin: origin,
-                  onBack: () => _close(context),
-                  onTune: () => context.goNamed(AppRoute.search.name),
-                ),
-                const SizedBox(height: 18),
-                PaigunFilterBar(
+              // Pinned under the header: these chips re-sort the wall below,
+              // so they have to stay reachable once the traveller is deep in
+              // it. The header owns the status-bar inset, so the row never
+              // lands under the clock.
+              _StickyFilterBar(
+                child: PaigunFilterBar(
                   selected: filter,
                   onSelected: (next) =>
                       ref.read(paigunFilterProvider.notifier).state = next,
                 ),
-                if (showNearMe) ...[
-                  const SizedBox(height: 18),
-                  const PaigunSectionHeader(title: 'Near Me'),
-                  const SizedBox(height: 12),
-                  _Section(
-                    rows: nearMe,
-                    limit: capped ? _previewCount : null,
-                    emptyMessage: 'ยังไม่มีทริปใกล้ตำแหน่งของคุณ',
-                    onOpen: (row) => _openTrip(context, row),
-                    onSave: (row) => _toggleSaved(context, ref, row),
-                    onRetry: () => ref.read(homeFeedProvider.notifier).refresh(),
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () =>
+                      ref.read(homeFeedProvider.notifier).refresh(),
+                  child: ListView(
+                    padding: EdgeInsets.only(
+                      bottom: AppBottomNav.heightOf(context) + 16,
+                    ),
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    children: [
+                      if (showNearMe) ...[
+                        const SizedBox(height: 18),
+                        const PaigunSectionHeader(title: 'Near Me'),
+                        const SizedBox(height: 12),
+                        _Section(
+                          rows: nearMe,
+                          limit: capped ? _previewCount : null,
+                          emptyMessage: 'ยังไม่มีทริปใกล้ตำแหน่งของคุณ',
+                          onOpen: (row) => _openTrip(context, row),
+                          onSave: (row) => _toggleSaved(context, ref, row),
+                          onRetry: () =>
+                              ref.read(homeFeedProvider.notifier).refresh(),
+                        ),
+                      ],
+                      if (showTop) ...[
+                        const SizedBox(height: 10),
+                        const PaigunSectionHeader(title: 'Top PunGuide'),
+                        const SizedBox(height: 12),
+                        _Section(
+                          rows: topPunGuide,
+                          limit: capped ? _previewCount : null,
+                          emptyMessage: 'ยังไม่มีทริปปันไกด์',
+                          onOpen: (row) => _openTrip(context, row),
+                          onSave: (row) => _toggleSaved(context, ref, row),
+                          onRetry: () =>
+                              ref.read(homeFeedProvider.notifier).refresh(),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-                if (showTop) ...[
-                  const SizedBox(height: 10),
-                  const PaigunSectionHeader(title: 'Top PunGuide'),
-                  const SizedBox(height: 12),
-                  _Section(
-                    rows: topPunGuide,
-                    limit: capped ? _previewCount : null,
-                    emptyMessage: 'ยังไม่มีทริปปันไกด์',
-                    onOpen: (row) => _openTrip(context, row),
-                    onSave: (row) => _toggleSaved(context, ref, row),
-                    onRetry: () => ref.read(homeFeedProvider.notifier).refresh(),
-                  ),
-                ],
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
           Positioned(
             left: 0,
@@ -267,6 +284,28 @@ class _ErrorState extends StatelessWidget {
           const SizedBox(height: 14),
           OutlinedButton(onPressed: onRetry, child: const Text('ลองใหม่')),
         ],
+      ),
+    );
+  }
+}
+
+/// Opaque strip so the wall of cards scrolls *under* the chips rather than
+/// showing through them.
+class _StickyFilterBar extends StatelessWidget {
+  const _StickyFilterBar({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: AppColors.screen,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: child,
       ),
     );
   }

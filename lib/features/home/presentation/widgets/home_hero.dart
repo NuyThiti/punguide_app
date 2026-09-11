@@ -63,7 +63,7 @@ class HomeHero extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // _TitleBar(avatarImage: avatarImage, onProfile: onProfile),
-                const SizedBox(height: 24),
+                const SizedBox(height: 40),
                 const Text(
                   'วันนี้อยากไปหรือปัน ?',
                   textAlign: TextAlign.center,
@@ -184,7 +184,7 @@ class HomeActionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 15, 15, 20),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
@@ -203,7 +203,7 @@ class HomeActionCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: color,
-                      fontSize: 20,
+                      fontSize: 18,
                       height: 1.2,
                       fontWeight: FontWeight.w900,
                     ),
@@ -211,7 +211,7 @@ class HomeActionCard extends StatelessWidget {
                 ),
                 Container(
                   width: 30,
-                  height: 30,
+                  height: 25,
                   decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                   child: const Icon(
                     Icons.arrow_outward,

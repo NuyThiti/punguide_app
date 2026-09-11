@@ -7,6 +7,8 @@ import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/location_access/presentation/location_access_screen.dart';
+import '../../features/location_access/presentation/location_picker_screen.dart';
 import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
@@ -30,6 +32,8 @@ enum AppRoute {
   remixTrip,
   puntok,
   profile,
+  locationAccess,
+  locationPicker,
 }
 
 /// Every route swaps instantly — no slide or fade. The bottom tabs are peers,
@@ -122,6 +126,18 @@ final appRouter = GoRouter(
       name: AppRoute.puntok.name,
       pageBuilder: (context, state) =>
           _instantPage(state, const PuntokScreen()),
+    ),
+    GoRoute(
+      path: '/location',
+      name: AppRoute.locationAccess.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const LocationAccessScreen()),
+    ),
+    GoRoute(
+      path: '/location/pick',
+      name: AppRoute.locationPicker.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const LocationPickerScreen()),
     ),
     GoRoute(
       path: '/login',

@@ -141,6 +141,36 @@ void main() {
     expect(find.text(longTitle), findsWidgets);
   });
 
+  testWidgets('the filter chips pin below the status bar once scrolled past',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 640 * 3);
+    tester.view.devicePixelRatio = 3;
+    tester.view.padding = const FakeViewPadding(top: 59 * 3, bottom: 34 * 3);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _harness([for (var i = 0; i < 10; i++) feedTrip(id: 'trip-$i')]),
+    );
+    await tester.pumpAndSettle();
+
+    // At rest there is one bar, sitting below the hero.
+    expect(find.text('Top Destination'), findsNWidgets(2));
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.pumpAndSettle();
+
+    // The pinned copy has appeared and cleared the 59pt status bar.
+    final chips = find.text('All');
+    expect(chips, findsOneWidget);
+    final pinned = tester.getTopLeft(chips);
+    expect(pinned.dy, greaterThanOrEqualTo(59));
+
+    // Scrolling further leaves it exactly where it is.
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(chips), pinned);
+  });
+
   testWidgets('home renders an empty state when the feed is empty',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);

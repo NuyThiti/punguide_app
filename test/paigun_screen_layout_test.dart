@@ -86,6 +86,34 @@ void main() {
     expect(find.byType(PaigunSectionHeader), findsOneWidget);
   });
 
+  testWidgets('the sort chips stay put while the wall scrolls', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 640 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _harness([for (var i = 0; i < 10; i++) feedTrip(id: 'trip-$i')]),
+    );
+    await tester.pumpAndSettle();
+
+    // "ทั้งหมด" belongs to the chip row alone; "Near Me" is also a heading.
+    final chip = find.text('ทั้งหมด');
+    final heading = find.text('Near Me').last;
+    expect(chip, findsOneWidget);
+    final chipBefore = tester.getTopLeft(chip);
+    final headingBefore = tester.getTopLeft(heading);
+
+    // Drag the wall itself: the chip row is a horizontal ListView too, and
+    // dragging that one vertically would scroll nothing.
+    await tester.drag(heading, const Offset(0, -450));
+    await tester.pumpAndSettle();
+
+    // The wall moved; the chips did not.
+    expect(tester.getTopLeft(heading).dy, lessThan(headingBefore.dy));
+    expect(chip, findsOneWidget);
+    expect(tester.getTopLeft(chip), chipBefore);
+  });
+
   testWidgets('a card carries the distance from the traveller, when known',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);

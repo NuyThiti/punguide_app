@@ -32,6 +32,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   static const _heroImage = 'assets/images/home_hero.jpg';
 
+  /// Gap between the hero and the filter bar inside the list.
+  static const _filterGap = 18.0;
+
+  final _scroll = ScrollController();
+  final _heroKey = GlobalKey();
+
+  /// Scroll offset past which the in-list filter bar would slide under the
+  /// status bar. Null until the hero has been measured.
+  double? _pinAfter;
+  bool _pinned = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The hero grows with the status-bar inset and the text scale, so the
+    // threshold is re-measured rather than hardcoded.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureHero());
+  }
+
+  @override
+  void dispose() {
+    _scroll
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _measureHero() {
+    if (!mounted) return;
+    final box = _heroKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+
+    final topInset = MediaQuery.paddingOf(context).top;
+    final next = box.size.height + _filterGap - topInset;
+    if (next == _pinAfter) return;
+
+    _pinAfter = next;
+    _onScroll();
+  }
+
+  void _onScroll() {
+    final pinAfter = _pinAfter;
+    if (pinAfter == null || !_scroll.hasClients) return;
+
+    final pinned = _scroll.offset >= pinAfter;
+    if (pinned != _pinned) setState(() => _pinned = pinned);
+  }
+
   @override
   Widget build(BuildContext context) {
     final feed = ref.watch(homeFeedProvider);
@@ -48,6 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onRefresh: () =>
                 ref.read(homeFeedProvider.notifier).refresh(),
             child: ListView(
+              controller: _scroll,
               padding:
                   EdgeInsets.only(bottom: AppBottomNav.heightOf(context) + 16),
               physics: const AlwaysScrollableScrollPhysics(
@@ -55,19 +110,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               children: [
                 HomeHero(
+                  key: _heroKey,
                   coverImage: _heroImage,
                   avatarImage: session?.avatarImage,
                   onProfile: () => context.goNamed(AppRoute.profile.name),
                   onFindTrip: _openCreate,
                   onShareTrip: () => context.goNamed(AppRoute.createTrip.name),
                 ),
-                const SizedBox(height: 18),
-                HomeFilterBar(
-                  categories: _categories,
-                  activeIndex: _categoryIndex,
-                  onSelected: (index) => setState(() => _categoryIndex = index),
-                  onSearch: _openSearch,
-                ),
+                const SizedBox(height: _filterGap),
+                _filterBar(),
                 if (showDestinations && destinations.isNotEmpty) ...[
                   const SizedBox(height: 22),
                   HomeSectionHeader(
@@ -113,6 +164,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ),
           ),
+          // Once the in-list bar has scrolled under the status bar, this copy
+          // takes over. An overlay rather than a pinned sliver because the
+          // hero deliberately bleeds under the status bar: a pinned sliver
+          // would park the chips beneath the clock, while this one reserves
+          // the inset for itself.
+          if (_pinned)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: AppColors.screen,
+                  border: Border(bottom: BorderSide(color: AppColors.line)),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.paddingOf(context).top + 6,
+                    bottom: 6,
+                  ),
+                  child: _filterBar(),
+                ),
+              ),
+            ),
           Positioned(
             left: 0,
             right: 0,
@@ -125,6 +200,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// One definition, rendered twice: in the list, and pinned on top of it.
+  Widget _filterBar() {
+    return HomeFilterBar(
+      categories: _categories,
+      activeIndex: _categoryIndex,
+      onSelected: (index) => setState(() => _categoryIndex = index),
+      onSearch: _openSearch,
     );
   }
 

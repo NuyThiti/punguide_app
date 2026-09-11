@@ -56,11 +56,9 @@ class AppColors {
   static const postAction = Color(0xFFFB7452);
   static const postActionIdle = Color(0xFFE6DFDA);
 
-  /// ไปกัน board (Figma 1539-8070): the header's orange sweep, the well behind
-  /// the location pin, the dark control beside the address, and the violet
-  /// distance chip on a card.
-  static const paigunHeaderStart = Color(0xFFFFA25C);
-  static const paigunHeaderEnd = Color(0xFFF4562F);
+  /// ไปกัน board (Figma 1539-8070): the well behind the location pin, the dark
+  /// control beside the address, and the violet distance chip on a card. The
+  /// header itself sits on Home's photo rather than a colour of its own.
   static const paigunPinWell = Color(0xFFFFEDE3);
   static const paigunControl = Color(0xFF1E1A18);
   static const paigunDistance = Color(0xFF7C3AED);
@@ -68,4 +66,12 @@ class AppColors {
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);
+
+  /// Location Access (Figma 1576-24479): the permission sheet's allow/later
+  /// pair, the map picker's chrome, and the pin it drops.
+  static const locationAction = Color(0xFFF97F63);
+  static const locationLater = Color(0xFFEFE9DC);
+  static const locationLayerWell = Color(0xFFFDEEE2);
+  static const locationPin = Color(0xFFF4552D);
+  static const locationMapFallback = Color(0xFFE8EDE6);
 }
