@@ -7,6 +7,7 @@ import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
 import '../../features/remix_trip/presentation/remix_trip_screen.dart';
@@ -18,6 +19,7 @@ enum AppRoute {
   home,
   login,
   discover,
+  paigun,
   search,
   tripDetail,
   createTrip,
@@ -50,6 +52,12 @@ final appRouter = GoRouter(
         state,
         const HomeScreen(activeRoute: AppRoute.discover),
       ),
+    ),
+    GoRoute(
+      path: '/paigun',
+      name: AppRoute.paigun.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const PaigunScreen()),
     ),
     GoRoute(
       path: '/search',

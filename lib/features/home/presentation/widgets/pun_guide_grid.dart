@@ -15,12 +15,21 @@ class PunGuideGrid extends StatelessWidget {
     required this.onOpen,
     required this.onSave,
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
+    this.distanceLabelOf,
+    this.featuredOf,
   });
 
   final List<TripListItem> trips;
   final ValueChanged<TripListItem> onOpen;
   final ValueChanged<TripListItem> onSave;
   final EdgeInsetsGeometry padding;
+
+  /// "2.3 Km" for a row, or null to leave the violet chip off. Search has no
+  /// origin to measure from, so it passes neither of these.
+  final String? Function(TripListItem trip)? distanceLabelOf;
+
+  /// Whether a row wears the Top PunGuide badge.
+  final bool Function(TripListItem trip)? featuredOf;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +61,8 @@ class PunGuideGrid extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 14),
             child: PunGuideCard(
               trip: trip,
+              distanceLabel: distanceLabelOf?.call(trip),
+              featured: featuredOf?.call(trip) ?? false,
               onTap: () => onOpen(trip),
               onSave: () => onSave(trip),
             ),

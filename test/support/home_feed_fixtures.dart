@@ -11,6 +11,8 @@ TripListItem feedTrip({
   String title = 'หลวงพระบาง 3 วัน 2 คืน',
   String destination = 'หลวงพระบาง, ลาว',
   String? country = 'ลาว',
+  double? latitude,
+  double? longitude,
   int? durationDays = 3,
   double totalBudget = 3000,
   String? coverUrl = 'https://example.test/cover.jpg',
@@ -26,7 +28,11 @@ TripListItem feedTrip({
     if (country != null)
       'destinationPlace': <String, dynamic>{
         'name': destination,
-        'country': country
+        'country': country,
+        // Only sent once the backend has resolved the place, so a row without
+        // them is the shape a card has to degrade to.
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
       },
     'status': 'draft',
     'schedule': <String, dynamic>{

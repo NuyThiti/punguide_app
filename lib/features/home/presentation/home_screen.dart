@@ -9,6 +9,7 @@ import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../paigun/presentation/providers/paigun_providers.dart';
 import 'providers/home_feed_providers.dart';
 import 'widgets/destination_card.dart';
 import 'widgets/home_filter_bar.dart';
@@ -153,8 +154,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
+    // The ไปกัน board already decorates this very list with a distance and a
+    // Top PunGuide badge, so the cards read the same on both screens.
+    final nearby = {
+      for (final row in ref.watch(paigunTripsProvider).valueOrNull ?? const [])
+        row.trip.id: row,
+    };
+
     return PunGuideGrid(
       trips: items,
+      distanceLabelOf: (trip) => nearby[trip.id]?.distanceLabel,
+      featuredOf: (trip) => nearby[trip.id]?.featured ?? false,
       onOpen: (trip) => context.goNamed(
         AppRoute.tripDetail.name,
         params: {'tripId': trip.id},

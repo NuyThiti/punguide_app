@@ -15,4 +15,8 @@ extension BudgetFormat on double {
   String get asBudget => '\$$_grouped';
 
   String get asBaht => '฿$_grouped';
+
+  /// "฿ ~200" — a per-person figure on a feed card, where the total is an
+  /// estimate rather than a price anyone will be charged.
+  String get asApproxBaht => '฿ ~$_grouped';
 }

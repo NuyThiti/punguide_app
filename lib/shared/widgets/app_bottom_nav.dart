@@ -58,8 +58,11 @@ class AppBottomNav extends StatelessWidget {
                 _NavItem(
                   asset: 'assets/icons/nav_paigun.svg',
                   label: 'Paigun',
-                  selected: active == AppRoute.search,
-                  onTap: () => onTap(AppRoute.search),
+                  // Search is the ไปกัน board's own filter surface, so the tab
+                  // stays lit while the traveller is over there.
+                  selected:
+                      active == AppRoute.paigun || active == AppRoute.search,
+                  onTap: () => onTap(AppRoute.paigun),
                 ),
                   const SizedBox(width: fabSize + 24),
                 _NavItem(

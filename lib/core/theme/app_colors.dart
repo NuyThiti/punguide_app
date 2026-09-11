@@ -56,6 +56,15 @@ class AppColors {
   static const postAction = Color(0xFFFB7452);
   static const postActionIdle = Color(0xFFE6DFDA);
 
+  /// ไปกัน board (Figma 1539-8070): the header's orange sweep, the well behind
+  /// the location pin, the dark control beside the address, and the violet
+  /// distance chip on a card.
+  static const paigunHeaderStart = Color(0xFFFFA25C);
+  static const paigunHeaderEnd = Color(0xFFF4562F);
+  static const paigunPinWell = Color(0xFFFFEDE3);
+  static const paigunControl = Color(0xFF1E1A18);
+  static const paigunDistance = Color(0xFF7C3AED);
+
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);
