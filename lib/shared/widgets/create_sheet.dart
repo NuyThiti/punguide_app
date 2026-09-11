@@ -321,11 +321,12 @@ class _PlainOption extends StatelessWidget {
 
 /// Opens the sheet and routes the choice.
 ///
-/// Only "สร้างแพลนเอง" has a screen so far; the other three report themselves
-/// as unbuilt rather than going nowhere quietly.
+/// "สร้างแพลนเอง" and "Post" have screens; the other two report themselves as
+/// unbuilt rather than going nowhere quietly.
 Future<void> openCreateSheet(
   BuildContext context, {
   required VoidCallback onOwnPlan,
+  required VoidCallback onPost,
   required void Function(String message) onUnavailable,
 }) async {
   final choice = await showCreateSheet(context);
@@ -334,10 +335,10 @@ Future<void> openCreateSheet(
   switch (choice) {
     case CreateAction.ownPlan:
       onOwnPlan();
+    case CreateAction.post:
+      onPost();
     case CreateAction.punGuide:
       onUnavailable('ปันไกด์ทริปยังไม่เปิดใช้งาน');
-    case CreateAction.post:
-      onUnavailable('สร้างโพสยังไม่เปิดใช้งาน');
     case CreateAction.puntok:
       onUnavailable('สร้างคลิป Puntok ยังไม่เปิดใช้งาน');
   }

@@ -132,6 +132,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     openCreateSheet(
       context,
       onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+      onPost: () => context.goNamed(AppRoute.createPost.name),
       onUnavailable: _showMessage,
     );
   }

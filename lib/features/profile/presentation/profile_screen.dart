@@ -163,6 +163,7 @@ class ProfileScreen extends ConsumerWidget {
               onCreate: () => openCreateSheet(
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+                onPost: () => context.goNamed(AppRoute.createPost.name),
                 onUnavailable: unavailable,
               ),
             ),

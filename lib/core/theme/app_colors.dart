@@ -47,6 +47,15 @@ class AppColors {
   static const optionIconBg = Color(0xFFF4F2EF);
   static const sheetConfirm = Color(0xFF2B2422);
 
+  /// Create post composer: the grey field wells, the pink plate behind a
+  /// location pin, the tag chips and the เผยแพร่โพสต์ button.
+  static const postField = Color(0xFFF1F1EF);
+  static const postFieldHint = Color(0xFFB2B2AD);
+  static const postIconWell = Color(0xFFFFEAE0);
+  static const postTagChip = Color(0xFFFFEDE6);
+  static const postAction = Color(0xFFFB7452);
+  static const postActionIdle = Color(0xFFE6DFDA);
+
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);

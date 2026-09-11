@@ -134,6 +134,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               onCreate: () => openCreateSheet(
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+                onPost: () => context.goNamed(AppRoute.createPost.name),
                 onUnavailable: (message) => ScaffoldMessenger.of(context)
                     .showSnackBar(SnackBar(content: Text(message))),
               ),

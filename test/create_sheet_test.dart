@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pluno/core/router/app_router.dart';
+import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/shared/widgets/create_sheet.dart';
 
@@ -117,33 +118,55 @@ void main() {
 
   testWidgets('an unbuilt option reports itself instead of going nowhere',
       (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
+    await _pumpHome(tester);
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: homeOverrides([feedTrip(id: 'lpq')]),
-        child: MaterialApp.router(
-          routerConfig: GoRouter(
-            routes: [
-              GoRoute(
-                path: '/',
-                name: AppRoute.home.name,
-                builder: (_, __) => const HomeScreen(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    await tester.tap(find.text('ไปกัน'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('PunGuide'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ปันไกด์ทริปยังไม่เปิดใช้งาน'), findsOneWidget);
+  });
+
+  testWidgets('Post opens the composer', (tester) async {
+    await _pumpHome(tester);
 
     await tester.tap(find.text('ไปกัน'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Post'));
     await tester.pumpAndSettle();
 
-    expect(find.text('สร้างโพสยังไม่เปิดใช้งาน'), findsOneWidget);
+    expect(find.text('สร้างโพสต์'), findsOneWidget);
+    expect(find.text('เพิ่มเนื้อหา'), findsOneWidget);
   });
+}
+
+/// Home on a phone viewport, with the routes the create sheet can reach.
+Future<void> _pumpHome(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: homeOverrides([feedTrip(id: 'lpq')]),
+      child: MaterialApp.router(
+        routerConfig: GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              name: AppRoute.home.name,
+              builder: (_, __) => const HomeScreen(),
+            ),
+            GoRoute(
+              path: '/posts/create',
+              name: AppRoute.createPost.name,
+              builder: (_, __) => const CreatePostScreen(),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }

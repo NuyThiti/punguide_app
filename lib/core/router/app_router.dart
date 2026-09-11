@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/create_post/presentation/create_post_screen.dart';
 import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
@@ -20,6 +21,7 @@ enum AppRoute {
   search,
   tripDetail,
   createTrip,
+  createPost,
   editTrip,
   editTripBrief,
   savedTrips,
@@ -94,6 +96,12 @@ final appRouter = GoRouter(
       name: AppRoute.createTrip.name,
       pageBuilder: (context, state) =>
           _instantPage(state, const CreateTripScreen()),
+    ),
+    GoRoute(
+      path: '/posts/create',
+      name: AppRoute.createPost.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const CreatePostScreen()),
     ),
     GoRoute(
       path: '/saved',

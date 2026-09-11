@@ -58,12 +58,12 @@ class HomeHero extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 18),
+            padding: EdgeInsets.fromLTRB(18, topInset + 8, 18, 18),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // _TitleBar(avatarImage: avatarImage, onProfile: onProfile),
-                const SizedBox(height: 15),
+                const SizedBox(height: 24),
                 const Text(
                   'วันนี้อยากไปหรือปัน ?',
                   textAlign: TextAlign.center,
@@ -74,7 +74,7 @@ class HomeHero extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 // Intrinsic height so both cards match whichever wraps taller.
                 IntrinsicHeight(
                   child: Row(
@@ -89,7 +89,7 @@ class HomeHero extends StatelessWidget {
                           onTap: onFindTrip,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: HomeActionCard(
                           title: 'ปันไกด์',
