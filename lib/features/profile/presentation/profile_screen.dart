@@ -14,6 +14,10 @@ import '../../auth/presentation/providers/auth_providers.dart';
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
+  /// The header photo behind the avatar. The API has no cover-image field, so
+  /// every profile shows the same bundled shot until one exists.
+  static const _coverImage = 'assets/images/puntok_osaka.jpg';
+
   Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
@@ -77,74 +81,73 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authSessionProvider);
 
+    void unavailable(String message) => ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+
     return AppFrame(
       background: AppColors.screen,
       child: Stack(
         children: [
-          Column(
+          ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.only(
+              bottom: AppBottomNav.heightOf(context) + 16,
+            ),
             children: [
-              const _ProfileHeader(),
-              Expanded(
-                child: ListView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    0,
-                    16,
-                    AppBottomNav.heightOf(context) + 16,
-                  ),
+              ProfileHero(
+                session: session,
+                coverImage: _coverImage,
+                onEditAvatar: () =>
+                    unavailable('แก้ไขรูปโปรไฟล์ยังไม่เปิดใช้งาน'),
+              ),
+              const SizedBox(height: 18),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
                   children: [
-                    _ProfileHero(session: session),
-                    const SizedBox(height: 16),
-                    const _StatsRow(),
-                    const SizedBox(height: 22),
-                    const _ProfileSection(
-                      title: 'สไตล์การเที่ยว',
-                      children: [
-                        _PreferenceTile(
-                          icon: Icons.beach_access,
-                          title: 'ทะเลและเกาะ',
-                          subtitle: 'เช้าสบาย ๆ น้ำใส และจุดชมพระอาทิตย์ตก',
-                          color: AppColors.brandOrange,
-                        ),
-                        _PreferenceTile(
-                          icon: Icons.restaurant,
-                          title: 'สายกิน',
-                          subtitle: 'ตลาดท้องถิ่น คาเฟ่ และเส้นทางชิมของอร่อย',
-                          color: AppColors.brandPurple,
-                        ),
-                        _PreferenceTile(
-                          icon: Icons.terrain,
-                          title: 'ผจญภัยเบา ๆ',
-                          subtitle: 'เดินเที่ยวได้ทั้งวัน กับหนึ่งกิจกรรมที่จำไม่ลืม',
-                          color: AppColors.primary,
-                        ),
-                      ],
+                    ProfileMenuRow(
+                      icon: Icons.luggage_outlined,
+                      label: 'ทริปของฉัน',
+                      onTap: () => context.goNamed(AppRoute.savedTrips.name),
                     ),
-                    const SizedBox(height: 20),
-                    const _ProfileSection(
-                      title: 'บัญชี',
-                      children: [
-                        _PreferenceTile(
-                          icon: Icons.sync,
-                          title: 'พร้อมเชื่อมต่อระบบหลังบ้าน',
-                          subtitle: 'ต่อ Supabase หรือ Firebase ได้จากตรงนี้',
-                          color: AppColors.primary,
-                        ),
-                        _PreferenceTile(
-                          icon: Icons.settings_outlined,
-                          title: 'การตั้งค่า',
-                          subtitle: 'ภาษา ความเป็นส่วนตัว และการแจ้งเตือน',
-                          color: AppColors.navIcon,
-                        ),
-                      ],
+                    ProfileMenuRow(
+                      icon: Icons.grid_view_outlined,
+                      label: 'โพสต์ของฉัน',
+                      onTap: () => unavailable('โพสต์ของฉันยังไม่เปิดใช้งาน'),
                     ),
-                    const SizedBox(height: 20),
-                    _AuthSection(
-                      session: session,
-                      onSignIn: () => context.goNamed(AppRoute.login.name),
-                      onSignOut: () => _confirmSignOut(context, ref),
+                    ProfileMenuRow(
+                      icon: Icons.shuffle,
+                      label: 'รีมิกซ์ของฉัน',
+                      onTap: () => unavailable('รีมิกซ์ของฉันยังไม่เปิดใช้งาน'),
                     ),
+                    ProfileMenuRow(
+                      icon: Icons.bookmark_border,
+                      label: 'บุ๊กมาร์คสถานที่',
+                      onTap: () =>
+                          unavailable('บุ๊กมาร์คสถานที่ยังไม่เปิดใช้งาน'),
+                    ),
+                    ProfileMenuRow(
+                      icon: Icons.settings_outlined,
+                      label: 'ตั้งค่าระบบ',
+                      onTap: () => unavailable('ตั้งค่าระบบยังไม่เปิดใช้งาน'),
+                    ),
+                    const SizedBox(height: 8),
+                    // Not in the Figma frame, but the reference has no other
+                    // way out of the account, so the session control stays.
+                    if (session != null)
+                      ProfileMenuRow(
+                        icon: Icons.logout,
+                        label: 'ออกจากระบบ',
+                        tint: AppColors.brandOrangeDeep,
+                        onTap: () => _confirmSignOut(context, ref),
+                      )
+                    else
+                      ProfileMenuRow(
+                        icon: Icons.login,
+                        label: 'เข้าสู่ระบบ',
+                        tint: AppColors.primary,
+                        onTap: () => context.goNamed(AppRoute.login.name),
+                      ),
                   ],
                 ),
               ),
@@ -160,8 +163,7 @@ class ProfileScreen extends ConsumerWidget {
               onCreate: () => openCreateSheet(
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
-                onUnavailable: (message) => ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text(message))),
+                onUnavailable: unavailable,
               ),
             ),
           ),
@@ -171,104 +173,68 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        MediaQuery.of(context).padding.top + 12,
-        16,
-        14,
-      ),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'โปรไฟล์',
-              style: TextStyle(
-                color: AppColors.foreground,
-                fontSize: 22,
-                height: 1.2,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.chipBorder),
-            ),
-            child: const Icon(
-              Icons.settings_outlined,
-              color: AppColors.navIcon,
-              size: 20,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Avatar, name and role, on the brand-orange card that echoes the create FAB.
-/// Falls back to a guest presentation when there is no session.
-class _ProfileHero extends StatelessWidget {
-  const _ProfileHero({required this.session});
+/// Cover photo, avatar, name and the counts strip — the dark card the profile
+/// opens on. Falls back to a guest presentation when there is no session.
+class ProfileHero extends StatelessWidget {
+  const ProfileHero({
+    super.key,
+    required this.session,
+    required this.coverImage,
+    required this.onEditAvatar,
+  });
 
   final AuthSession? session;
+  final String coverImage;
+  final VoidCallback onEditAvatar;
+
+  static const double avatarSize = 92;
 
   @override
   Widget build(BuildContext context) {
     final session = this.session;
     final signedIn = session != null;
     final avatarImage = session?.avatarImage;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.brandOrange, AppColors.brandOrangeDeep],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.brandOrange.withValues(alpha: 0.28),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+      child: Stack(
         children: [
-          Container(
-            width: 68,
-            height: 68,
-            clipBehavior: Clip.antiAlias,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: signedIn ? null : Colors.white.withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.85),
-                width: 2,
+          Positioned.fill(
+            child: CoverImage(source: coverImage, fit: BoxFit.cover),
+          ),
+          // The reference card is nearly black; the photo only shows through
+          // as texture, which is what keeps the white type readable.
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.86),
+                    Colors.black.withValues(alpha: 0.76),
+                    Colors.black.withValues(alpha: 0.90),
+                  ],
+                ),
               ),
             ),
-            child: avatarImage != null
-                ? CoverImage(source: avatarImage, fit: BoxFit.cover)
-                : const Icon(Icons.person, color: Colors.white, size: 34),
           ),
-          const SizedBox(width: 14),
-          Expanded(
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              MediaQuery.of(context).padding.top + 16,
+              20,
+              18,
+            ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
+                _Avatar(
+                  avatarImage: avatarImage,
+                  showEdit: signedIn,
+                  onEdit: onEditAvatar,
+                ),
+                const SizedBox(height: 12),
                 Text(
                   session?.displayName ?? 'ผู้เยี่ยมชม',
                   maxLines: 1,
@@ -286,29 +252,14 @@ class _ProfileHero extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.78),
+                    color: Colors.white.withValues(alpha: 0.66),
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 if (signedIn) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: const Text(
-                      'นักปันไกด์',
-                      style: TextStyle(
-                        color: AppColors.brandOrange,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
+                  const SizedBox(height: 16),
+                  const ProfileStatsStrip(),
                 ],
               ],
             ),
@@ -319,257 +270,196 @@ class _ProfileHero extends StatelessWidget {
   }
 }
 
-/// Sign in / sign out, kept in its own section so the destructive action never
-/// sits next to the ordinary settings rows.
-class _AuthSection extends StatelessWidget {
-  const _AuthSection({
-    required this.session,
-    required this.onSignIn,
-    required this.onSignOut,
+class _Avatar extends StatelessWidget {
+  const _Avatar({
+    required this.avatarImage,
+    required this.showEdit,
+    required this.onEdit,
   });
 
-  final AuthSession? session;
-  final VoidCallback onSignIn;
-  final VoidCallback onSignOut;
+  final String? avatarImage;
+  final bool showEdit;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
-    final session = this.session;
+    const size = ProfileHero.avatarSize;
 
-    return _ProfileSection(
-      title: 'การเข้าสู่ระบบ',
-      children: [
-        if (session != null)
-          _PreferenceTile(
-            icon: Icons.logout,
-            title: 'ออกจากระบบ',
-            subtitle: 'ออกจากบัญชี ${session.handle} บนเครื่องนี้',
-            color: AppColors.brandOrangeDeep,
-            titleColor: AppColors.brandOrangeDeep,
-            showChevron: false,
-            onTap: onSignOut,
-          )
-        else
-          _PreferenceTile(
-            icon: Icons.login,
-            title: 'เข้าสู่ระบบ',
-            subtitle: 'บันทึกทริปและปันไกด์ให้เพื่อน ๆ ได้',
-            color: AppColors.primary,
-            titleColor: AppColors.primary,
-            onTap: onSignIn,
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            clipBehavior: Clip.antiAlias,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+            ),
+            child: avatarImage != null && avatarImage!.isNotEmpty
+                ? CoverImage(source: avatarImage!, fit: BoxFit.cover)
+                : const Icon(Icons.person, color: Colors.white, size: 44),
           ),
-      ],
+          if (showEdit)
+            Positioned(
+              right: -2,
+              bottom: 4,
+              child: GestureDetector(
+                onTap: onEdit,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.brandOrange,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                  ),
+                  child: const Icon(
+                    Icons.edit,
+                    color: Colors.white,
+                    size: 13,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
 
-class _StatsRow extends StatelessWidget {
-  const _StatsRow();
+/// Remix / Like / Follower / Following on one frosted strip.
+///
+/// The API returns none of these counts yet, so the figures are the ones from
+/// the design and are not read from the session.
+class ProfileStatsStrip extends StatelessWidget {
+  const ProfileStatsStrip({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        Expanded(child: _StatCard(value: '12', label: 'ทริป')),
-        SizedBox(width: 10),
-        Expanded(child: _StatCard(value: '8', label: 'บันทึกไว้')),
-        SizedBox(width: 10),
-        Expanded(child: _StatCard(value: '4', label: 'รีมิกซ์')),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.value, required this.label});
-
-  final String value;
-  final String label;
+  static const stats = <(String, String)>[
+    ('2.9K', 'Remix'),
+    ('1K', 'Like'),
+    ('828', 'Follower'),
+    ('342', 'Following'),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
-      child: Column(
+      child: Row(
         children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.foreground,
-              fontSize: 20,
-              height: 1.1,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 3),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              maxLines: 1,
-              style: const TextStyle(
-                color: AppColors.muted,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProfileSection extends StatelessWidget {
-  const _ProfileSection({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 0, 0, 10),
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.foreground,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        Container(
-          // Clipped so a tile's ink splash stops at the card's rounded edge.
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.07),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(children: _withDividers(children)),
-        ),
-      ],
-    );
-  }
-
-  /// Hairlines between tiles only, so the card keeps one unbroken outer edge.
-  List<Widget> _withDividers(List<Widget> tiles) {
-    final rows = <Widget>[];
-    for (var i = 0; i < tiles.length; i++) {
-      if (i > 0) {
-        rows.add(
-          Divider(
-            height: 1,
-            thickness: 1,
-            indent: 14,
-            endIndent: 14,
-            color: Colors.black.withValues(alpha: 0.06),
-          ),
-        );
-      }
-      rows.add(tiles[i]);
-    }
-    return rows;
-  }
-}
-
-class _PreferenceTile extends StatelessWidget {
-  const _PreferenceTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-    this.titleColor = AppColors.foreground,
-    this.showChevron = true,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  final Color titleColor;
-  final bool showChevron;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        splashColor: color.withValues(alpha: 0.08),
-        highlightColor: color.withValues(alpha: 0.05),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: color, size: 19),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: titleColor,
-                        fontSize: 14,
-                        height: 1.25,
-                        fontWeight: FontWeight.w700,
+          for (final (value, label) in stats)
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.1,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 11,
-                        height: 1.35,
+                  ),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.70),
+                        fontSize: 10,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              if (showChevron) ...[
-                const SizedBox(width: 6),
-                const Icon(
-                  Icons.chevron_right,
-                  color: AppColors.navIconMuted,
-                  size: 20,
-                ),
-              ],
-            ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One tappable row of the profile menu: icon, label, chevron.
+class ProfileMenuRow extends StatelessWidget {
+  const ProfileMenuRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.tint,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  /// Colours the icon and label — used by the session row so the destructive
+  /// action does not read as one more navigation row.
+  final Color? tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = this.tint;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+              child: Row(
+                children: [
+                  Icon(icon, size: 21, color: tint ?? AppColors.navIconIdle),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tint ?? AppColors.foreground,
+                        fontSize: 15,
+                        height: 1.2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: AppColors.navIconMuted,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
