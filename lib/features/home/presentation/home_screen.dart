@@ -7,6 +7,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
+import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import 'providers/home_feed_providers.dart';
 import 'widgets/destination_card.dart';
@@ -56,7 +57,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   coverImage: _heroImage,
                   avatarImage: session?.avatarImage,
                   onProfile: () => context.goNamed(AppRoute.profile.name),
-                  onFindTrip: _openSearch,
+                  onFindTrip: _openCreate,
                   onShareTrip: () => context.goNamed(AppRoute.createTrip.name),
                 ),
                 const SizedBox(height: 18),
@@ -118,11 +119,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: AppBottomNav(
               active: widget.activeRoute,
               onTap: (route) => context.goNamed(route.name),
-              onCreate: () => context.goNamed(AppRoute.createTrip.name),
+              onCreate: _openCreate,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// The create sheet, from the nav bar's Create button and the ไปกัน card.
+  void _openCreate() {
+    openCreateSheet(
+      context,
+      onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+      onUnavailable: _showMessage,
     );
   }
 

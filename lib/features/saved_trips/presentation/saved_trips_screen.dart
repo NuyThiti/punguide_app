@@ -6,6 +6,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
+import '../../../shared/widgets/create_sheet.dart';
 import '../../../shared/widgets/trip_card.dart';
 import 'saved_trips_notifier.dart';
 
@@ -69,7 +70,12 @@ class SavedTripsScreen extends ConsumerWidget {
             child: AppBottomNav(
               active: AppRoute.savedTrips,
               onTap: (route) => context.goNamed(route.name),
-              onCreate: () => context.goNamed(AppRoute.createTrip.name),
+              onCreate: () => openCreateSheet(
+                context,
+                onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+                onUnavailable: (message) => ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(message))),
+              ),
             ),
           ),
         ],

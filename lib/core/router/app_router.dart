@@ -7,6 +7,7 @@ import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/puntok/presentation/puntok_screen.dart';
 import '../../features/remix_trip/presentation/remix_trip_screen.dart';
 import '../../features/saved_trips/presentation/saved_trips_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
@@ -23,6 +24,7 @@ enum AppRoute {
   editTripBrief,
   savedTrips,
   remixTrip,
+  puntok,
   profile,
 }
 
@@ -98,6 +100,12 @@ final appRouter = GoRouter(
       name: AppRoute.savedTrips.name,
       pageBuilder: (context, state) =>
           _instantPage(state, const SavedTripsScreen()),
+    ),
+    GoRoute(
+      path: '/puntok',
+      name: AppRoute.puntok.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const PuntokScreen()),
     ),
     GoRoute(
       path: '/login',

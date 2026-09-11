@@ -39,6 +39,14 @@ class AppColors {
   static const handleChip = Color(0xFFEFF7C9);
   static const handleChipRing = Color(0xFFC8E15F);
 
+  /// Create sheet (Figma 1539-8068): the featured PunGuide card's violet
+  /// sweep, its arrow chip, the plain rows' icon well, and the ตกลง button.
+  static const createHeroStart = Color(0xFF7C3AED);
+  static const createHeroEnd = Color(0xFF31106B);
+  static const createHeroArrow = Color(0xFF8B5CF6);
+  static const optionIconBg = Color(0xFFF4F2EF);
+  static const sheetConfirm = Color(0xFF2B2422);
+
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);

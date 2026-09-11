@@ -6,6 +6,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
+import '../../../shared/widgets/create_sheet.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../auth/domain/auth_session.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
@@ -156,7 +157,12 @@ class ProfileScreen extends ConsumerWidget {
             child: AppBottomNav(
               active: AppRoute.profile,
               onTap: (route) => context.goNamed(route.name),
-              onCreate: () => context.goNamed(AppRoute.createTrip.name),
+              onCreate: () => openCreateSheet(
+                context,
+                onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+                onUnavailable: (message) => ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(message))),
+              ),
             ),
           ),
         ],

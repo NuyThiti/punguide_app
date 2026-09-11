@@ -20,6 +20,7 @@ let package = Package(
         .package(name: "flutter_secure_storage_darwin", path: "../.packages/flutter_secure_storage_darwin-0.3.2"),
         .package(name: "google_sign_in_ios", path: "../.packages/google_sign_in_ios-6.3.3"),
         .package(name: "image_picker_ios", path: "../.packages/image_picker_ios-0.8.13+6"),
+        .package(name: "video_player_avfoundation", path: "../.packages/video_player_avfoundation-2.12.0"),
         .package(name: "FlutterFramework", path: "../.packages/FlutterFramework")
     ],
     targets: [
@@ -31,6 +32,7 @@ let package = Package(
                 .product(name: "flutter-secure-storage-darwin", package: "flutter_secure_storage_darwin"),
                 .product(name: "google-sign-in-ios", package: "google_sign_in_ios"),
                 .product(name: "image-picker-ios", package: "image_picker_ios"),
+                .product(name: "video-player-avfoundation", package: "video_player_avfoundation"),
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ]
         )

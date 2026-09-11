@@ -7,6 +7,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
+import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../home/presentation/providers/home_feed_providers.dart';
 import '../../home/presentation/widgets/destination_card.dart';
@@ -130,7 +131,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: AppBottomNav(
               active: AppRoute.search,
               onTap: (route) => context.goNamed(route.name),
-              onCreate: () => context.goNamed(AppRoute.createTrip.name),
+              onCreate: () => openCreateSheet(
+                context,
+                onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
+                onUnavailable: (message) => ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(message))),
+              ),
             ),
           ),
         ],

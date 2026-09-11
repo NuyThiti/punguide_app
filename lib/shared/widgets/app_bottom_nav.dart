@@ -65,8 +65,9 @@ class AppBottomNav extends StatelessWidget {
                 _NavItem(
                   asset: 'assets/icons/nav_puntok.svg',
                   label: 'Puntok',
-                  selected: active == AppRoute.discover,
-                  onTap: () => onTap(AppRoute.discover),
+                  selected:
+                      active == AppRoute.puntok || active == AppRoute.discover,
+                  onTap: () => onTap(AppRoute.puntok),
                 ),
                 _NavItem(
                   asset: 'assets/icons/nav_profile.svg',
