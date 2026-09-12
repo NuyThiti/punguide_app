@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/router/app_router.dart';
+import 'package:pluno/features/location_access/data/location_permission_store.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
 import 'package:pluno/features/location_access/presentation/location_access_screen.dart';
 import 'package:pluno/features/location_access/presentation/location_picker_screen.dart';
@@ -31,6 +32,12 @@ class _FakeLocationService implements LocationService {
   Future<LocationFix?> currentFix() async => fix;
 }
 
+/// Nothing here should reach the platform's real preferences.
+List<Override> _storeOverride() => [
+      locationPermissionStoreProvider
+          .overrideWithValue(InMemoryLocationPermissionStore()),
+    ];
+
 Widget _harness({
   required String initialLocation,
   LocationService? service,
@@ -41,6 +48,7 @@ Widget _harness({
     container: container ??
         ProviderContainer(
           overrides: [
+            ..._storeOverride(),
             if (service != null)
               locationServiceProvider.overrideWithValue(service),
             if (adapter != null)
@@ -99,6 +107,34 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a granted answer with no fix yet is not treated as a position',
+      (tester) async {
+    _phone(tester);
+
+    // Permission granted, but the device never produced a fix — indoors, or
+    // the request timed out. The picker must still open, showing the board's
+    // origin with no distance rather than a made-up one.
+    final service = _FakeLocationService(LocationPermissionStatus.granted);
+    final container = ProviderContainer(
+      overrides: [
+        ..._storeOverride(),
+        locationServiceProvider.overrideWithValue(service),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(initialLocation: '/location', container: container),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('อนุญาต'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(locationFixProvider), isNull);
+    expect(find.text('เขตพระนคร, กรุงเทพ 10200'), findsOneWidget);
+  });
+
   testWidgets('allowing asks the OS, keeps the fix, and opens the picker',
       (tester) async {
     _phone(tester);
@@ -108,7 +144,10 @@ void main() {
       fix: const LocationFix(latitude: 13.75, longitude: 100.49),
     );
     final container = ProviderContainer(
-      overrides: [locationServiceProvider.overrideWithValue(service)],
+      overrides: [
+        ..._storeOverride(),
+        locationServiceProvider.overrideWithValue(service),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -129,11 +168,11 @@ void main() {
     expect(find.text('ยืนยันตำแหน่งนี้'), findsOneWidget);
   });
 
-  testWidgets('"ไว้ทีหลังนะ" records the refusal and still opens the picker',
+  testWidgets('"ไว้ทีหลังนะ" records the refusal and carries on regardless',
       (tester) async {
     _phone(tester);
 
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: _storeOverride());
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
@@ -148,15 +187,17 @@ void main() {
       container.read(locationPermissionProvider),
       LocationPermissionStatus.denied,
     );
-    // A refusal is not a dead end — the origin can still be set by hand.
-    expect(find.text('ยืนยันตำแหน่งนี้'), findsOneWidget);
+    // With no destination carried in, the board is the fallback — a refusal is
+    // not a dead end, it just means no GPS fix. (The gate passes the real
+    // destination through; see location_gate_test.dart.)
+    expect(find.text('paigun board'), findsOneWidget);
   });
 
   testWidgets('the picker opens on the board origin and confirms it',
       (tester) async {
     _phone(tester);
 
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: _storeOverride());
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
@@ -204,6 +245,7 @@ void main() {
     });
     final container = ProviderContainer(
       overrides: [
+        ..._storeOverride(),
         plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
       ],
     );

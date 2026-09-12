@@ -7,6 +7,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../paigun/presentation/providers/paigun_providers.dart';
+import '../domain/location_service.dart';
 import '../domain/picked_location.dart';
 import 'providers/location_providers.dart';
 import 'widgets/location_map_surface.dart';
@@ -48,6 +49,31 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
       latitude: origin.latitude,
       longitude: origin.longitude,
     ).measuredFrom(ref.read(locationFixProvider));
+    _loadFix();
+  }
+
+  /// Fetches the device's position when it is allowed but not yet in hand.
+  ///
+  /// The Location Access page takes a fix as soon as it is granted, but that
+  /// only lasts the run. On the next launch the permission is remembered and
+  /// the fix is not, so without this the distances below would quietly stop
+  /// showing.
+  Future<void> _loadFix() async {
+    if (ref.read(locationPermissionProvider) !=
+        LocationPermissionStatus.granted) {
+      return;
+    }
+    if (ref.read(locationFixProvider) != null) return;
+
+    final fix = await ref.read(locationServiceProvider).currentFix();
+    if (!mounted || fix == null) return;
+
+    final point = LocationFixPoint(
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+    );
+    ref.read(locationFixProvider.notifier).state = point;
+    setState(() => _picked = _picked?.measuredFrom(point));
   }
 
   @override

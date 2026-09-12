@@ -30,6 +30,7 @@ class PaigunScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = ref.watch(paigunFilterProvider);
+    final query = ref.watch(tripFilterProvider);
     final origin = ref.watch(paigunOriginProvider);
     final nearMe = ref.watch(nearMeTripsProvider);
     final topPunGuide = ref.watch(topPunGuideTripsProvider);
@@ -47,7 +48,11 @@ class PaigunScreen extends ConsumerWidget {
               PaigunHeader(
                 origin: origin,
                 onBack: () => _close(context),
-                onTune: () => context.goNamed(AppRoute.search.name),
+                // Pushed rather than swapped, so finishing the wizard — or
+                // backing out of it — drops the traveller back on the board
+                // they were reading.
+                onTune: () => context.pushNamed(AppRoute.paigunFilter.name),
+                filterCount: query.answeredCount,
                 onEditLocation: () =>
                     context.goNamed(AppRoute.locationPicker.name),
               ),
@@ -81,7 +86,9 @@ class PaigunScreen extends ConsumerWidget {
                         _Section(
                           rows: nearMe,
                           limit: capped ? _previewCount : null,
-                          emptyMessage: 'ยังไม่มีทริปใกล้ตำแหน่งของคุณ',
+                          emptyMessage: query.isEmpty
+                              ? 'ยังไม่มีทริปใกล้ตำแหน่งของคุณ'
+                              : 'ไม่มีทริปที่ตรงกับตัวกรอง',
                           onOpen: (row) => _openTrip(context, row),
                           onSave: (row) => _toggleSaved(context, ref, row),
                           onRetry: () =>
@@ -95,7 +102,9 @@ class PaigunScreen extends ConsumerWidget {
                         _Section(
                           rows: topPunGuide,
                           limit: capped ? _previewCount : null,
-                          emptyMessage: 'ยังไม่มีทริปปันไกด์',
+                          emptyMessage: query.isEmpty
+                              ? 'ยังไม่มีทริปปันไกด์'
+                              : 'ไม่มีทริปที่ตรงกับตัวกรอง',
                           onOpen: (row) => _openTrip(context, row),
                           onSave: (row) => _toggleSaved(context, ref, row),
                           onRetry: () =>

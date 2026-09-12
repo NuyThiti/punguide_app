@@ -3,6 +3,10 @@
     <!-- Release builds need this explicitly; Flutter only adds it to the
          debug and profile manifests. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- "While using the app" only: nothing here reads a position in the
+         background, so ACCESS_BACKGROUND_LOCATION is deliberately absent. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
    <application
         android:label="pluno"
         android:icon="@mipmap/ic_launcher">

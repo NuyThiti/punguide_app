@@ -20,7 +20,12 @@ import 'widgets/location_permission_sheet.dart';
 /// refusal — or a build with no location plugin at all (see [LocationService])
 /// — means the origin is chosen by hand, not that ไปกัน stops working.
 class LocationAccessScreen extends ConsumerStatefulWidget {
-  const LocationAccessScreen({super.key});
+  const LocationAccessScreen({super.key, this.from});
+
+  /// Where the traveller was heading when the gate caught them. Null when they
+  /// came here directly, in which case ไว้ทีหลังนะ falls back to the board.
+
+  final String? from;
 
   /// The same photo Home and the ไปกัน header put behind their heroes.
   static const String coverAsset = 'assets/images/home_hero.jpg';
@@ -78,7 +83,8 @@ class _LocationAccessScreenState extends ConsumerState<LocationAccessScreen> {
     final status = await ref.read(locationServiceProvider).requestPermission();
     if (!mounted) return;
 
-    ref.read(locationPermissionProvider.notifier).state = status;
+    await ref.read(locationPermissionProvider.notifier).record(status);
+    if (!mounted) return;
 
     if (status == LocationPermissionStatus.granted) {
       final fix = await ref.read(locationServiceProvider).currentFix();
@@ -92,17 +98,21 @@ class _LocationAccessScreenState extends ConsumerState<LocationAccessScreen> {
     }
 
     setState(() => _asking = false);
-    _openPicker();
+    // Straight to the map, as the design has it: having just granted the
+    // permission, the next thing to settle is which place the board measures
+    // from.
+    context.goNamed(AppRoute.locationPicker.name);
   }
 
   /// "ไว้ทีหลังนะ" — remembered as a refusal so the app does not ask twice in
-  /// one run, then straight on to the picker, where a place can still be set
-  /// by hand.
-  void _later() {
-    ref.read(locationPermissionProvider.notifier).state =
-        LocationPermissionStatus.denied;
-    _openPicker();
+  /// one run, then on to wherever they were going. Saying "later" to the OS
+  /// does not mean giving up on the board: the origin can still be set by hand
+  /// in the picker.
+  Future<void> _later() async {
+    await ref
+        .read(locationPermissionProvider.notifier)
+        .record(LocationPermissionStatus.denied);
+    if (!mounted) return;
+    context.go(widget.from ?? '/paigun');
   }
-
-  void _openPicker() => context.goNamed(AppRoute.locationPicker.name);
 }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
+import '../../data/location_permission_store.dart';
 import '../../domain/location_service.dart';
 import '../../domain/picked_location.dart';
 
@@ -10,13 +11,42 @@ import '../../domain/picked_location.dart';
 final locationServiceProvider =
     Provider<LocationService>((ref) => const UnsupportedLocationService());
 
+/// Where the answer is kept between runs.
+final locationPermissionStoreProvider = Provider<LocationPermissionStore>(
+  (ref) => const PrefsLocationPermissionStore(),
+);
+
+/// The answer as it stood when the app started, which `main` overrides once it
+/// has read storage. Null means nobody has ever been asked.
+///
+/// Loaded once at startup rather than awaited on demand because the route gate
+/// that consumes it has to answer synchronously — see `_locationGate`. Waiting
+/// on the disk would stall every navigation to the board.
+final storedLocationPermissionProvider =
+    Provider<LocationPermissionStatus?>((ref) => null);
+
 /// What the traveller last answered on the Location Access page, or null while
 /// they have never been asked.
 ///
 /// Deliberately not auto-disposing: the whole point is that the app stops
 /// asking once there is an answer.
 final locationPermissionProvider =
-    StateProvider<LocationPermissionStatus?>((ref) => null);
+    NotifierProvider<LocationPermissionController, LocationPermissionStatus?>(
+  LocationPermissionController.new,
+);
+
+class LocationPermissionController extends Notifier<LocationPermissionStatus?> {
+  @override
+  LocationPermissionStatus? build() =>
+      ref.watch(storedLocationPermissionProvider);
+
+  /// Takes the answer and writes it through, so the page does not come back on
+  /// the next launch. Only clearing the app's storage undoes this.
+  Future<void> record(LocationPermissionStatus status) async {
+    state = status;
+    await ref.read(locationPermissionStoreProvider).write(status);
+  }
+}
 
 /// The device's own position, once granted. Null until a plugin can supply it.
 final locationFixProvider = StateProvider<LocationFixPoint?>((ref) => null);

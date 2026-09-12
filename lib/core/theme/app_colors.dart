@@ -74,4 +74,16 @@ class AppColors {
   static const locationLayerWell = Color(0xFFFDEEE2);
   static const locationPin = Color(0xFFF4552D);
   static const locationMapFallback = Color(0xFFE8EDE6);
+
+  /// ตัวกรอง — the ไปกัน filter wizard (Figma 1576-24481): the coral primary,
+  /// the peach an answered chip or card wears, the segmented control's track,
+  /// and the cream well behind the day wheel's centre row.
+  static const filterAction = Color(0xFFF97F63);
+  static const filterActionSoft = Color(0xFFFFD0C2);
+  static const filterSelected = Color(0xFFFFEDE3);
+  static const filterSelectedText = Color(0xFFF4703A);
+  static const filterTrack = Color(0xFFF5F1EB);
+  static const filterWheelWell = Color(0xFFFFF6EA);
+  static const filterStepIdle = Color(0xFFF6E4DA);
+  static const filterDivider = Color(0xFFEDE9E3);
 }

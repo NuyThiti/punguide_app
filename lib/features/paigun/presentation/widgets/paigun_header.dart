@@ -16,6 +16,7 @@ class PaigunHeader extends StatelessWidget {
     required this.onBack,
     required this.onTune,
     required this.onEditLocation,
+    this.filterCount = 0,
     this.coverImage = coverAsset,
   });
 
@@ -26,8 +27,12 @@ class PaigunHeader extends StatelessWidget {
   final String coverImage;
   final VoidCallback onBack;
 
-  /// The dark control beside the address.
+  /// The dark control beside the address — ตัวกรอง.
   final VoidCallback onTune;
+
+  /// How many of the wizard's questions are currently narrowing the board.
+  /// Zero hides the badge, so an unfiltered board looks untouched.
+  final int filterCount;
 
   /// Tapping the address itself — opens the map picker to move the origin.
   final VoidCallback onEditLocation;
@@ -98,6 +103,7 @@ class PaigunHeader extends StatelessWidget {
                 _LocationCard(
                   origin: origin,
                   onTune: onTune,
+                  filterCount: filterCount,
                   onEdit: onEditLocation,
                 ),
               ],
@@ -137,11 +143,13 @@ class _LocationCard extends StatelessWidget {
   const _LocationCard({
     required this.origin,
     required this.onTune,
+    required this.filterCount,
     required this.onEdit,
   });
 
   final PaigunOrigin origin;
   final VoidCallback onTune;
+  final int filterCount;
   final VoidCallback onEdit;
 
   @override
@@ -217,14 +225,42 @@ class _LocationCard extends StatelessWidget {
           const SizedBox(width: 10),
           GestureDetector(
             onTap: onTune,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                color: AppColors.paigunControl,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.tune, color: Colors.white, size: 19),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: AppColors.paigunControl,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.tune, color: Colors.white, size: 19),
+                ),
+                if (filterCount > 0)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.filterAction,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        '$filterCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

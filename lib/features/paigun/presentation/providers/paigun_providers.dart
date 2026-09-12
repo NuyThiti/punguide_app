@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../home/presentation/providers/home_feed_providers.dart';
 import '../../domain/nearby_trip.dart';
+import '../../domain/trip_filter.dart';
 
 /// The three chips across the top of the ไปกัน board.
 enum PaigunFilter { all, nearMe, topPunGuide }
@@ -33,6 +34,13 @@ final paigunOriginProvider = StateProvider<PaigunOrigin>(
   ),
 );
 
+/// What the ตัวกรอง wizard last applied to the board.
+///
+/// Empty until the traveller finishes the wizard, and it outlives the wizard's
+/// own route so reopening it shows the answers already in force. Kept in
+/// memory only — a filter is a mood, not a setting.
+final tripFilterProvider = StateProvider<TripFilter>((ref) => TripFilter.none);
+
 /// How many rows of the feed wear the Top PunGuide badge.
 const _featuredCount = 6;
 
@@ -43,18 +51,21 @@ const _featuredCount = 6;
 /// re-sorting costs no request.
 final paigunTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>((ref) {
   final origin = ref.watch(paigunOriginProvider);
+  final filter = ref.watch(tripFilterProvider);
 
   return ref.watch(homeFeedProvider).whenData((trips) {
+    // The badge ranks the whole feed, not what survives the filter: a trip
+    // does not stop being a Top PunGuide because someone asked for beaches.
     final featured = _featuredIds(trips);
 
     return List<NearbyTrip>.unmodifiable(
-      trips.map(
-        (trip) => NearbyTrip(
-          trip: trip,
-          featured: featured.contains(trip.id),
-          distanceKm: _distanceTo(trip, origin),
-        ),
-      ),
+      trips.where(filter.matches).map(
+            (trip) => NearbyTrip(
+              trip: trip,
+              featured: featured.contains(trip.id),
+              distanceKm: _distanceTo(trip, origin),
+            ),
+          ),
     );
   });
 });
