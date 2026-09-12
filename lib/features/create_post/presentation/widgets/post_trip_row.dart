@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 
-/// "เชื่อมกับทริป (ไม่บังคับ)" — the one row under the composer, between
+/// "ใช้ข้อมูลจากทริป (ไม่บังคับ)" — the one row under the composer, between
 /// hairlines rather than inside a card.
 class PostTripRow extends StatelessWidget {
   const PostTripRow({super.key, required this.trip, required this.onTap});
@@ -41,7 +41,7 @@ class PostTripRow extends StatelessWidget {
               child: linked == null
                   ? Text.rich(
                       const TextSpan(
-                        text: 'เชื่อมกับทริป',
+                        text: 'ใช้ข้อมูลจากทริป',
                         style: TextStyle(
                           color: AppColors.foreground,
                           fontSize: 15,
@@ -66,7 +66,7 @@ class PostTripRow extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'เชื่อมกับทริป',
+                          'ใช้ข้อมูลจากทริป',
                           style: TextStyle(
                             color: AppColors.foreground,
                             fontSize: 15,

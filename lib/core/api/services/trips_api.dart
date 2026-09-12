@@ -6,6 +6,7 @@ import '../models/enums.dart';
 import '../models/json.dart';
 import '../models/plan_generation.dart';
 import '../models/trip.dart';
+import '../models/trip_content.dart';
 import '../models/trip_draft.dart';
 
 /// Trips: the feed, the traveller's own trips, saving a plan, remixing,
@@ -35,6 +36,7 @@ class TripsApi {
     double? budgetLimit,
     BudgetTier? budgetTier,
     String? specialNotes,
+    List<TripContent>? contents,
   }) async {
     final body = await _client.post<Map<String, dynamic>>(
       '/trips',
@@ -56,6 +58,7 @@ class TripsApi {
         'budgetLimit': budgetLimit,
         'budgetTier': budgetTier?.wire,
         'specialNotes': specialNotes,
+        'contents': contents?.map((item) => item.toJson()).toList(),
       }),
     );
     return ApiTrip.fromJson(Json.asMap(body));
@@ -125,6 +128,7 @@ class TripsApi {
     double? budgetLimit,
     BudgetTier? budgetTier,
     String? specialNotes,
+    List<TripContent>? contents,
     TripStatus? status,
     TripVisibility? visibility,
   }) async {
@@ -146,6 +150,7 @@ class TripsApi {
         'budgetLimit': budgetLimit,
         'budgetTier': budgetTier?.wire,
         'specialNotes': specialNotes,
+        'contents': contents?.map((item) => item.toJson()).toList(),
         'status': status?.wire,
         // The first switch to public stamps publishedAt; going private again
         // does not clear it.
@@ -157,8 +162,7 @@ class TripsApi {
 
   /// Deletes the trip and everything attached to it: days, stops, segments,
   /// media, expenses, accommodations.
-  Future<void> delete(String tripId) =>
-      _client.delete<void>('/trips/$tripId');
+  Future<void> delete(String tripId) => _client.delete<void>('/trips/$tripId');
 
   /// Saves a whole plan in one call — the only way to persist a generated
   /// draft, and equally the way to save a hand-built one.

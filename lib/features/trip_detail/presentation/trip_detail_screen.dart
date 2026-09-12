@@ -150,6 +150,26 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           ),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
+              for (final section in trip.contents) ...[
+                if (section.title.isNotEmpty)
+                  Text(section.title,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w700)),
+                if (section.content.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(section.content,
+                      style: const TextStyle(fontSize: 16, height: 1.6)),
+                ],
+                for (final url in section.imageUrls) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AspectRatio(
+                          aspectRatio: 1.6, child: CoverImage(source: url))),
+                ],
+                if (section.mapId != null) _StoryPlace(mapId: section.mapId!),
+                const SizedBox(height: 24),
+              ],
               _OverviewSection(plan: plan),
               const SizedBox(height: 20),
               _DayTabs(
@@ -1325,4 +1345,25 @@ String _grouped(int value) {
     if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
   }
   return buffer.toString();
+}
+
+final _storyPlaceProvider =
+    FutureProvider.autoDispose.family<PlaceLookup, String>((ref, mapId) async {
+  final api = await ref.watch(plunoApiProvider.future);
+  return api.places.details(mapId);
+});
+
+class _StoryPlace extends ConsumerWidget {
+  const _StoryPlace({required this.mapId});
+  final String mapId;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final place = ref.watch(_storyPlaceProvider(mapId));
+    return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.place_outlined),
+        title: Text(place.valueOrNull?.name ?? 'สถานที่แนบ'),
+        subtitle:
+            place.hasError ? const Text('โหลดชื่อสถานที่ไม่สำเร็จ') : null);
+  }
 }

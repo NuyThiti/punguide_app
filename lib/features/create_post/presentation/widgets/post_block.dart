@@ -25,6 +25,10 @@ class PostBlock extends StatelessWidget {
     required this.onPickPlace,
     required this.onClearPlace,
     this.onRemove,
+    this.imagePaths = const [],
+    this.onRemoveImage,
+    this.coverPath,
+    this.onSelectCover,
   });
 
   final TextEditingController titleController;
@@ -35,7 +39,11 @@ class PostBlock extends StatelessWidget {
   /// heading just added is showing and still blank.
   final bool showTitle;
 
+  final String? coverPath;
+  final ValueChanged<String>? onSelectCover;
   final String? imagePath;
+  final List<String> imagePaths;
+  final ValueChanged<int>? onRemoveImage;
   final PostPlace? place;
 
   final VoidCallback onAddTitle;
@@ -82,6 +90,7 @@ class PostBlock extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: titleController,
+                  maxLength: 200,
                   focusNode: titleFocus,
                   textInputAction: TextInputAction.next,
                   style: const TextStyle(
@@ -91,6 +100,7 @@ class PostBlock extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                   decoration: const InputDecoration(
+                    counterText: '',
                     isDense: true,
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
@@ -110,6 +120,7 @@ class PostBlock extends StatelessWidget {
         ],
         TextField(
           controller: bodyController,
+          maxLength: 10000,
           minLines: 2,
           maxLines: null,
           keyboardType: TextInputType.multiline,
@@ -124,6 +135,7 @@ class PostBlock extends StatelessWidget {
             isDense: true,
             border: InputBorder.none,
             contentPadding: EdgeInsets.zero,
+            counterText: '',
             hintText: 'เล่าเรื่องราวของทริปนี้…',
             hintStyle: TextStyle(
               color: AppColors.postFieldHint,
@@ -136,6 +148,16 @@ class PostBlock extends StatelessWidget {
         if (photo != null) ...[
           const SizedBox(height: 14),
           _BlockPhoto(source: photo, onClear: onClearImage),
+        ],
+        for (var index = 0; index < imagePaths.length; index++) ...[
+          const SizedBox(height: 14),
+          _BlockPhoto(
+              source: imagePaths[index],
+              isCover: imagePaths[index] == coverPath,
+              onSelectCover: onSelectCover == null
+                  ? null
+                  : () => onSelectCover!(imagePaths[index]),
+              onClear: () => onRemoveImage?.call(index)),
         ],
         if (pinned != null) ...[
           const SizedBox(height: 14),
@@ -152,10 +174,16 @@ class PostBlock extends StatelessWidget {
   }
 }
 
-/// The photo, full width. The remove button is the only chrome over it — the
-/// design keeps the picture itself clean.
+/// A full-width photo with a single-cover selector.
 class _BlockPhoto extends StatelessWidget {
-  const _BlockPhoto({required this.source, required this.onClear});
+  const _BlockPhoto(
+      {required this.source,
+      required this.onClear,
+      this.isCover = false,
+      this.onSelectCover});
+
+  final bool isCover;
+  final VoidCallback? onSelectCover;
 
   final String source;
   final VoidCallback onClear;
@@ -171,6 +199,26 @@ class _BlockPhoto extends StatelessWidget {
             child: CoverImage(source: source),
           ),
         ),
+        if (onSelectCover != null)
+          Positioned(
+            bottom: 8,
+            left: 8,
+            child: Semantics(
+              selected: isCover,
+              child: FilledButton.icon(
+                onPressed: onSelectCover,
+                style: FilledButton.styleFrom(
+                  backgroundColor: isCover
+                      ? AppColors.brandOrange
+                      : Colors.black.withValues(alpha: 0.65),
+                  foregroundColor: Colors.white,
+                ),
+                icon: Icon(isCover ? Icons.check_circle : Icons.image_outlined,
+                    size: 18),
+                label: Text(isCover ? 'รูปหน้าปก' : 'ใช้เป็นหน้าปก'),
+              ),
+            ),
+          ),
         Positioned(
           top: 8,
           right: 8,

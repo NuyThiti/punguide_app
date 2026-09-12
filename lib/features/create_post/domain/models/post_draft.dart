@@ -18,7 +18,10 @@ enum PostAudience {
 /// A place pinned to one topic, as `/places/search` returned it.
 @immutable
 class PostPlace {
-  const PostPlace({required this.id, required this.name, this.area});
+  const PostPlace(
+      {required this.id, required this.name, this.area, this.mapId});
+
+  final String? mapId;
 
   final String id;
   final String name;
@@ -37,10 +40,11 @@ class PostPlace {
       other is PostPlace &&
       other.id == id &&
       other.name == name &&
-      other.area == area;
+      other.area == area &&
+      other.mapId == mapId;
 
   @override
-  int get hashCode => Object.hash(id, name, area);
+  int get hashCode => Object.hash(id, name, area, mapId);
 }
 
 /// The trip a post hangs off, kept as its own type so the composer does not
@@ -71,6 +75,7 @@ class PostTopic {
     required this.title,
     required this.body,
     this.imagePath,
+    this.imagePaths = const [],
     this.place,
   });
 
@@ -79,9 +84,10 @@ class PostTopic {
 
   final String body;
 
-  /// A local file path from the picker. Nothing is uploaded yet — there is no
-  /// posts endpoint — so this never holds a remote URL.
+  /// A local file path, uploaded before contents are saved.
   final String? imagePath;
+  final List<String> imagePaths;
+  List<String> get photos => [...imagePaths, if (imagePath != null) imagePath!];
 
   final PostPlace? place;
 
@@ -90,11 +96,11 @@ class PostTopic {
   bool get isEmpty =>
       title.trim().isEmpty &&
       body.trim().isEmpty &&
-      imagePath == null &&
+      photos.isEmpty &&
       place == null;
 }
 
-/// What the composer would send, once there is somewhere to send it.
+/// Local composer state converted into trip contents at publish time.
 @immutable
 class PostDraft {
   const PostDraft({
@@ -117,6 +123,6 @@ class PostDraft {
         (topic) =>
             topic.body.trim().isNotEmpty ||
             topic.title.trim().isNotEmpty ||
-            topic.imagePath != null,
+            topic.photos.isNotEmpty,
       );
 }

@@ -1,3 +1,4 @@
+import 'trip_content.dart';
 import 'package:flutter/foundation.dart';
 
 import 'day.dart';
@@ -224,7 +225,9 @@ class TripListItem {
 /// `GET /trips/:id/budget`.
 @immutable
 class ApiTrip {
+  final List<TripContent> contents;
   const ApiTrip({
+    this.contents = const [],
     required this.id,
     required this.ownerId,
     required this.title,
@@ -253,6 +256,7 @@ class ApiTrip {
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
+        contents: TripContent.listFrom(json['contents']),
         id: Json.requiredString(json, 'id'),
         ownerId: Json.requiredString(json, 'ownerId'),
         title: Json.requiredString(json, 'title'),
@@ -267,7 +271,8 @@ class ApiTrip {
         planMode: PlanMode.from(json['planMode']),
         brief: TripPlanBrief.maybeFromJson(json['brief']),
         customer: TripCustomer.maybeFromJson(json['customer']),
-        visibility: TripVisibility.from(json['visibility']) ?? TripVisibility.private,
+        visibility:
+            TripVisibility.from(json['visibility']) ?? TripVisibility.private,
         remixCount: Json.integer(json, 'remixCount') ?? 0,
         sourceTripId: Json.string(json, 'sourceTripId'),
         publishedAt: Json.timestamp(json, 'publishedAt'),
@@ -370,7 +375,8 @@ class RemixedTrip {
         title: Json.requiredString(json, 'title'),
         planMode: PlanMode.from(json['planMode']),
         status: TripStatus.from(json['status']) ?? TripStatus.draft,
-        visibility: TripVisibility.from(json['visibility']) ?? TripVisibility.private,
+        visibility:
+            TripVisibility.from(json['visibility']) ?? TripVisibility.private,
         sourceTrip: SourceTripRef.maybeFromJson(json['sourceTrip']),
         days: ItineraryDay.listFrom(json['days']),
         createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),

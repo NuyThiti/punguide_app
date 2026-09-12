@@ -7,7 +7,9 @@ import 'json.dart';
 /// `POST /days/:dayId/items` and by the save-plan payload.
 @immutable
 class Place {
+  final String? mapId;
   const Place({
+    this.mapId,
     required this.id,
     required this.name,
     this.address,
@@ -19,6 +21,7 @@ class Place {
   });
 
   factory Place.fromJson(Map<String, dynamic> json) => Place(
+        mapId: Json.string(json, 'googlePlaceId') ?? Json.string(json, 'mapId'),
         id: Json.requiredString(json, 'id'),
         name: Json.requiredString(json, 'name'),
         address: Json.string(json, 'address'),
@@ -125,7 +128,8 @@ class PlaceSuggestionSections {
   final List<Place> restaurants;
   final List<Place> accommodations;
 
-  List<Place> get all => <Place>[...attractions, ...restaurants, ...accommodations];
+  List<Place> get all =>
+      <Place>[...attractions, ...restaurants, ...accommodations];
 }
 
 /// Opening hours. Everything inside can be null.
@@ -260,8 +264,7 @@ class PlaceDetails {
         userRatingCount: Json.integer(json, 'userRatingCount'),
         priceLevel: Json.string(json, 'priceLevel'),
         nationalPhoneNumber: Json.string(json, 'nationalPhoneNumber'),
-        internationalPhoneNumber:
-            Json.string(json, 'internationalPhoneNumber'),
+        internationalPhoneNumber: Json.string(json, 'internationalPhoneNumber'),
         websiteUri: Json.string(json, 'websiteUri'),
         googleMapsUri: Json.string(json, 'googleMapsUri'),
         businessStatus: Json.string(json, 'businessStatus'),

@@ -18,8 +18,9 @@ const _debounce = Duration(milliseconds: 350);
 ///
 /// `/places/search` rather than `/places/autocomplete`: a post pins a cafe or
 /// a viewpoint, and the type-ahead answers with cities only.
-final placePinResultsProvider = AsyncNotifierProvider.autoDispose<
-    PlacePinResultsNotifier, List<PostPlace>>(PlacePinResultsNotifier.new);
+final placePinResultsProvider =
+    AsyncNotifierProvider.autoDispose<PlacePinResultsNotifier, List<PostPlace>>(
+        PlacePinResultsNotifier.new);
 
 class PlacePinResultsNotifier
     extends AutoDisposeAsyncNotifier<List<PostPlace>> {
@@ -46,6 +47,7 @@ class PlacePinResultsNotifier
 PostPlace _toPostPlace(Place place) {
   return PostPlace(
     id: place.id,
+    mapId: place.mapId,
     name: place.name,
     area: _localityOf(place.address),
   );

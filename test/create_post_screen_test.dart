@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,18 @@ import 'package:pluno/features/create_post/presentation/create_post_screen.dart'
 import 'package:pluno/features/create_post/presentation/widgets/post_block.dart';
 
 import 'support/fake_api.dart';
+
+class _CoverImagePicker extends ImagePickerPlatform {
+  final paths = [
+    'assets/images/puntok_osaka.jpg',
+    'assets/images/puntok_london.jpg'
+  ];
+  @override
+  Future<XFile?> getImageFromSource(
+          {required ImageSource source,
+          ImagePickerOptions options = const ImagePickerOptions()}) async =>
+      XFile(paths.removeAt(0));
+}
 
 Widget _harness({FakeAdapter? adapter}) {
   return ProviderScope(
@@ -45,12 +58,156 @@ Future<void> _pumpComposer(WidgetTester tester, {FakeAdapter? adapter}) async {
 }
 
 void main() {
+  testWidgets('one cover is selected and uploaded media ID is saved',
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        const FakeReply(201, {
+          'mediaId': 'photo-one',
+          'urls': {
+            'large': 'https://example.com/one.jpg',
+            'thumbnail': 'https://example.com/one.jpg'
+          }
+        }),
+        const FakeReply(201, {
+          'mediaId': 'photo-two',
+          'urls': {
+            'large': 'https://example.com/two.jpg',
+            'thumbnail': 'https://example.com/two.jpg'
+          }
+        }),
+      ],
+      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    for (var i = 0; i < 2; i++) {
+      await tester.ensureVisible(find.widgetWithText(PostAddChip, 'รูปภาพ'));
+      await tester.tap(find.widgetWithText(PostAddChip, 'รูปภาพ'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('เลือกจากคลังภาพ'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('รูปหน้าปก'), findsOneWidget);
+    await tester.ensureVisible(find.text('ใช้เป็นหน้าปก'));
+    await tester.tap(find.text('ใช้เป็นหน้าปก'));
+    await tester.pumpAndSettle();
+    expect(find.text('รูปหน้าปก'), findsOneWidget);
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
+        'assets/images/puntok_london.jpg');
+    await tester.tap(find.text('เผยแพร่'));
+    for (var i = 0;
+        i < 100 && !adapter.paths.contains('PATCH /trips/trip-new');
+        i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(adapter.paths, contains('PUT /trips/trip-new/cover'));
+    await tester.pumpAndSettle();
+    expect(
+        adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': 'photo-two'});
+    expect(adapter.paths.indexOf('PUT /trips/trip-new/cover'),
+        lessThan(adapter.paths.indexOf('PATCH /trips/trip-new')));
+    expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('removing the cover selects a remaining photo then clears it',
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    await _pumpComposer(tester);
+    for (var i = 0; i < 2; i++) {
+      await tester.ensureVisible(find.widgetWithText(PostAddChip, 'รูปภาพ'));
+      await tester.tap(find.widgetWithText(PostAddChip, 'รูปภาพ'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('เลือกจากคลังภาพ'));
+      await tester.pumpAndSettle();
+    }
+    var block = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(block.coverPath, 'assets/images/puntok_osaka.jpg');
+    block.onRemoveImage!(0);
+    await tester.pumpAndSettle();
+    block = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(block.coverPath, 'assets/images/puntok_london.jpg');
+    block.onRemoveImage!(0);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath, isNull);
+    expect(find.text('รูปหน้าปก'), findsNothing);
+  });
+
+  testWidgets('publishing generates trip info without a popup', (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(
+        find
+            .descendant(
+                of: find.byType(PostBlock), matching: find.byType(TextField))
+            .first,
+        'เรื่องราว');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เผยแพร่'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(adapter.bodyOf('POST /trips'), {
+      'title': 'เรื่องราว',
+      'destination': 'ไม่ระบุจุดหมาย',
+    });
+    expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('publish retries PATCH on the same draft after failure',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [
+        const FakeReply(500, {'message': 'ลองอีกครั้ง'}),
+        FakeReply(200, createdTripJson()),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(
+        find
+            .descendant(
+                of: find.byType(PostBlock), matching: find.byType(TextField))
+            .first,
+        'เดินเล่น');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เผยแพร่'));
+    await tester.pumpAndSettle();
+    expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
+    expect(adapter.bodyOf('POST /trips'), {
+      'title': 'เดินเล่น',
+      'destination': 'ไม่ระบุจุดหมาย',
+    });
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'], [
+      {'title': '', 'content': 'เดินเล่น', 'imageUrls': <String>[]},
+    ]);
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['visibility'], 'public');
+    await tester.tap(find.text('เผยแพร่'));
+    await tester.pumpAndSettle();
+    expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
+    expect(adapter.paths.where((path) => path == 'PATCH /trips/trip-new'),
+        hasLength(2));
+    expect(find.text('home'), findsOneWidget);
+  });
+
   testWidgets('the composer lays out every part of the design', (tester) async {
     await _pumpComposer(tester);
 
     expect(find.text('สร้างโพสต์'), findsOneWidget);
     expect(find.text('เผยแพร่'), findsOneWidget);
     expect(find.text('สาธารณะ'), findsOneWidget);
+    expect(find.text('ชื่อโพสต์'), findsNothing);
+    expect(find.text('จุดหมาย'), findsNothing);
     // The body leads, unlabelled; the optional parts are offered as chips.
     expect(find.text('เล่าเรื่องราวของทริปนี้…'), findsOneWidget);
     expect(find.widgetWithText(PostAddChip, 'หัวข้อ'), findsOneWidget);
@@ -68,7 +225,7 @@ void main() {
     expect(find.text('ไม่บังคับ'), findsOneWidget);
     expect(find.text('เพิ่มเนื้อหา'), findsOneWidget);
     expect(find.text('เพิ่มเรื่องราวส่วนถัดไป'), findsOneWidget);
-    expect(find.textContaining('เชื่อมกับทริป'), findsOneWidget);
+    expect(find.textContaining('ใช้ข้อมูลจากทริป'), findsOneWidget);
   });
 
   testWidgets('เพิ่มเนื้อหา appends a section and the extra one goes away',
@@ -91,6 +248,39 @@ void main() {
     expect(find.byType(PostBlock), findsOneWidget);
   });
 
+  testWidgets(
+      'moving a section keeps its text and deleting removes only that section',
+      (tester) async {
+    await _pumpComposer(tester);
+    await tester.enterText(
+        find
+            .descendant(
+                of: find.byType(PostBlock), matching: find.byType(TextField))
+            .first,
+        'ส่วนแรก');
+    await tester.tap(find.text('เพิ่มเนื้อหา'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find
+            .descendant(
+                of: find.byType(PostBlock), matching: find.byType(TextField))
+            .last,
+        'ส่วนที่สอง');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('เลื่อนขึ้น').last);
+    await tester.pumpAndSettle();
+    final fields = tester
+        .widgetList<TextField>(find.descendant(
+            of: find.byType(PostBlock), matching: find.byType(TextField)))
+        .toList();
+    expect(fields.first.controller!.text, 'ส่วนที่สอง');
+    expect(fields.last.controller!.text, 'ส่วนแรก');
+    await tester.tap(find.text('ลบเนื้อหานี้'));
+    await tester.pumpAndSettle();
+    expect(find.text('ส่วนแรก'), findsNothing);
+    expect(find.text('ส่วนที่สอง'), findsOneWidget);
+  });
+
   testWidgets('หัวข้อ adds a heading field, and its ✕ takes it back off',
       (tester) async {
     await _pumpComposer(tester);
@@ -103,7 +293,12 @@ void main() {
     // The chip is spent, and the field it added carries the hint instead.
     expect(find.widgetWithText(PostAddChip, 'หัวข้อ'), findsNothing);
     expect(find.text('หัวข้อ'), findsOneWidget);
-    await tester.enterText(find.byType(TextField).first, 'คาเฟ่วิวภูเขา');
+    await tester.enterText(
+        find
+            .descendant(
+                of: find.byType(PostBlock), matching: find.byType(TextField))
+            .first,
+        'คาเฟ่วิวภูเขา');
     await tester.pumpAndSettle();
     expect(find.text('คาเฟ่วิวภูเขา'), findsOneWidget);
 
@@ -126,7 +321,10 @@ void main() {
     expect(publish.onPressed, isNull);
 
     await tester.enterText(
-      find.byType(TextField).first,
+      find
+          .descendant(
+              of: find.byType(PostBlock), matching: find.byType(TextField))
+          .first,
       'บรรยากาศดีมาก นั่งจิบกาแฟชมวิวภูเขา',
     );
     await tester.pumpAndSettle();
@@ -262,4 +460,3 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
-

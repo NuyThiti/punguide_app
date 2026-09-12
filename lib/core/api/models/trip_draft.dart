@@ -1,3 +1,4 @@
+import 'trip_content.dart';
 import 'package:flutter/foundation.dart';
 
 import 'destination_place.dart';
@@ -103,20 +104,18 @@ class DraftActivity {
         orderIndex: Json.integer(json, 'orderIndex'),
         estimatedDurationMin: Json.integer(json, 'estimatedDurationMin'),
         travelTimeFromPrevMin: Json.integer(json, 'travelTimeFromPrevMin'),
-        travelDistanceFromPrevKm:
-            Json.number(json, 'travelDistanceFromPrevKm'),
+        travelDistanceFromPrevKm: Json.number(json, 'travelDistanceFromPrevKm'),
         travelTypeFromPrev: TravelType.from(json['travelTypeFromPrev']),
-        travelCustomTypeFromPrev:
-            Json.string(json, 'travelCustomTypeFromPrev'),
-        travelCostFromPrevAmount:
-            Json.number(json, 'travelCostFromPrevAmount'),
+        travelCustomTypeFromPrev: Json.string(json, 'travelCustomTypeFromPrev'),
+        travelCostFromPrevAmount: Json.number(json, 'travelCostFromPrevAmount'),
         travelCostFromPrevCurrency:
             Json.string(json, 'travelCostFromPrevCurrency'),
         travelNotesFromPrev: Json.string(json, 'travelNotesFromPrev'),
         bookingStatus: BookingStatus.from(json['bookingStatus']),
         bookingLeadUrl: Json.string(json, 'bookingLeadUrl'),
-        isAiSuggested:
-            json['isAiSuggested'] is bool ? json['isAiSuggested'] as bool : null,
+        isAiSuggested: json['isAiSuggested'] is bool
+            ? json['isAiSuggested'] as bool
+            : null,
         travelNote: Json.string(json, 'travelNote'),
         icon: Json.string(json, 'icon'),
         images: Json.stringList(json, 'images'),
@@ -282,8 +281,7 @@ class DraftDay {
         'date': date == null ? null : Json.formatDate(date!),
         'fatigueLevel': fatigueLevel?.wire,
         'daySummary': daySummary,
-        'activities':
-            activities.map((activity) => activity.toJson()).toList(),
+        'activities': activities.map((activity) => activity.toJson()).toList(),
       });
 }
 
@@ -413,7 +411,9 @@ class DraftExpense {
 /// a non-empty [transport]; see [missingAiFields].
 @immutable
 class TripDraft {
+  final List<TripContent>? contents;
   const TripDraft({
+    this.contents,
     required this.title,
     required this.destination,
     required this.days,
@@ -443,6 +443,9 @@ class TripDraft {
   });
 
   factory TripDraft.fromJson(Map<String, dynamic> json) => TripDraft(
+        contents: json['contents'] == null
+            ? null
+            : TripContent.listFrom(json['contents']),
         title: Json.requiredString(json, 'title'),
         destination: Json.requiredString(json, 'destination'),
         planMode: PlanMode.from(json['planMode']),
@@ -456,8 +459,8 @@ class TripDraft {
         durationNights: Json.integer(json, 'durationNights'),
         numPeople: Json.integer(json, 'numPeople'),
         budgetTier: BudgetTier.from(json['budgetTier']),
-        budgetLimit: Json.number(json, 'budgetLimit') ??
-            Json.number(json, 'budgetGoal'),
+        budgetLimit:
+            Json.number(json, 'budgetLimit') ?? Json.number(json, 'budgetGoal'),
         styles: json.containsKey('styles')
             ? parseEnumList(json['styles'], TravelStyle.from)
             : null,
@@ -477,8 +480,7 @@ class TripDraft {
         days: Json.asMapList(json['days'])
             .map(DraftDay.fromJson)
             .toList(growable: false),
-        accommodation:
-            DraftAccommodation.maybeFromJson(json['accommodation']),
+        accommodation: DraftAccommodation.maybeFromJson(json['accommodation']),
         expenses: Json.asMapList(json['expenses'])
             .map(DraftExpense.fromJson)
             .toList(growable: false),
@@ -535,6 +537,7 @@ class TripDraft {
   }
 
   TripDraft copyWith({
+    List<TripContent>? contents,
     String? title,
     String? destination,
     TripStatus? status,
@@ -548,6 +551,7 @@ class TripDraft {
     List<DraftExpense>? expenses,
   }) =>
       TripDraft(
+        contents: contents ?? this.contents,
         title: title ?? this.title,
         destination: destination ?? this.destination,
         planMode: planMode,
@@ -577,6 +581,7 @@ class TripDraft {
       );
 
   Map<String, dynamic> toJson() => Json.compact(<String, dynamic>{
+        'contents': contents?.map((item) => item.toJson()).toList(),
         'title': title,
         'destination': destination,
         'planMode': planMode?.wire,
