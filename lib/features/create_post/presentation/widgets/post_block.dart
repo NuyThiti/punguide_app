@@ -29,8 +29,16 @@ class PostBlock extends StatelessWidget {
     this.onRemoveImage,
     this.coverPath,
     this.onSelectCover,
+    this.onMoveImage,
+    this.onDropBeforeImage,
+    this.onDropImage,
+    this.blockIndex = 0,
   });
 
+  final void Function((int, int), int)? onDropBeforeImage;
+  final ValueChanged<int>? onMoveImage;
+  final ValueChanged<(int, int)>? onDropImage;
+  final int blockIndex;
   final TextEditingController titleController;
   final FocusNode titleFocus;
   final TextEditingController bodyController;
@@ -62,115 +70,148 @@ class PostBlock extends StatelessWidget {
     final photo = imagePath;
     final pinned = place;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (onRemove != null)
-          Align(
-            alignment: Alignment.centerRight,
-            child: InkWell(
-              onTap: onRemove,
-              borderRadius: BorderRadius.circular(8),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text(
-                  'ลบเนื้อหานี้',
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+    return DragTarget<(int, int)>(
+        onAcceptWithDetails: (details) => onDropImage?.call(details.data),
+        builder: (context, candidates, rejected) => Container(
+            decoration: BoxDecoration(
+                border: candidates.isEmpty
+                    ? null
+                    : Border.all(color: AppColors.createTop)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (onRemove != null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: InkWell(
+                      onTap: onRemove,
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Text(
+                          'ลบเนื้อหานี้',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ),
-        if (showTitle) ...[
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: titleController,
-                  maxLength: 200,
-                  focusNode: titleFocus,
-                  textInputAction: TextInputAction.next,
+                if (showTitle) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: titleController,
+                          maxLength: 200,
+                          focusNode: titleFocus,
+                          textInputAction: TextInputAction.next,
+                          style: const TextStyle(
+                            color: AppColors.foreground,
+                            fontSize: 19,
+                            height: 1.35,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          decoration: const InputDecoration(
+                            counterText: '',
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            hintText: 'หัวข้อ',
+                            hintStyle: TextStyle(
+                              color: AppColors.postFieldHint,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      _ClearButton(onTap: onClearTitle, tooltip: 'ลบหัวข้อ'),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                TextField(
+                  controller: bodyController,
+                  maxLength: 10000,
+                  minLines: 2,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
                   style: const TextStyle(
                     color: AppColors.foreground,
-                    fontSize: 19,
-                    height: 1.35,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    height: 1.6,
+                    fontWeight: FontWeight.w500,
                   ),
                   decoration: const InputDecoration(
-                    counterText: '',
                     isDense: true,
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
-                    hintText: 'หัวข้อ',
+                    counterText: '',
+                    hintText: 'เล่าเรื่องราวของทริปนี้…',
                     hintStyle: TextStyle(
                       color: AppColors.postFieldHint,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      height: 1.6,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-              ),
-              _ClearButton(onTap: onClearTitle, tooltip: 'ลบหัวข้อ'),
-            ],
-          ),
-          const SizedBox(height: 10),
-        ],
-        TextField(
-          controller: bodyController,
-          maxLength: 10000,
-          minLines: 2,
-          maxLines: null,
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-          style: const TextStyle(
-            color: AppColors.foreground,
-            fontSize: 16,
-            height: 1.6,
-            fontWeight: FontWeight.w500,
-          ),
-          decoration: const InputDecoration(
-            isDense: true,
-            border: InputBorder.none,
-            contentPadding: EdgeInsets.zero,
-            counterText: '',
-            hintText: 'เล่าเรื่องราวของทริปนี้…',
-            hintStyle: TextStyle(
-              color: AppColors.postFieldHint,
-              fontSize: 16,
-              height: 1.6,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        if (photo != null) ...[
-          const SizedBox(height: 14),
-          _BlockPhoto(source: photo, onClear: onClearImage),
-        ],
-        for (var index = 0; index < imagePaths.length; index++) ...[
-          const SizedBox(height: 14),
-          _BlockPhoto(
-              source: imagePaths[index],
-              isCover: imagePaths[index] == coverPath,
-              onSelectCover: onSelectCover == null
-                  ? null
-                  : () => onSelectCover!(imagePaths[index]),
-              onClear: () => onRemoveImage?.call(index)),
-        ],
-        if (pinned != null) ...[
-          const SizedBox(height: 14),
-          _PinnedPlaceRow(place: pinned, onClear: onClearPlace),
-        ],
-        const SizedBox(height: 14),
-        _AddRow(
-          onAddTitle: showTitle ? null : onAddTitle,
-          onPickImage: onPickImage,
-          onPickPlace: onPickPlace,
-        ),
-      ],
-    );
+                if (photo != null) ...[
+                  const SizedBox(height: 14),
+                  _BlockPhoto(source: photo, onClear: onClearImage),
+                ],
+                for (var index = 0; index < imagePaths.length; index++) ...[
+                  const SizedBox(height: 14),
+                  DragTarget<(int, int)>(
+                      onAcceptWithDetails: (details) =>
+                          onDropBeforeImage?.call(details.data, index),
+                      builder: (context, candidates, rejected) => DecoratedBox(
+                          decoration: BoxDecoration(
+                              border: candidates.isEmpty
+                                  ? null
+                                  : Border.all(
+                                      color: AppColors.createTop, width: 3)),
+                          child: LongPressDraggable<(int, int)>(
+                              data: (blockIndex, index),
+                              feedback: Material(
+                                  color: AppColors.createTop,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: const Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Icon(Icons.photo,
+                                          color: Colors.white))),
+                              child: _BlockPhoto(
+                                  source: imagePaths[index],
+                                  isCover: imagePaths[index] == coverPath,
+                                  onSelectCover: onSelectCover == null
+                                      ? null
+                                      : () => onSelectCover!(imagePaths[index]),
+                                  onClear: () => onRemoveImage?.call(index))))),
+                  if (onMoveImage != null)
+                    Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                            onPressed: () => onMoveImage!(index),
+                            icon: const Icon(Icons.drive_file_move_outline),
+                            label: const Text('ย้ายรูป'))),
+                ],
+                if (pinned != null) ...[
+                  const SizedBox(height: 14),
+                  _PinnedPlaceRow(place: pinned, onClear: onClearPlace),
+                ],
+                const SizedBox(height: 14),
+                _AddRow(
+                  onAddTitle: showTitle ? null : onAddTitle,
+                  onPickImage: onPickImage,
+                  onPickPlace: onPickPlace,
+                ),
+              ],
+            )));
   }
 }
 
@@ -209,7 +250,7 @@ class _BlockPhoto extends StatelessWidget {
                 onPressed: onSelectCover,
                 style: FilledButton.styleFrom(
                   backgroundColor: isCover
-                      ? AppColors.brandOrange
+                      ? AppColors.createTop
                       : Colors.black.withValues(alpha: 0.65),
                   foregroundColor: Colors.white,
                 ),
@@ -270,7 +311,7 @@ class _PinnedPlaceRow extends StatelessWidget {
             child: const Icon(
               Icons.map,
               size: 19,
-              color: AppColors.brandOrange,
+              color: AppColors.createTop,
             ),
           ),
           const SizedBox(width: 10),
@@ -328,7 +369,7 @@ class _AddRow extends StatelessWidget {
         ),
         PostAddChip(
           icon: Icons.map_outlined,
-          label: 'สถานที่',
+          label: 'เพิ่มสถานที่ (ไม่บังคับ)',
           onTap: onPickPlace,
         ),
         // One unit, so a hairline can never end up stranded at the end of a
@@ -389,16 +430,17 @@ class PostAddChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 16, color: AppColors.brandOrange),
+              Icon(icon, size: 16, color: AppColors.createTop),
               const SizedBox(width: 6),
-              Text(
+              Flexible(
+                  child: Text(
                 label,
                 style: const TextStyle(
                   color: AppColors.foreground,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w600,
                 ),
-              ),
+              )),
             ],
           ),
         ),

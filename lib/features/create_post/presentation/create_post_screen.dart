@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../domain/services/trip_photo_grouper.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -19,11 +21,21 @@ import 'widgets/post_block.dart';
 import 'widgets/post_trip_row.dart';
 import 'widgets/trip_link_picker.dart';
 
+final _localDraftProvider = StateProvider<PostDraft?>((ref) => null);
+final _localCoverProvider = StateProvider<String?>((ref) => null);
+final _localPublishProvider = StateProvider<_PublishResume?>((ref) => null);
+
+class _PublishResume {
+  const _PublishResume(this.id, this.coverId, this.uploaded, this.destination);
+  final String? id, coverId, destination;
+  final Map<String, Media> uploaded;
+}
+
 /// "สร้างโพสต์" — the community composer, from the create sheet's Post row.
 ///
 /// A post is one or more sections, each led by its story and carrying whatever
 /// the writer added to it: a heading, a photo, a pinned place. Publishing is
-/// the header's เผยแพร่ and nothing else.
+/// the header's ปันไกด์ action.
 ///
 class CreatePostScreen extends ConsumerStatefulWidget {
   const CreatePostScreen({super.key});
@@ -33,8 +45,7 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 }
 
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
-  /// One section to start. "เพิ่มเนื้อหา" appends, and every section past the
-  /// first can be removed again.
+  /// Keep one section; any section can be removed when more than one exists.
   final List<_BlockFields> _blocks = <_BlockFields>[_BlockFields()];
 
   PostAudience _audience = PostAudience.public;
@@ -44,6 +55,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _picker = ImagePicker();
   String? _draftId;
   bool _publishing = false;
+  bool _published = false;
+  bool _arranging = false;
+  int _arrangement = 0;
   final Map<String, Media> _uploaded = {};
   String? _coverPath;
   String? _savedCoverId;
@@ -58,6 +72,30 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   @override
   void initState() {
     super.initState();
+    final saved = ref.read(_localDraftProvider);
+    if (saved != null) {
+      for (final block in _blocks) {
+        block.dispose(_refresh);
+      }
+      _blocks.clear();
+      for (final topic in saved.topics) {
+        _blocks.add(_BlockFields()
+          ..title.text = topic.title
+          ..body.text = topic.body
+          ..showTitle = topic.title.isNotEmpty
+          ..imagePaths.addAll(topic.photos)
+          ..place = topic.place);
+      }
+      if (_blocks.isEmpty) _blocks.add(_BlockFields());
+      _audience = saved.audience;
+      _trip = saved.trip;
+      _coverPath = ref.read(_localCoverProvider);
+      final resume = ref.read(_localPublishProvider);
+      _draftId = resume?.id;
+      _savedCoverId = resume?.coverId;
+      _tripDestination = resume?.destination;
+      _uploaded.addAll(resume?.uploaded ?? {});
+    }
     // เผยแพร่ lights up as soon as there is something to post, so what is
     // typed has to be listened to rather than read on build alone.
     for (final block in _blocks) {
@@ -136,10 +174,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     try {
       final image = await _picker.pickImage(source: source, imageQuality: 85);
       if (image == null || !mounted || !_blocks.contains(block)) return;
-      if (_blocks.any((fields) => fields.imagePaths.contains(image.path))) {
-        _message('รูปนี้อยู่ในโพสต์แล้ว');
-        return;
-      }
       setState(() {
         block.imagePaths.add(image.path);
         _syncCover();
@@ -148,6 +182,90 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // A denied permission, or no camera on the device.
       _message('เลือกรูปไม่สำเร็จ ลองอีกครั้ง');
     }
+  }
+
+  void _cancelArrangement() {
+    _arrangement++;
+    setState(() => _arranging = false);
+  }
+
+  Future<void> _createFromPhotos() async {
+    if (_arranging) return;
+    final token = ++_arrangement;
+    setState(() => _arranging = true);
+    try {
+      // Original files preserve metadata; the system picker supports limited access.
+      final files = await _picker.pickMultiImage();
+      if (!mounted || token != _arrangement || files.isEmpty) return;
+      final photos = <TripPhoto>[];
+      for (final file in files) {
+        if (!mounted || token != _arrangement) return;
+        try {
+          final bytes = await file.readAsBytes();
+          photos.add(await compute(_readPhoto, (bytes, file.path)));
+        } catch (_) {
+          photos.add(TripPhoto(file.path));
+        }
+      }
+      if (!mounted || token != _arrangement) return;
+      final groups = const TripPhotoGrouper().group(photos);
+      final empty = _blocks.length == 1 && _blocks.first.toTopic().isEmpty;
+      if (_blocks.length + groups.length - (empty ? 1 : 0) > 100) {
+        _message(
+            'รูปที่เลือกทำให้เกิน 100 ส่วน กรุณาเลือกจำนวนน้อยลง ร่างเดิมยังอยู่');
+        return;
+      }
+      setState(() {
+        if (empty) _blocks.removeLast().dispose(_refresh);
+        for (final group in groups) {
+          _blocks.add(_BlockFields()
+            ..imagePaths.addAll(group.map((p) => p.path))
+            ..listen(_refresh));
+        }
+        _syncCover();
+      });
+      _saveLocal();
+      _message(
+          'จัดรูปแล้ว ตรวจและแก้ไขในเนื้อหาด้านล่าง กดค้างที่รูปเพื่อลาก หรือกดย้ายรูป');
+    } catch (_) {
+      if (mounted && token == _arrangement)
+        _message(
+            'เลือกรูปไม่สำเร็จ กรุณาตรวจสิทธิ์เข้าถึงรูปแล้วลองอีกครั้ง ร่างเดิมยังอยู่');
+    } finally {
+      if (mounted && token == _arrangement) setState(() => _arranging = false);
+    }
+  }
+
+  void _transferPhoto(int source, int photo, int target, [int? position]) {
+    if (source >= _blocks.length ||
+        target >= _blocks.length ||
+        photo >= _blocks[source].imagePaths.length) return;
+    if (source != target && _blocks[target].imagePaths.length >= 20) {
+      _message('เพิ่มรูปได้สูงสุด 20 รูปต่อส่วน');
+      return;
+    }
+    setState(() {
+      final path = _blocks[source].imagePaths.removeAt(photo);
+      final images = _blocks[target].imagePaths;
+      var insertion = position ?? images.length;
+      if (position != null && source == target && photo < position) insertion--;
+      images.insert(insertion.clamp(0, images.length), path);
+    });
+  }
+
+  Future<void> _movePhoto(int source, int photo) async {
+    final target = await showModalBottomSheet<int>(
+        context: context,
+        builder: (context) => SafeArea(
+              child: ListView(shrinkWrap: true, children: [
+                const ListTile(title: Text('ย้ายรูปไปท้ายเนื้อหา')),
+                for (var i = 0; i < _blocks.length; i++)
+                  ListTile(
+                      title: Text('เนื้อหา ${i + 1}'),
+                      onTap: () => Navigator.pop(context, i)),
+              ]),
+            ));
+    if (mounted && target != null) _transferPhoto(source, photo, target);
   }
 
   Future<void> _pickPlace(int index) async {
@@ -197,7 +315,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         return _trimForTripField(topic.body);
       }
     }
-    return 'โพสต์ใหม่';
+    return '';
   }
 
   String _destinationForPublish(PostDraft draft) {
@@ -215,10 +333,26 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         return _trimForTripField(place.name);
       }
     }
-    return 'ไม่ระบุจุดหมาย';
+    return '';
+  }
+
+  void _saveLocal() {
+    if (_published) {
+      ref.read(_localDraftProvider.notifier).state = null;
+      ref.read(_localCoverProvider.notifier).state = null;
+      ref.read(_localPublishProvider.notifier).state = null;
+      return;
+    }
+    ref.read(_localPublishProvider.notifier).state = _PublishResume(
+        _draftId, _savedCoverId, Map.of(_uploaded), _tripDestination);
+    ref.read(_localDraftProvider.notifier).state = _draft;
+    ref.read(_localCoverProvider.notifier).state = _coverPath;
   }
 
   void _close() {
+    if (_publishing) return;
+    _arrangement++;
+    _saveLocal();
     if (context.canPop()) {
       context.pop();
     } else {
@@ -227,7 +361,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Future<void> _publish() async {
-    if (_publishing || !_draft.isPublishable) return;
+    if (_publishing || _arranging || !_draft.isPublishable) return;
     if (_audience == PostAudience.followers) {
       _message('ขณะนี้รองรับสาธารณะและเฉพาะฉัน กรุณาเลือกผู้ชมอีกครั้ง');
       return;
@@ -236,6 +370,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final draft = _draft;
     final title = _titleForPublish(draft);
     final destination = _destinationForPublish(draft);
+    if (title.isEmpty || destination.isEmpty) {
+      _message(
+          'ร่างเก็บไว้แก้ไขได้ แต่ Trip API ปัจจุบันต้องมีชื่อและจุดหมายก่อนเผยแพร่ ยังไม่รองรับโพสต์รูปอย่างเดียวโดยไม่มีข้อมูลนี้');
+      return;
+    }
     setState(() => _publishing = true);
     try {
       for (final topic in draft.topics) {
@@ -291,6 +430,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               : TripVisibility.private);
       if (!mounted) return;
       setState(() => _publishing = false);
+      _published = true;
       _message('บันทึกโพสต์เรียบร้อยแล้ว');
       _close();
     } on ApiException catch (error) {
@@ -308,6 +448,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   void _message(String text) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(text)));
@@ -320,7 +461,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return AppFrame(
       background: AppColors.screen,
       child: PopScope(
-        canPop: !_publishing,
+        canPop: !_publishing && !_arranging,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) _saveLocal();
+          if (!didPop && _arranging) _cancelArrangement();
+        },
         child: AbsorbPointer(
           absorbing: _publishing,
           child: SafeArea(
@@ -329,7 +474,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 CreatePostHeader(
                   onClose: _close,
                   onPublish: _publish,
-                  canPublish: !_publishing && _draft.isPublishable,
+                  canPublish:
+                      !_publishing && !_arranging && _draft.isPublishable,
                 ),
                 if (_publishing) const LinearProgressIndicator(),
                 Expanded(
@@ -342,7 +488,32 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         audience: _audience,
                         onChangeAudience: _pickAudience,
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
+                      if (_arranging)
+                        Row(children: [
+                          const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2)),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                              child: Text('กำลังจัดรูปเป็นเรื่องราว…')),
+                          TextButton(
+                              onPressed: _cancelArrangement,
+                              child: const Text('ยกเลิก')),
+                        ])
+                      else
+                        Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: _createFromPhotos,
+                              icon: const Icon(Icons.auto_awesome_outlined,
+                                  size: 19),
+                              label: const Text('สร้างจากรูปทริป'),
+                              style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.createTop),
+                            )),
+                      const SizedBox(height: 12),
                       for (var index = 0; index < _blocks.length; index++) ...[
                         if (index > 0)
                           const Divider(height: 30, color: AppColors.line),
@@ -350,7 +521,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                Text('ส่วนที่ ${index + 1}'),
+                                Text('เนื้อหา ${index + 1}'),
                                 IconButton(
                                     tooltip: 'เลื่อนขึ้น',
                                     icon: const Icon(Icons.arrow_upward),
@@ -381,6 +552,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           imagePath: null,
                           imagePaths: _blocks[index].imagePaths,
                           coverPath: _coverPath,
+                          onMoveImage: (photoIndex) =>
+                              _movePhoto(index, photoIndex),
+                          onDropImage: (move) =>
+                              _transferPhoto(move.$1, move.$2, index),
+                          blockIndex: index,
+                          onDropBeforeImage: (move, position) =>
+                              _transferPhoto(move.$1, move.$2, index, position),
                           onSelectCover: (path) =>
                               setState(() => _coverPath = path),
                           onRemoveImage: (photoIndex) => setState(() {
@@ -398,8 +576,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           onPickPlace: () => _pickPlace(index),
                           onClearPlace: () =>
                               setState(() => _blocks[index].place = null),
-                          onRemove:
-                              index == 0 ? null : () => _removeBlock(index),
+                          onRemove: _blocks.length == 1
+                              ? null
+                              : () => _removeBlock(index),
                         ),
                       ],
                       const SizedBox(height: 18),
@@ -483,8 +662,8 @@ class _AddBlockButton extends StatelessWidget {
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.brandOrange,
-          side: const BorderSide(color: AppColors.brandOrange, width: 1.4),
+          foregroundColor: AppColors.createTop,
+          side: const BorderSide(color: AppColors.createTop, width: 1.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -493,3 +672,6 @@ class _AddBlockButton extends StatelessWidget {
     );
   }
 }
+
+Future<TripPhoto> _readPhoto((Uint8List, String) input) =>
+    readTripPhoto(input.$1, input.$2);

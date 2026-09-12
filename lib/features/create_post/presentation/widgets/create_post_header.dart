@@ -48,13 +48,13 @@ class CreatePostHeader extends StatelessWidget {
           TextButton(
             onPressed: canPublish ? onPublish : null,
             style: TextButton.styleFrom(
-              foregroundColor: AppColors.brandOrange,
+              foregroundColor: AppColors.createTop,
               disabledForegroundColor: const Color(0xFFD9B3A6),
               padding: const EdgeInsets.symmetric(horizontal: 14),
               minimumSize: const Size(0, 44),
             ),
             child: const Text(
-              'เผยแพร่',
+              'ปันไกด์',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
             ),
           ),

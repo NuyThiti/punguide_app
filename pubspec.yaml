@@ -43,6 +43,7 @@ dependencies:
   google_maps_flutter: ^2.18.0
   geolocator: ^14.0.0
   video_player: ^2.14.0
+  exif: ^3.3.0
 
 dev_dependencies:
   flutter_test:
