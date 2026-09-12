@@ -53,6 +53,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   int _travelers = 1;
   int _children = 0;
   bool _aiShown = false;
+  final String _draftCreationKey = uuidV4();
   bool _isSaving = false;
 
   /// 0 = preferences, 1 = budget and constraints. The header and the mode
@@ -527,7 +528,8 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         // POST /trips — the manual-mode draft. `status` is never sent: the
         // backend always creates a draft and rejects the field outright.
         await api.trips.createDraft(
-          title: title,
+          type: TripType.planTrip,
+          idempotencyKey: _draftCreationKey, title: title,
           destination: destination,
           destinationPlace: _destinationPlace,
           startDate: _startDate,

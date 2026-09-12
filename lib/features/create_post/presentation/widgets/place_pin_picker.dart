@@ -47,6 +47,7 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
         children: [
           TextField(
             controller: _controller,
+            maxLength: 200,
             autofocus: true,
             textInputAction: TextInputAction.search,
             onChanged: (value) =>
@@ -83,6 +84,13 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
               ),
             ),
           ),
+          if (query.isNotEmpty && query.length <= 200)
+            TextButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pop(PostPlace(id: '', name: query)),
+              icon: const Icon(Icons.edit_location_alt_outlined),
+              label: const Text('ใช้ชื่อที่พิมพ์เอง'),
+            ),
           const SizedBox(height: 14),
           Flexible(
             child: _Results(

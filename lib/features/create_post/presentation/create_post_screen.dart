@@ -1,6 +1,9 @@
+import 'widgets/post_info_dialog.dart';
+import '../../../shared/widgets/cover_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/services/trip_photo_grouper.dart';
+import '../domain/services/post_photo_upload.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -21,14 +24,22 @@ import 'widgets/post_block.dart';
 import 'widgets/post_trip_row.dart';
 import 'widgets/trip_link_picker.dart';
 
-final _localDraftProvider = StateProvider<PostDraft?>((ref) => null);
-final _localCoverProvider = StateProvider<String?>((ref) => null);
-final _localPublishProvider = StateProvider<_PublishResume?>((ref) => null);
+final _localDraftProvider =
+    StateProvider.family<PostDraft?, String>((ref, id) => null);
+final _localCoverProvider =
+    StateProvider.family<String?, String>((ref, id) => null);
+final _localPublishProvider =
+    StateProvider.family<_PublishResume?, String>((ref, id) => null);
 
 class _PublishResume {
-  const _PublishResume(this.id, this.coverId, this.uploaded, this.destination);
+  _PublishResume(this.id, this.coverId, this.uploaded, this.destination);
   final String? id, coverId, destination;
   final Map<String, Media> uploaded;
+  String? sourceId, creationTitle, creationDestination;
+  String key = '', title = '', postDestination = '';
+  bool coverWasInContents = false;
+  Set<String> uncertain = {}, legacy = {}, unavailable = {};
+  Map<String, TripPhoto> metadata = {};
 }
 
 /// "สร้างโพสต์" — the community composer, from the create sheet's Post row.
@@ -38,7 +49,8 @@ class _PublishResume {
 /// the header's ปันไกด์ action.
 ///
 class CreatePostScreen extends ConsumerStatefulWidget {
-  const CreatePostScreen({super.key});
+  const CreatePostScreen({super.key, this.initialTrip});
+  final ApiTrip? initialTrip;
 
   @override
   ConsumerState<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -53,6 +65,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   String? _tripDestination;
 
   final _picker = ImagePicker();
+  String get _storageKey => widget.initialTrip?.id ?? 'new';
   String? _draftId;
   bool _publishing = false;
   bool _published = false;
@@ -61,18 +74,30 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final Map<String, Media> _uploaded = {};
   String? _coverPath;
   String? _savedCoverId;
+  bool _savedCoverWasInContents = false;
+  String _createKey = uuidV4();
+  String? _creationTitle, _creationDestination;
+  final _postTitle = TextEditingController();
+  final _postDestination = TextEditingController();
+  final Set<String> _uncertainUploads = {},
+      _legacyUrls = {},
+      _unavailablePaths = {};
+  final Map<String, TripPhoto> _photoMetadata = {};
 
   void _syncCover() {
     final photos = _blocks.expand((block) => block.imagePaths);
     if (!photos.contains(_coverPath)) {
-      _coverPath = photos.isEmpty ? null : photos.first;
+      _coverPath = null;
     }
   }
 
   @override
   void initState() {
     super.initState();
-    final saved = ref.read(_localDraftProvider);
+    final resumeState = ref.read(_localPublishProvider(_storageKey));
+    final saved = resumeState?.sourceId == widget.initialTrip?.id
+        ? ref.read(_localDraftProvider(_storageKey))
+        : null;
     if (saved != null) {
       for (final block in _blocks) {
         block.dispose(_refresh);
@@ -84,17 +109,86 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ..body.text = topic.body
           ..showTitle = topic.title.isNotEmpty
           ..imagePaths.addAll(topic.photos)
-          ..place = topic.place);
+          ..place = topic.place
+          ..location = topic.location
+          ..legacyMapId = topic.legacyMapId);
       }
       if (_blocks.isEmpty) _blocks.add(_BlockFields());
       _audience = saved.audience;
       _trip = saved.trip;
-      _coverPath = ref.read(_localCoverProvider);
-      final resume = ref.read(_localPublishProvider);
+      _coverPath = ref.read(_localCoverProvider(_storageKey));
+      final resume = ref.read(_localPublishProvider(_storageKey));
       _draftId = resume?.id;
       _savedCoverId = resume?.coverId;
       _tripDestination = resume?.destination;
       _uploaded.addAll(resume?.uploaded ?? {});
+      if (resume != null) {
+        _savedCoverWasInContents = resume.coverWasInContents;
+        _createKey = resume.key;
+        _creationTitle = resume.creationTitle;
+        _creationDestination = resume.creationDestination;
+        _postTitle.text = resume.title;
+        _postDestination.text = resume.postDestination;
+        _uncertainUploads.addAll(resume.uncertain);
+        _legacyUrls.addAll(resume.legacy);
+        _unavailablePaths.addAll(resume.unavailable);
+        _photoMetadata.addAll(resume.metadata);
+      }
+    }
+    if (saved == null && widget.initialTrip != null) {
+      final trip = widget.initialTrip!;
+      _draftId = trip.id;
+      _postTitle.text = trip.title;
+      _postDestination.text = trip.destination;
+      _audience = trip.visibility == TripVisibility.public
+          ? PostAudience.public
+          : PostAudience.onlyMe;
+      for (final block in _blocks) {
+        block.dispose(_refresh);
+      }
+      _blocks.clear();
+      for (final section in trip.contents) {
+        final block = _BlockFields()
+          ..title.text = section.title
+          ..showTitle = section.title.isNotEmpty
+          ..body.text = section.content
+          ..location = section.location
+          ..legacyMapId = section.mapId;
+        if (section.mediaIds != null) {
+          for (final id in section.mediaIds!) {
+            final images = section.images.where((image) => image.mediaId == id);
+            final image = images.isEmpty ? null : images.first;
+            final path = image?.urls?.full ?? 'unavailable:$id';
+            block.imagePaths.add(path);
+            if (image == null || image.unavailable || image.urls == null) {
+              _unavailablePaths.add(path);
+            } else {
+              _uploaded[path] = Media(mediaId: id, urls: image.urls!);
+            }
+            final metadata =
+                section.photoMetadata.where((m) => m.mediaId == id);
+            if (metadata.isNotEmpty) {
+              final m = metadata.first;
+              _photoMetadata[path] = TripPhoto(path,
+                  takenAt:
+                      m.takenAt == null ? null : DateTime.tryParse(m.takenAt!),
+                  captureTimestamp: m.takenAt,
+                  latitude: m.latitude,
+                  longitude: m.longitude);
+            }
+            if (trip.coverImage?.mediaId == id) {
+              _coverPath = path;
+              _savedCoverWasInContents = true;
+            }
+          }
+        } else {
+          block.imagePaths.addAll(section.imageUrls);
+          _legacyUrls.addAll(section.imageUrls);
+        }
+        _blocks.add(block);
+      }
+      _savedCoverId = trip.coverImage?.mediaId;
+      if (_blocks.isEmpty) _blocks.add(_BlockFields());
     }
     // เผยแพร่ lights up as soon as there is something to post, so what is
     // typed has to be listened to rather than read on build alone.
@@ -108,6 +202,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     for (final block in _blocks) {
       block.dispose(_refresh);
     }
+    _postTitle.dispose();
+    _postDestination.dispose();
     super.dispose();
   }
 
@@ -164,6 +260,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   Future<void> _pickPhoto(int index) async {
     final block = _blocks[index];
+    if (block.imagePaths.any(_legacyUrls.contains)) {
+      _message('ส่วนนี้ใช้รูปแบบเดิม กรุณาเพิ่มเนื้อหาส่วนใหม่สำหรับรูปใหม่');
+      return;
+    }
+    if (_blocks.expand((b) => b.imagePaths).length >= 200) {
+      _message('รองรับสูงสุด 200 รูปต่อโพสต์');
+      return;
+    }
     if (block.imagePaths.length >= 20) {
       _message('เพิ่มรูปได้สูงสุด 20 รูปต่อส่วน');
       return;
@@ -172,8 +276,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     if (source == null || !mounted) return;
 
     try {
-      final image = await _picker.pickImage(source: source, imageQuality: 85);
+      final image = await _picker.pickImage(source: source);
       if (image == null || !mounted || !_blocks.contains(block)) return;
+      try {
+        _photoMetadata[image.path] =
+            await compute(_readPhoto, (await image.readAsBytes(), image.path));
+      } catch (_) {}
+      if (!mounted || !_blocks.contains(block)) return;
       setState(() {
         block.imagePaths.add(image.path);
         _syncCover();
@@ -208,6 +317,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         }
       }
       if (!mounted || token != _arrangement) return;
+      if (_blocks.expand((b) => b.imagePaths).length + photos.length > 200) {
+        _message('รองรับสูงสุด 200 รูปต่อโพสต์ กรุณาเลือกให้น้อยลง');
+        return;
+      }
+      _photoMetadata.addEntries(photos.map((p) => MapEntry(p.path, p)));
       final groups = const TripPhotoGrouper().group(photos);
       final empty = _blocks.length == 1 && _blocks.first.toTopic().isEmpty;
       if (_blocks.length + groups.length - (empty ? 1 : 0) > 100) {
@@ -244,6 +358,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _message('เพิ่มรูปได้สูงสุด 20 รูปต่อส่วน');
       return;
     }
+    final movingLegacy =
+        _legacyUrls.contains(_blocks[source].imagePaths[photo]);
+    if (source != target &&
+        _blocks[target]
+            .imagePaths
+            .any((p) => _legacyUrls.contains(p) != movingLegacy)) {
+      _message('กรุณาแยกรูปใหม่กับรูปแบบเดิมเป็นคนละส่วน');
+      return;
+    }
     setState(() {
       final path = _blocks[source].imagePaths.removeAt(photo);
       final images = _blocks[target].imagePaths;
@@ -272,7 +395,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final block = _blocks[index];
     final place = await showPlacePinPicker(context);
     if (place == null || !mounted || !_blocks.contains(block)) return;
-    setState(() => block.place = place);
+    setState(() {
+      block.place = place;
+      block.location = null;
+      block.legacyMapId = null;
+    });
   }
 
   Future<void> _pickTrip() async {
@@ -304,6 +431,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   String _titleForPublish(PostDraft draft) {
+    if (_postTitle.text.trim().isNotEmpty) return _postTitle.text.trim();
     if (_trip != null && _trip!.title.trim().isNotEmpty) {
       return _trimForTripField(_trip!.title);
     }
@@ -319,6 +447,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   String _destinationForPublish(PostDraft draft) {
+    if (_postDestination.text.trim().isNotEmpty)
+      return _postDestination.text.trim();
     final linkedDestination = _tripDestination?.trim();
     if (linkedDestination != null && linkedDestination.isNotEmpty) {
       return _trimForTripField(linkedDestination);
@@ -338,23 +468,35 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   void _saveLocal() {
     if (_published) {
-      ref.read(_localDraftProvider.notifier).state = null;
-      ref.read(_localCoverProvider.notifier).state = null;
-      ref.read(_localPublishProvider.notifier).state = null;
+      ref.read(_localDraftProvider(_storageKey).notifier).state = null;
+      ref.read(_localCoverProvider(_storageKey).notifier).state = null;
+      ref.read(_localPublishProvider(_storageKey).notifier).state = null;
       return;
     }
-    ref.read(_localPublishProvider.notifier).state = _PublishResume(
-        _draftId, _savedCoverId, Map.of(_uploaded), _tripDestination);
-    ref.read(_localDraftProvider.notifier).state = _draft;
-    ref.read(_localCoverProvider.notifier).state = _coverPath;
+    ref.read(_localPublishProvider(_storageKey).notifier).state =
+        _PublishResume(
+            _draftId, _savedCoverId, Map.of(_uploaded), _tripDestination)
+          ..coverWasInContents = _savedCoverWasInContents
+          ..sourceId = widget.initialTrip?.id
+          ..key = _createKey
+          ..creationTitle = _creationTitle
+          ..creationDestination = _creationDestination
+          ..title = _postTitle.text
+          ..postDestination = _postDestination.text
+          ..uncertain = Set.of(_uncertainUploads)
+          ..legacy = Set.of(_legacyUrls)
+          ..unavailable = Set.of(_unavailablePaths)
+          ..metadata = Map.of(_photoMetadata);
+    ref.read(_localDraftProvider(_storageKey).notifier).state = _draft;
+    ref.read(_localCoverProvider(_storageKey).notifier).state = _coverPath;
   }
 
   void _close() {
     if (_publishing) return;
     _arrangement++;
     _saveLocal();
-    if (context.canPop()) {
-      context.pop();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
     } else {
       context.goNamed(AppRoute.home.name);
     }
@@ -368,60 +510,110 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
     FocusManager.instance.primaryFocus?.unfocus();
     final draft = _draft;
-    final title = _titleForPublish(draft);
-    final destination = _destinationForPublish(draft);
+    var title = _titleForPublish(draft);
+    var destination = _destinationForPublish(draft);
     if (title.isEmpty || destination.isEmpty) {
-      _message(
-          'ร่างเก็บไว้แก้ไขได้ แต่ Trip API ปัจจุบันต้องมีชื่อและจุดหมายก่อนเผยแพร่ ยังไม่รองรับโพสต์รูปอย่างเดียวโดยไม่มีข้อมูลนี้');
-      return;
+      if (!await _editPostInfo(title, destination) || !mounted) return;
+      title = _postTitle.text.trim();
+      destination = _postDestination.text.trim();
     }
     setState(() => _publishing = true);
     try {
-      for (final topic in draft.topics) {
-        TripContent(
-                title: topic.title,
-                content: topic.body,
-                mapId: topic.place?.mapId)
-            .toJson();
-        if (topic.place != null && topic.place!.mapId == null) {
-          throw const FormatException(
-              'สถานที่นี้ไม่มีรหัสแผนที่ กรุณาลบหรือเลือกสถานที่ใหม่');
-        }
-      }
+      if (draft.topics.expand((s) => s.photos).length > 200)
+        throw const FormatException('รองรับสูงสุด 200 รูปต่อโพสต์');
+      if (draft.topics.any((s) => s.photos.any(_unavailablePaths.contains)))
+        throw const FormatException(
+            'มีรูปที่ไม่พร้อมใช้งาน กรุณาเอารูปนั้นออกหรือเลือกใหม่ก่อนปันไกด์');
       final api = await ref.read(plunoApiProvider.future);
       if (_draftId == null) {
-        final created =
-            await api.trips.createDraft(title: title, destination: destination);
+        _creationTitle ??= title;
+        _creationDestination ??= destination;
+        final created = await api.trips.createDraft(
+            type: TripType.content,
+            title: _creationTitle!,
+            destination: _creationDestination!,
+            idempotencyKey: _createKey);
         _draftId = created.id;
       }
-      final contents = <TripContent>[];
+      final contents = <TripContentRequest>[];
+      final occurrences = <String, int>{};
       for (final topic in draft.topics) {
-        final images = <String>[];
-        for (final path in topic.photos) {
-          if (!_uploaded.containsKey(path)) {
-            final media = await api.media.upload(_draftId!, filePath: path);
-            _uploaded[path] = media;
+        final legacy = topic.photos.where(_legacyUrls.contains).toList();
+        if (legacy.isNotEmpty && legacy.length != topic.photos.length)
+          throw const FormatException(
+              'กรุณาแยกรูปใหม่กับรูปแบบเดิมเป็นคนละส่วน');
+        final ids = <String>[];
+        final metadata = <PhotoMetadata>[];
+        for (final path
+            in topic.photos.where((p) => !_legacyUrls.contains(p))) {
+          final occurrence =
+              occurrences.update(path, (n) => n + 1, ifAbsent: () => 0);
+          final key = occurrence == 0 || path.startsWith('http')
+              ? path
+              : '$path::$occurrence';
+          if (_uncertainUploads.contains(key) &&
+              !await _resolveUpload(key, path)) return;
+          if (!_uploaded.containsKey(key)) {
+            if (_uploaded.length >= 200)
+              throw const FormatException(
+                  'มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
+            final prepared = await preparePostPhoto(path);
+            try {
+              _uploaded[key] = await api.media
+                  .upload(_draftId!, bytes: prepared.$1, filename: prepared.$2);
+            } on ApiException catch (error) {
+              if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500)
+                _uncertainUploads.add(key);
+              rethrow;
+            }
           }
-          images.add(_uploaded[path]!.urls.full);
+          final id = _uploaded[key]!.mediaId;
+          ids.add(id);
+          final m = _photoMetadata[path];
+          if (m != null && (m.captureTimestamp != null || m.hasLocation))
+            metadata.add(PhotoMetadata(
+                mediaId: id,
+                takenAt: m.captureTimestamp,
+                latitude: m.hasLocation ? m.latitude : null,
+                longitude: m.hasLocation ? m.longitude : null));
         }
-        contents.add(TripContent(
+        final location = topic.place == null
+            ? topic.location
+            : ContentLocation(
+                status: ContentLocationStatus.confirmed,
+                name: topic.place!.name);
+        contents.add(TripContentRequest(
             title: topic.title,
             content: topic.body,
-            imageUrls: images,
-            mapId: topic.place?.mapId));
+            mediaIds: legacy.isEmpty ? ids : null,
+            imageUrls: legacy,
+            location: topic.legacyMapId != null && location == null
+                ? null
+                : location ??
+                    const ContentLocation(status: ContentLocationStatus.none),
+            mapId: location == null ? topic.legacyMapId : null,
+            photoMetadata: metadata));
       }
+      TripContentRequest.serializeAll(contents);
+
       final cover = _coverPath == null ? null : _uploaded[_coverPath];
       if (cover != null) {
         await api.media.setCover(_draftId!, cover.mediaId);
         _savedCoverId = cover.mediaId;
-      } else if (_savedCoverId != null) {
-        // A cover saved during a failed publish was subsequently removed.
-        final removedId = _savedCoverId!;
-        await api.media.delete(_draftId!, removedId);
-        _uploaded.removeWhere((_, media) => media.mediaId == removedId);
+        _savedCoverWasInContents = true;
+      } else if (_savedCoverWasInContents &&
+          _savedCoverId != null &&
+          !contents.any((s) => s.mediaIds?.contains(_savedCoverId) ?? false)) {
+        // The server rejects deleting media still referenced by saved contents.
+        await api.trips.update(_draftId!, contents: contents);
+        final removed = _savedCoverId!;
+        await api.media.delete(_draftId!, removed);
+        _uploaded.removeWhere((_, m) => m.mediaId == removed);
         _savedCoverId = null;
+        _savedCoverWasInContents = false;
       }
       await api.trips.update(_draftId!,
+          type: TripType.content,
           title: title,
           destination: destination,
           contents: contents,
@@ -436,15 +628,70 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     } on ApiException catch (error) {
       if (mounted) {
         _message(
-            '${_draftId == null ? '' : 'ยังเผยแพร่ไม่สำเร็จ ลองอีกครั้งได้: '}${error.message}');
+            '${_uncertainUploads.isNotEmpty ? 'มีรูปที่ไม่ทราบผลอัปโหลด ครั้งถัดไปต้องตรวจ gallery ก่อนส่งซ้ำ: ' : _draftId == null ? '' : 'ยังเผยแพร่ไม่สำเร็จ ลองอีกครั้งได้: '}${error.message}');
       }
     } on FormatException catch (error) {
       if (mounted) _message(error.message);
     } catch (_) {
       if (mounted) _message('บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง');
     } finally {
-      if (mounted) setState(() => _publishing = false);
+      if (mounted) {
+        setState(() => _publishing = false);
+        if (!_published) _saveLocal();
+      }
     }
+  }
+
+  Future<bool> _editPostInfo(String title, String destination) async {
+    final result = await showDialog<(String, String)>(
+        context: context,
+        builder: (_) => PostInfoDialog(title: title, destination: destination));
+    if (result == null || !mounted) return false;
+    _postTitle.text = result.$1;
+    _postDestination.text = result.$2;
+    _saveLocal();
+    return true;
+  }
+
+  Future<bool> _resolveUpload(String key, String path) async {
+    final api = await ref.read(plunoApiProvider.future);
+    final images = <GalleryImage>[];
+    for (var page = 1;; page++) {
+      final gallery =
+          await api.media.gallery(_draftId!, page: page, limit: 100);
+      images.addAll(gallery.items);
+      if (!gallery.hasNextPage) break;
+    }
+    if (!mounted) return false;
+    final selected = await showModalBottomSheet<String>(
+        context: context,
+        builder: (context) => SafeArea(
+                child: ListView(children: [
+              SizedBox(height: 180, child: CoverImage(source: path)),
+              const ListTile(
+                  title: Text('ตรวจรูปที่อัปโหลดไม่ทราบผล'),
+                  subtitle: Text(
+                      'เลือกรูปที่ตรงกันใน gallery หากตรวจแล้วไม่มีรูปนี้จึงส่งซ้ำ')),
+              for (final image in images)
+                ListTile(
+                    leading: SizedBox(
+                        width: 56,
+                        child: Image.network(image.urls.thumbnail,
+                            errorBuilder: (_, __, ___) =>
+                                const Icon(Icons.image))),
+                    title: Text(image.caption ?? 'รูปใน gallery'),
+                    onTap: () => Navigator.pop(context, image.id)),
+              TextButton(
+                  onPressed: () => Navigator.pop(context, 'retry'),
+                  child: const Text('ตรวจแล้วไม่มีรูปนี้ ส่งใหม่')),
+            ])));
+    if (!mounted || selected == null) return false;
+    if (selected != 'retry') {
+      final image = images.firstWhere((i) => i.id == selected);
+      _uploaded[key] = Media(mediaId: image.id, urls: image.urls);
+    }
+    _uncertainUploads.remove(key);
+    return true;
   }
 
   void _message(String text) {
@@ -488,6 +735,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         audience: _audience,
                         onChangeAudience: _pickAudience,
                       ),
+                      Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                              onPressed: () => _editPostInfo(
+                                  _titleForPublish(_draft),
+                                  _destinationForPublish(_draft)),
+                              child: const Text('ชื่อโพสต์และจุดหมาย'))),
                       const SizedBox(height: 12),
                       if (_arranging)
                         Row(children: [
@@ -543,6 +797,65 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                               _blocks.insert(index + 1, block);
                                             })),
                               ]),
+                        if (_blocks[index].legacyMapId != null &&
+                            _blocks[index].location == null)
+                          Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('สถานที่เดิม (ยังไม่ยืนยัน)'),
+                                onTap: () => _pickPlace(index),
+                                trailing: IconButton(
+                                    tooltip: 'ลบสถานที่เดิม',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => setState(() {
+                                          _blocks[index].legacyMapId = null;
+                                          _blocks[index].location =
+                                              const ContentLocation(
+                                                  status: ContentLocationStatus
+                                                      .none);
+                                        })),
+                              )),
+                        if (_blocks[index].location != null &&
+                            _blocks[index].location!.status !=
+                                ContentLocationStatus.none)
+                          Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(_blocks[index].location!.status ==
+                                        ContentLocationStatus.suggested
+                                    ? 'สถานที่ที่แนะนำ: ${_blocks[index].location!.name ?? "รอยืนยัน"}'
+                                    : _blocks[index].location!.name ??
+                                        'สถานที่ที่ยืนยัน'),
+                                subtitle: _blocks[index].location!.status ==
+                                        ContentLocationStatus.suggested
+                                    ? TextButton(
+                                        onPressed: () => setState(() {
+                                              final l =
+                                                  _blocks[index].location!;
+                                              _blocks[index].location =
+                                                  ContentLocation(
+                                                      status:
+                                                          ContentLocationStatus
+                                                              .confirmed,
+                                                      name: l.name,
+                                                      placeId: l.placeId,
+                                                      latitude: l.latitude,
+                                                      longitude: l.longitude);
+                                            }),
+                                        child: const Text('ยืนยันสถานที่'))
+                                    : null,
+                                onTap: () => _pickPlace(index),
+                                trailing: IconButton(
+                                    tooltip: 'ลบสถานที่',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => setState(() =>
+                                        _blocks[index].location =
+                                            const ContentLocation(
+                                                status: ContentLocationStatus
+                                                    .none))),
+                              )),
                         PostBlock(
                           key: ValueKey(_blocks[index]),
                           titleController: _blocks[index].title,
@@ -551,6 +864,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           showTitle: _blocks[index].showTitle,
                           imagePath: null,
                           imagePaths: _blocks[index].imagePaths,
+                          unavailableImages: _unavailablePaths,
                           coverPath: _coverPath,
                           onMoveImage: (photoIndex) =>
                               _movePhoto(index, photoIndex),
@@ -559,8 +873,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           blockIndex: index,
                           onDropBeforeImage: (move, position) =>
                               _transferPhoto(move.$1, move.$2, index, position),
-                          onSelectCover: (path) =>
-                              setState(() => _coverPath = path),
+                          onSelectCover: (path) {
+                            if (_legacyUrls.contains(path)) {
+                              _message(
+                                  'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
+                              return;
+                            }
+                            setState(() => _coverPath = path);
+                          },
                           onRemoveImage: (photoIndex) => setState(() {
                             _blocks[index].imagePaths.removeAt(photoIndex);
                             _syncCover();
@@ -574,8 +894,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                             _syncCover();
                           }),
                           onPickPlace: () => _pickPlace(index),
-                          onClearPlace: () =>
-                              setState(() => _blocks[index].place = null),
+                          onClearPlace: () => setState(() {
+                            _blocks[index].place = null;
+                            _blocks[index].location = const ContentLocation(
+                                status: ContentLocationStatus.none);
+                            _blocks[index].legacyMapId = null;
+                          }),
                           onRemove: _blocks.length == 1
                               ? null
                               : () => _removeBlock(index),
@@ -622,12 +946,16 @@ class _BlockFields {
 
   final List<String> imagePaths = [];
   PostPlace? place;
+  ContentLocation? location;
+  String? legacyMapId;
 
   PostTopic toTopic() => PostTopic(
         title: title.text,
         body: body.text,
         imagePaths: List.of(imagePaths),
         place: place,
+        location: location,
+        legacyMapId: legacyMapId,
       );
 
   void listen(VoidCallback onChanged) {

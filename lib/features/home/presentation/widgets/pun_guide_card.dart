@@ -341,8 +341,10 @@ class _StatsLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final days = trip.schedule.durationDays;
     final facts = <String>[
-      if (days != null && days > 0) '$days วัน',
-      if (trip.totalBudget > 0) '${trip.totalBudget.asApproxBaht} /คน',
+      if (trip.type == TripType.planTrip && days != null && days > 0)
+        '$days วัน',
+      if (trip.type == TripType.planTrip && trip.totalBudget > 0)
+        '${trip.totalBudget.asApproxBaht} /คน',
     ];
 
     return Row(

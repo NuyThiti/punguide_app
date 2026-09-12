@@ -1,3 +1,4 @@
+import '../../../../core/api/models/trip_content.dart';
 import 'package:flutter/material.dart';
 
 /// Who gets to see a post, as the audience pill offers it.
@@ -77,6 +78,8 @@ class PostTopic {
     this.imagePath,
     this.imagePaths = const [],
     this.place,
+    this.location,
+    this.legacyMapId,
   });
 
   /// Empty when the writer never added a heading.
@@ -90,6 +93,8 @@ class PostTopic {
   List<String> get photos => [...imagePaths, if (imagePath != null) imagePath!];
 
   final PostPlace? place;
+  final ContentLocation? location;
+  final String? legacyMapId;
 
   /// An untouched section. The composer always keeps one on screen, and an
   /// empty one is dropped rather than published blank.
@@ -97,7 +102,9 @@ class PostTopic {
       title.trim().isEmpty &&
       body.trim().isEmpty &&
       photos.isEmpty &&
-      place == null;
+      place == null &&
+      location == null &&
+      legacyMapId == null;
 }
 
 /// Local composer state converted into trip contents at publish time.

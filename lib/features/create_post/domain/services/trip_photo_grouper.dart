@@ -3,9 +3,11 @@ import 'dart:typed_data';
 import 'package:exif/exif.dart';
 
 class TripPhoto {
-  const TripPhoto(this.path, {this.takenAt, this.latitude, this.longitude});
+  const TripPhoto(this.path,
+      {this.takenAt, this.captureTimestamp, this.latitude, this.longitude});
   final String path;
   final DateTime? takenAt;
+  final String? captureTimestamp;
   final double? latitude, longitude;
   bool get hasLocation => latitude != null && longitude != null;
 }
@@ -63,7 +65,14 @@ Future<TripPhoto> readTripPhoto(Uint8List bytes, String path) async {
       }
     }
 
+    final offset = tags['EXIF OffsetTimeOriginal']?.printable;
+    final timestamp = date != null &&
+            offset != null &&
+            RegExp(r'^[+-](0\d|1[0-4]):[0-5]\d$').hasMatch(offset)
+        ? '${date.toIso8601String()}$offset'
+        : null;
     return TripPhoto(path,
+        captureTimestamp: timestamp,
         takenAt: date,
         latitude: coordinate('Latitude', 90),
         longitude: coordinate('Longitude', 180));

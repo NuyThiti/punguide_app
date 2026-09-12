@@ -26,6 +26,7 @@ class PostBlock extends StatelessWidget {
     required this.onClearPlace,
     this.onRemove,
     this.imagePaths = const [],
+    this.unavailableImages = const {},
     this.onRemoveImage,
     this.coverPath,
     this.onSelectCover,
@@ -51,6 +52,7 @@ class PostBlock extends StatelessWidget {
   final ValueChanged<String>? onSelectCover;
   final String? imagePath;
   final List<String> imagePaths;
+  final Set<String> unavailableImages;
   final ValueChanged<int>? onRemoveImage;
   final PostPlace? place;
 
@@ -187,6 +189,8 @@ class PostBlock extends StatelessWidget {
                                           color: Colors.white))),
                               child: _BlockPhoto(
                                   source: imagePaths[index],
+                                  unavailable: unavailableImages
+                                      .contains(imagePaths[index]),
                                   isCover: imagePaths[index] == coverPath,
                                   onSelectCover: onSelectCover == null
                                       ? null
@@ -221,9 +225,11 @@ class _BlockPhoto extends StatelessWidget {
       {required this.source,
       required this.onClear,
       this.isCover = false,
+      this.unavailable = false,
       this.onSelectCover});
 
   final bool isCover;
+  final bool unavailable;
   final VoidCallback? onSelectCover;
 
   final String source;
@@ -237,10 +243,14 @@ class _BlockPhoto extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
             aspectRatio: 1.6,
-            child: CoverImage(source: source),
+            child: unavailable
+                ? const ColoredBox(
+                    color: AppColors.line,
+                    child: Center(child: Text('รูปนี้ไม่พร้อมใช้งาน')))
+                : CoverImage(source: source),
           ),
         ),
-        if (onSelectCover != null)
+        if (onSelectCover != null && !unavailable)
           Positioned(
             bottom: 8,
             left: 8,

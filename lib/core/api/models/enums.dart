@@ -1,3 +1,13 @@
+enum TripType {
+  planTrip('plan_trip'),
+  content('content');
+
+  const TripType(this.wire);
+  final String wire;
+  static TripType from(Object? value) =>
+      value == 'content' ? content : planTrip;
+}
+
 /// Every enum the API accepts or returns, with its exact wire value.
 ///
 /// Values are case-sensitive on the wire. Unknown values decode to `null`

@@ -411,8 +411,10 @@ class DraftExpense {
 /// a non-empty [transport]; see [missingAiFields].
 @immutable
 class TripDraft {
+  final TripType type;
   final List<TripContent>? contents;
   const TripDraft({
+    this.type = TripType.planTrip,
     this.contents,
     required this.title,
     required this.destination,
@@ -443,6 +445,7 @@ class TripDraft {
   });
 
   factory TripDraft.fromJson(Map<String, dynamic> json) => TripDraft(
+        type: TripType.from(json['type']),
         contents: json['contents'] == null
             ? null
             : TripContent.listFrom(json['contents']),
@@ -537,6 +540,7 @@ class TripDraft {
   }
 
   TripDraft copyWith({
+    TripType? type,
     List<TripContent>? contents,
     String? title,
     String? destination,
@@ -551,6 +555,7 @@ class TripDraft {
     List<DraftExpense>? expenses,
   }) =>
       TripDraft(
+        type: type ?? this.type,
         contents: contents ?? this.contents,
         title: title ?? this.title,
         destination: destination ?? this.destination,
@@ -581,7 +586,9 @@ class TripDraft {
       );
 
   Map<String, dynamic> toJson() => Json.compact(<String, dynamic>{
-        'contents': contents?.map((item) => item.toJson()).toList(),
+        'type': type.wire,
+        'contents': TripContentRequest.serializeAll(
+            contents?.map((item) => item.toRequest()).toList()),
         'title': title,
         'destination': destination,
         'planMode': planMode?.wire,

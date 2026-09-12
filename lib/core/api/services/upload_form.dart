@@ -13,11 +13,13 @@ Future<FormData> buildUploadForm({
 }) async {
   final MultipartFile file;
   if (bytes != null) {
-    file = MultipartFile.fromBytes(bytes, filename: filename ?? 'upload');
+    file = MultipartFile.fromBytes(bytes,
+        filename: filename ?? 'upload', contentType: _imageType(filename));
   } else if (filePath != null) {
     file = await MultipartFile.fromFile(
       filePath,
       filename: filename ?? _basename(filePath),
+      contentType: _imageType(filename ?? filePath),
     );
   } else {
     throw ArgumentError('Pass either filePath or bytes to upload a file.');
@@ -31,4 +33,14 @@ String _basename(String path) {
   final segments = path.split(RegExp(r'[/\\]'));
   final last = segments.isEmpty ? '' : segments.last;
   return last.isEmpty ? 'upload' : last;
+}
+
+DioMediaType? _imageType(String? name) {
+  final extension = name?.split('.').last.toLowerCase();
+  return switch (extension) {
+    'jpg' || 'jpeg' => DioMediaType('image', 'jpeg'),
+    'png' => DioMediaType('image', 'png'),
+    'webp' => DioMediaType('image', 'webp'),
+    _ => null,
+  };
 }

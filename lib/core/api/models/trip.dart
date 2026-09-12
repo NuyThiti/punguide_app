@@ -117,7 +117,9 @@ class TripCustomer {
 /// full trip.
 @immutable
 class TripListItem {
+  final TripType type;
   const TripListItem({
+    this.type = TripType.planTrip,
     required this.id,
     required this.title,
     required this.destination,
@@ -139,6 +141,7 @@ class TripListItem {
   });
 
   factory TripListItem.fromJson(Map<String, dynamic> json) => TripListItem(
+        type: TripType.from(json['type']),
         id: Json.requiredString(json, 'id'),
         title: Json.requiredString(json, 'title'),
         destination: Json.requiredString(json, 'destination'),
@@ -198,6 +201,7 @@ class TripListItem {
   /// `POST /trips/:id/save` returns nothing, so a list that wants to show the
   /// new bookmark state without re-reading the whole feed patches the one row.
   TripListItem withSaved(bool saved) => TripListItem(
+        type: type,
         id: id,
         title: title,
         destination: destination,
@@ -225,8 +229,10 @@ class TripListItem {
 /// `GET /trips/:id/budget`.
 @immutable
 class ApiTrip {
+  final TripType type;
   final List<TripContent> contents;
   const ApiTrip({
+    this.type = TripType.planTrip,
     this.contents = const [],
     required this.id,
     required this.ownerId,
@@ -256,6 +262,7 @@ class ApiTrip {
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
+        type: TripType.from(json['type']),
         contents: TripContent.listFrom(json['contents']),
         id: Json.requiredString(json, 'id'),
         ownerId: Json.requiredString(json, 'ownerId'),

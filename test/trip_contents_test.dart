@@ -34,11 +34,14 @@ void main() {
     final api = fakeApi(adapter);
     addTearDown(api.close);
     await api.trips.createDraft(
-        title: 'Trip', destination: 'Bangkok', contents: [first, second]);
+        title: 'Trip',
+        destination: 'Bangkok',
+        contents: [first.toRequest(), second.toRequest()]);
     expect(adapter.requests.last.data['contents'],
         [first.toJson(), second.toJson()]);
     expect(adapter.requests.last.data.containsKey('visibility'), isFalse);
-    await api.trips.update('trip-new', contents: [second, first]);
+    await api.trips
+        .update('trip-new', contents: [second.toRequest(), first.toRequest()]);
     expect(adapter.requests.last.data['contents'],
         [second.toJson(), first.toJson()]);
     await api.trips.update('trip-new', title: 'Renamed');

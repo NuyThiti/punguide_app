@@ -1,3 +1,5 @@
+import '../../create_post/presentation/create_post_screen.dart';
+import 'widgets/trip_content_sections.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -102,6 +104,18 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 
     final owned = viewer.valueOrNull?.id == trip.requireValue.ownerId;
 
+    if (trip.requireValue.type == TripType.content) {
+      if (!owned) return null;
+      return _PlanActionBar(
+          label: 'แก้ไขโพสต์',
+          color: AppColors.createTop,
+          onTap: () async {
+            await Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) =>
+                    CreatePostScreen(initialTrip: trip.requireValue)));
+            if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
+          });
+    }
     return _PlanActionBar(
       label: owned ? 'แก้ไข' : 'Remix Trip',
       color: owned ? AppColors.brandOrange : AppColors.brandPurple,
@@ -113,6 +127,29 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   }
 
   Widget _body(ApiTrip trip) {
+    if (trip.type == TripType.content) {
+      return SafeArea(
+          child: ListView(padding: const EdgeInsets.all(18), children: [
+        Row(children: [
+          IconButton(onPressed: _leave, icon: const Icon(Icons.arrow_back)),
+          Expanded(
+              child: Text(trip.title,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.w700)))
+        ]),
+        Text(trip.destination, style: const TextStyle(color: AppColors.muted)),
+        if (trip.coverImage != null)
+          Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: AspectRatio(
+                      aspectRatio: 1.6,
+                      child: CoverImage(source: trip.coverImage!.urls.full)))),
+        const SizedBox(height: 16),
+        TripContentSections(sections: trip.contents),
+      ]));
+    }
     final plan = _PlanView.of(trip);
     // A trip whose days were deleted must not leave the tab strip pointing
     // past the end of the list.
@@ -150,26 +187,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           ),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              for (final section in trip.contents) ...[
-                if (section.title.isNotEmpty)
-                  Text(section.title,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.w700)),
-                if (section.content.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(section.content,
-                      style: const TextStyle(fontSize: 16, height: 1.6)),
-                ],
-                for (final url in section.imageUrls) ...[
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: AspectRatio(
-                          aspectRatio: 1.6, child: CoverImage(source: url))),
-                ],
-                if (section.mapId != null) _StoryPlace(mapId: section.mapId!),
-                const SizedBox(height: 24),
-              ],
+              TripContentSections(sections: trip.contents),
               _OverviewSection(plan: plan),
               const SizedBox(height: 20),
               _DayTabs(
@@ -1345,25 +1363,4 @@ String _grouped(int value) {
     if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
   }
   return buffer.toString();
-}
-
-final _storyPlaceProvider =
-    FutureProvider.autoDispose.family<PlaceLookup, String>((ref, mapId) async {
-  final api = await ref.watch(plunoApiProvider.future);
-  return api.places.details(mapId);
-});
-
-class _StoryPlace extends ConsumerWidget {
-  const _StoryPlace({required this.mapId});
-  final String mapId;
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final place = ref.watch(_storyPlaceProvider(mapId));
-    return ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.place_outlined),
-        title: Text(place.valueOrNull?.name ?? 'สถานที่แนบ'),
-        subtitle:
-            place.hasError ? const Text('โหลดชื่อสถานที่ไม่สำเร็จ') : null);
-  }
 }

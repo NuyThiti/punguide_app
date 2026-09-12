@@ -21,6 +21,8 @@ class TripsApi {
   ///
   /// A trip always starts as a draft — `status` cannot be set here.
   Future<ApiTrip> createDraft({
+    TripType type = TripType.planTrip,
+    String? idempotencyKey,
     required String title,
     required String destination,
     DestinationPlace? destinationPlace,
@@ -36,11 +38,15 @@ class TripsApi {
     double? budgetLimit,
     BudgetTier? budgetTier,
     String? specialNotes,
-    List<TripContent>? contents,
+    List<TripContentRequest>? contents,
   }) async {
     final body = await _client.post<Map<String, dynamic>>(
       '/trips',
+      headers: idempotencyKey == null
+          ? null
+          : PlunoHeaders.idempotent(idempotencyKey),
       body: Json.compact(<String, dynamic>{
+        'type': type.wire,
         'title': title,
         'destination': destination,
         'destinationPlace': destinationPlace?.toJson(),
@@ -58,7 +64,7 @@ class TripsApi {
         'budgetLimit': budgetLimit,
         'budgetTier': budgetTier?.wire,
         'specialNotes': specialNotes,
-        'contents': contents?.map((item) => item.toJson()).toList(),
+        'contents': TripContentRequest.serializeAll(contents),
       }),
     );
     return ApiTrip.fromJson(Json.asMap(body));
@@ -113,6 +119,7 @@ class TripsApi {
   ///    back in — pass named arguments.
   Future<ApiTrip> update(
     String tripId, {
+    TripType? type,
     String? title,
     String? destination,
     DestinationPlace? destinationPlace,
@@ -128,13 +135,14 @@ class TripsApi {
     double? budgetLimit,
     BudgetTier? budgetTier,
     String? specialNotes,
-    List<TripContent>? contents,
+    List<TripContentRequest>? contents,
     TripStatus? status,
     TripVisibility? visibility,
   }) async {
     final body = await _client.patch<Map<String, dynamic>>(
       '/trips/$tripId',
       body: Json.compact(<String, dynamic>{
+        'type': type?.wire,
         'title': title,
         'destination': destination,
         'destinationPlace': destinationPlace?.toJson(),
@@ -150,7 +158,7 @@ class TripsApi {
         'budgetLimit': budgetLimit,
         'budgetTier': budgetTier?.wire,
         'specialNotes': specialNotes,
-        'contents': contents?.map((item) => item.toJson()).toList(),
+        'contents': TripContentRequest.serializeAll(contents),
         'status': status?.wire,
         // The first switch to public stamps publishedAt; going private again
         // does not clear it.
