@@ -2,19 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/paigun/presentation/paigun_screen.dart';
 import 'package:pluno/features/paigun/presentation/widgets/paigun_card.dart';
 import 'package:pluno/features/paigun/presentation/widgets/paigun_filter_bar.dart';
-import 'package:pluno/features/home/presentation/providers/home_feed_providers.dart';
-import 'package:pluno/features/paigun/presentation/providers/paigun_providers.dart';
 
+import 'support/fake_api.dart';
 import 'support/home_feed_fixtures.dart';
 
-Widget _harness(List<TripListItem> trips) {
+Widget _harness(FakeAdapter adapter) {
   return ProviderScope(
-    overrides: homeOverrides(trips),
+    overrides: paigunOverrides(adapter),
     child: MaterialApp.router(
       routerConfig: GoRouter(
         routes: [
@@ -29,47 +27,50 @@ Widget _harness(List<TripListItem> trips) {
   );
 }
 
-/// Two rows the origin can measure against — Wat Pho is a short walk from the
-/// header's เขตพระนคร, Chiang Mai is several hundred kilometres off — plus one
-/// the backend has not resolved coordinates for.
-final _trips = <TripListItem>[
-  feedTrip(
-    id: 'cnx',
-    title: 'เชียงใหม่ 2 วัน 1 คืน',
-    destination: 'เชียงใหม่, ไทย',
-    country: 'ไทย',
-    latitude: 18.7883,
-    longitude: 98.9853,
-    durationDays: 2,
-    totalBudget: 550,
-    creatorName: 'BKKwalker',
-    likeCount: 10,
-    remixCount: 5,
-  ),
-  feedTrip(
+/// Rows as the server hands them over: already ordered, and already measured
+/// against the coordinates the request carried. The third has no `distanceKm`
+/// at all, which is what comes back for a destination the backend has not
+/// resolved to a real place.
+final _rows = <Map<String, dynamic>>[
+  feedTripJson(
     id: 'bkk',
     title: 'เที่ยวย่านพระนคร เก็บโฮสเทล',
     destination: 'Phra Nakhon, Thai',
     country: 'ไทย',
-    latitude: 13.7465,
-    longitude: 100.4927,
     durationDays: 1,
     totalBudget: 200,
     creatorName: 'BKKwalker',
     likeCount: 2000,
     remixCount: 3500,
+    distanceKm: 1.1,
   ),
-  feedTrip(id: 'lpq'),
+  feedTripJson(
+    id: 'nan',
+    title: 'น่าน 3 วัน 2 คืน',
+    destination: 'น่าน',
+    country: 'ไทย',
+    durationDays: 3,
+    totalBudget: 550,
+    creatorName: 'BKKwalker',
+    likeCount: 10,
+    remixCount: 5,
+    distanceKm: 549,
+  ),
+  feedTripJson(id: 'lpq'),
 ];
+
+void _phone(WidgetTester tester, {double height = 852}) {
+  tester.view.physicalSize = Size(393 * 3, height * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+}
 
 void main() {
   testWidgets('paigun renders the header, chips and cards without overflow',
       (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
+    _phone(tester);
 
-    await tester.pumpWidget(_harness(_trips));
+    await tester.pumpWidget(_harness(feedAdapter(_rows)));
     await tester.pumpAndSettle();
 
     expect(find.text('ไปกัน'), findsOneWidget);
@@ -87,12 +88,12 @@ void main() {
   });
 
   testWidgets('the sort chips stay put while the wall scrolls', (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 640 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
+    _phone(tester, height: 640);
 
     await tester.pumpWidget(
-      _harness([for (var i = 0; i < 10; i++) feedTrip(id: 'trip-$i')]),
+      _harness(
+        feedAdapter([for (var i = 0; i < 10; i++) feedTripJson(id: 'trip-$i')]),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -114,64 +115,66 @@ void main() {
     expect(tester.getTopLeft(chip), chipBefore);
   });
 
-  testWidgets('a card carries the distance from the traveller, when known',
+  testWidgets('the distance chip prints what the server measured',
       (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
+    _phone(tester);
 
-    await tester.pumpWidget(_harness(_trips));
+    await tester.pumpWidget(_harness(feedAdapter(_rows)));
     await tester.pumpAndSettle();
 
-    // Wat Pho against the header's เขตพระนคร origin — roughly a kilometre.
+    expect(find.text('549 Km'), findsWidgets);
     expect(find.text('1.1 Km'), findsWidgets);
-    // The unresolved row keeps its card; it just has no chip to show.
+    // A row the server could not measure keeps its card and simply has no
+    // chip — never a "0 Km".
     expect(find.text('หลวงพระบาง 3 วัน 2 คืน'), findsWidgets);
+    expect(find.textContaining('0 Km'), findsNothing);
     // Duration and budget share one run of text under the divider.
     expect(find.textContaining('฿ ~200 /คน'), findsWidgets);
   });
 
-  testWidgets('the Near Me chip drops the Top PunGuide wall and leads with the '
-      'closest trip', (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
+  testWidgets('each wall asks the server for its own sort, measured from the '
+      'traveller', (tester) async {
+    _phone(tester);
 
-    await tester.pumpWidget(_harness(_trips));
+    final adapter = feedAdapter(_rows);
+    await tester.pumpWidget(_harness(adapter));
+    await tester.pumpAndSettle();
+
+    final queries = adapter.queriesOf('GET /trips');
+    // ทั้งหมด shows both walls, so both questions go up — and both carry the
+    // origin, because `distanceKm` is what puts the chip on a card.
+    expect(
+      queries.map((query) => query['sort']),
+      containsAll(<String>['nearest', 'popular']),
+    );
+    for (final query in queries) {
+      expect(query['lat'], 13.7563);
+      expect(query['lng'], 100.4930);
+      // Nothing was answered in the wizard, so nothing else may be sent: the
+      // endpoint rejects a key it does not know.
+      expect(query.keys.toSet(), <String>{'lat', 'lng', 'sort'});
+    }
+  });
+
+  testWidgets('the Near Me chip leaves one wall, in the order it arrived',
+      (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(_harness(feedAdapter(_rows)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Near Me').first);
     await tester.pumpAndSettle();
 
     // One wall, not two: every card on the page belongs to Near Me.
-    expect(find.byType(PaigunCard), findsNWidgets(_trips.length));
+    expect(find.byType(PaigunCard), findsNWidgets(_rows.length));
     expect(find.byType(PaigunSectionHeader), findsOneWidget);
 
-    // The wall is two columns, so "first" is the top-left slot.
+    // The board does not re-sort what the server ordered. The wall is two
+    // columns, so the first row lands top-left.
     final nearest = tester.getTopLeft(find.text('เที่ยวย่านพระนคร เก็บโฮสเทล'));
-    final furthest = tester.getTopLeft(find.text('เชียงใหม่ 2 วัน 1 คืน'));
-    expect(nearest.dy, lessThanOrEqualTo(furthest.dy));
-    expect(nearest.dx, lessThan(furthest.dx));
-  });
-
-  test('rows without resolved coordinates keep their place at the end',
-      () async {
-    final container = ProviderContainer(overrides: homeOverrides(_trips));
-    addTearDown(container.dispose);
-
-    // The stub feed resolves synchronously, but the notifier still has to
-    // build before the derived lists have anything to order.
-    await container.read(homeFeedProvider.future);
-
-    final rows = container.read(nearMeTripsProvider).requireValue;
-    expect(rows.map((row) => row.trip.id), <String>['bkk', 'cnx', 'lpq']);
-    expect(rows.last.distanceKm, isNull);
-    expect(rows.last.distanceLabel, isNull);
-
-    final top = container.read(topPunGuideTripsProvider).requireValue;
-    // Ranked on remixes plus likes, so the 3.5K/2K row leads however far away
-    // it is.
-    expect(top.map((row) => row.trip.id), <String>['bkk', 'lpq', 'cnx']);
-    expect(top.every((row) => row.featured), isTrue);
+    final further = tester.getTopLeft(find.text('น่าน 3 วัน 2 คืน'));
+    expect(nearest.dy, lessThanOrEqualTo(further.dy));
+    expect(nearest.dx, lessThan(further.dx));
   });
 }

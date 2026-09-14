@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
-import '../../../home/presentation/providers/home_feed_providers.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/nearby_trip.dart';
 import '../../domain/trip_filter.dart';
 
@@ -21,10 +22,11 @@ final paigunFilterProvider =
 
 /// Where the board measures distances from.
 ///
-/// A fixed place, not a GPS fix: the app has no location plugin, and the
-/// header in the design shows a district and postcode rather than a live
-/// position. Kept behind a provider so a real fix — or a place the traveller
-/// picks — can replace it without touching the cards.
+/// The map picker writes this when the traveller confirms a place, and the
+/// default below is what the header shows before anyone has. It goes up as
+/// `lat`/`lng` on every feed request, whichever wall is asking: the server
+/// only returns `distanceKm` when it is given both, and that number is what
+/// puts the chip on a card.
 final paigunOriginProvider = StateProvider<PaigunOrigin>(
   (ref) => const PaigunOrigin(
     label: 'ตำแหน่งของฉัน',
@@ -41,78 +43,98 @@ final paigunOriginProvider = StateProvider<PaigunOrigin>(
 /// memory only — a filter is a mood, not a setting.
 final tripFilterProvider = StateProvider<TripFilter>((ref) => TripFilter.none);
 
-/// How many rows of the feed wear the Top PunGuide badge.
-const _featuredCount = 6;
-
-/// The public feed decorated with distance and the Top PunGuide badge.
+/// One wall of the board, straight from `GET /trips`.
 ///
-/// The corpus is the same `GET /trips` list Home already holds — there is no
-/// nearby endpoint, and the feed is not paginated — so switching chips and
-/// re-sorting costs no request.
-final paigunTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>((ref) {
-  final origin = ref.watch(paigunOriginProvider);
+/// Keyed by sort because the two walls are two different questions — "what is
+/// near me" and "what is popular" — and the server answers each in one
+/// request. Nothing is filtered or re-sorted here: the query carries the
+/// wizard's answers, so what comes back is already the answer.
+///
+/// Re-reads whenever the session changes, the way Home's feed does: `isSaved`
+/// and `isLiked` are per-viewer and come back false for an anonymous caller.
+final paigunFeedProvider =
+    FutureProvider.family<List<TripListItem>, FeedSort>((ref, sort) async {
+  ref.watch(authSessionProvider);
   final filter = ref.watch(tripFilterProvider);
+  final origin = ref.watch(paigunOriginProvider);
 
-  return ref.watch(homeFeedProvider).whenData((trips) {
-    // The badge ranks the whole feed, not what survives the filter: a trip
-    // does not stop being a Top PunGuide because someone asked for beaches.
-    final featured = _featuredIds(trips);
-
-    return List<NearbyTrip>.unmodifiable(
-      trips.where(filter.matches).map(
-            (trip) => NearbyTrip(
-              trip: trip,
-              featured: featured.contains(trip.id),
-              distanceKm: _distanceTo(trip, origin),
-            ),
-          ),
-    );
-  });
+  final api = await ref.watch(plunoApiProvider.future);
+  return api.trips.feed(filter.toFeedQuery(sort: sort, origin: origin));
 });
 
-/// Nearest first. Rows whose destination has no coordinates keep their feed
-/// order at the end — unknown is not "far away", so they must not be dropped.
-final nearMeTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>((ref) {
-  return ref.watch(paigunTripsProvider).whenData((trips) {
-    final located = trips.where((row) => row.distanceKm != null).toList()
-      ..sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
+/// A wall as the cards need it: distance from the server, the badge, and
+/// whatever the traveller has bookmarked since the rows were fetched.
+final paigunWallProvider =
+    Provider.family<AsyncValue<List<NearbyTrip>>, FeedSort>((ref, sort) {
+  final saved = ref.watch(paigunSavedProvider);
 
-    return List<NearbyTrip>.unmodifiable(<NearbyTrip>[
-      ...located,
-      ...trips.where((row) => row.distanceKm == null),
-    ]);
-  });
+  // The badge ranks the wall it is on, not what the filter let through: a trip
+  // does not stop being a Top PunGuide because someone asked for beaches.
+  return ref
+      .watch(paigunFeedProvider(sort))
+      .whenData((trips) => decorateTrips(trips, saved: saved));
 });
 
-/// Most remixed and liked first — the same ranking that hands out the badge.
-final topPunGuideTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>((ref) {
-  return ref.watch(paigunTripsProvider).whenData((trips) {
-    final ordered = List<NearbyTrip>.of(trips)
-      ..sort((a, b) => _popularity(b.trip).compareTo(_popularity(a.trip)));
-    return List<NearbyTrip>.unmodifiable(ordered);
-  });
-});
+/// Nearest first, as the server ordered them. Rows whose destination has no
+/// coordinates come back last rather than first — unknown is not "here".
+final nearMeTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>(
+  (ref) => ref.watch(paigunWallProvider(FeedSort.nearest)),
+);
 
-Set<String> _featuredIds(List<TripListItem> trips) {
-  final ordered = List<TripListItem>.of(trips)
-    ..sort((a, b) => _popularity(b).compareTo(_popularity(a)));
-  return ordered
-      .take(_featuredCount)
-      .where((trip) => _popularity(trip) > 0)
-      .map((trip) => trip.id)
-      .toSet();
+/// Most liked, then most remixed.
+final topPunGuideTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>(
+  (ref) => ref.watch(paigunWallProvider(FeedSort.popular)),
+);
+
+/// Re-reads both walls — pull to refresh, and the retry on a failed one.
+///
+/// Waits for them so the spinner lasts as long as the request does. A wall
+/// that fails is not rethrown here: it renders its own error state, and
+/// letting it escape would only crash the refresh gesture.
+Future<void> refreshPaigunFeed(WidgetRef ref) async {
+  ref.invalidate(paigunFeedProvider);
+
+  await Future.wait(<Future<void>>[
+    for (final sort in <FeedSort>[FeedSort.nearest, FeedSort.popular])
+      ref
+          .read(paigunFeedProvider(sort).future)
+          .then<void>((_) {}, onError: (_, __) {}),
+  ]);
 }
 
-int _popularity(TripListItem trip) => trip.remixCount + trip.likeCount;
+/// Bookmarks the traveller has flipped on this board, by trip id.
+///
+/// A trip can sit in both walls at once, and each wall is its own request, so
+/// the bookmark cannot live in either list — it would go stale in the other
+/// one the moment it was tapped. This is the one copy both walls read through.
+final paigunSavedProvider =
+    NotifierProvider<PaigunSavedNotifier, Map<String, bool>>(
+  PaigunSavedNotifier.new,
+);
 
-double? _distanceTo(TripListItem trip, PaigunOrigin origin) {
-  final place = trip.destinationPlace;
-  if (place == null || !place.hasCoordinates) return null;
+class PaigunSavedNotifier extends Notifier<Map<String, bool>> {
+  @override
+  Map<String, bool> build() => const <String, bool>{};
 
-  return distanceKmBetween(
-    origin.latitude,
-    origin.longitude,
-    place.latitude!,
-    place.longitude!,
-  );
+  /// Flips the bookmark before the request so the tap feels instant, and puts
+  /// it back if the server refuses.
+  ///
+  /// Throws [ApiException] so the caller can tell "sign in first" (401) from a
+  /// genuine failure.
+  Future<void> toggle(String tripId, {required bool wasSaved}) async {
+    final previous = state;
+    state = <String, bool>{...previous, tripId: !wasSaved};
+
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      if (wasSaved) {
+        await api.trips.unsave(tripId);
+      } else {
+        await api.trips.save(tripId);
+      }
+    } catch (_) {
+      state = previous;
+      rethrow;
+    }
+  }
 }

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../paigun/domain/nearby_trip.dart';
+import '../../../paigun/presentation/providers/paigun_providers.dart';
 import '../../domain/destination.dart';
 
 /// The public trip feed behind "Top PunGuide", plus the save toggle.
@@ -19,17 +21,30 @@ class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
   Future<List<TripListItem>> build() async {
     // Signing in or out changes the per-viewer flags on every row.
     ref.watch(authSessionProvider);
+    final query = _query(ref.watch(paigunOriginProvider));
     final api = await ref.watch(plunoApiProvider.future);
-    return api.trips.feed();
+    return api.trips.feed(query);
   }
 
   Future<void> refresh() async {
+    final query = _query(ref.read(paigunOriginProvider));
     state = const AsyncLoading<List<TripListItem>>();
     state = await AsyncValue.guard(() async {
       final api = await ref.read(plunoApiProvider.future);
-      return api.trips.feed();
+      return api.trips.feed(query);
     });
   }
+
+  /// The whole public feed, newest first — no filter, because this is Home's
+  /// wall and the ไปกัน wizard's answers belong to that board alone.
+  ///
+  /// The coordinates are the exception: they narrow nothing, they are what
+  /// makes the server return `distanceKm`, which is the "2.3 Km" chip on a
+  /// card here as much as there.
+  static TripFeedQuery _query(PaigunOrigin origin) => TripFeedQuery(
+        latitude: origin.latitude,
+        longitude: origin.longitude,
+      );
 
   /// Bookmarks or un-bookmarks one trip, flipping the row before the request
   /// so the tap feels instant, and putting it back if the server refuses.
@@ -118,3 +133,16 @@ class _DestinationGroup {
   int count = 0;
   String? coverImage;
 }
+
+/// Home's rows wearing the board's decoration — the distance chip and the Top
+/// PunGuide badge — so a card reads the same on both screens.
+///
+/// Deliberately built from Home's own unfiltered feed rather than from a wall
+/// of the board: a filter the traveller set over on ไปกัน must not quietly
+/// re-label Home.
+final homeBoardRowsProvider = Provider<AsyncValue<List<NearbyTrip>>>((ref) {
+  final saved = ref.watch(paigunSavedProvider);
+  return ref
+      .watch(homeFeedProvider)
+      .whenData((trips) => decorateTrips(trips, saved: saved));
+});

@@ -71,9 +71,8 @@ class PostTripLink {
 /// The body leads. A heading is optional, which is why the composer offers it
 /// as a chip rather than a labelled field.
 @immutable
-class PostTopic {
-  const PostTopic({
-    required this.title,
+class PostTopicItem {
+  const PostTopicItem({
     required this.body,
     this.imagePath,
     this.imagePaths = const [],
@@ -81,9 +80,6 @@ class PostTopic {
     this.location,
     this.legacyMapId,
   });
-
-  /// Empty when the writer never added a heading.
-  final String title;
 
   final String body;
 
@@ -96,15 +92,67 @@ class PostTopic {
   final ContentLocation? location;
   final String? legacyMapId;
 
-  /// An untouched section. The composer always keeps one on screen, and an
-  /// empty one is dropped rather than published blank.
   bool get isEmpty =>
-      title.trim().isEmpty &&
       body.trim().isEmpty &&
       photos.isEmpty &&
       place == null &&
       location == null &&
       legacyMapId == null;
+}
+
+/// One section of a post: the story itself, plus whatever the writer chose to
+/// hang off it — a heading, photos, a pinned place.
+///
+/// When a heading is present, the composer may hold several [items]. That maps
+/// to the reference layout: one heading with multiple photo-and-description
+/// rows underneath it. Without a heading, the first item is the same single
+/// body/photo group the composer has always shown.
+@immutable
+class PostTopic {
+  const PostTopic({
+    required this.title,
+    required this.body,
+    this.imagePath,
+    this.imagePaths = const [],
+    this.items = const [],
+    this.place,
+    this.location,
+    this.legacyMapId,
+  });
+
+  /// Empty when the writer never added a heading.
+  final String title;
+
+  final String body;
+
+  /// Compatibility for the older single body/photo group.
+  final String? imagePath;
+  final List<String> imagePaths;
+
+  final List<PostTopicItem> items;
+  List<PostTopicItem> get contentItems => items.isEmpty
+      ? [
+          PostTopicItem(
+              body: body,
+              imagePath: imagePath,
+              imagePaths: imagePaths,
+              place: place,
+              location: location,
+              legacyMapId: legacyMapId)
+        ]
+      : items;
+
+  List<String> get photos =>
+      contentItems.expand((item) => item.photos).toList(growable: false);
+
+  final PostPlace? place;
+  final ContentLocation? location;
+  final String? legacyMapId;
+
+  /// An untouched section. The composer always keeps one on screen, and an
+  /// empty one is dropped rather than published blank.
+  bool get isEmpty =>
+      title.trim().isEmpty && contentItems.every((item) => item.isEmpty);
 }
 
 /// Local composer state converted into trip contents at publish time.

@@ -9,7 +9,6 @@ import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
-import '../../paigun/presentation/providers/paigun_providers.dart';
 import 'providers/home_feed_providers.dart';
 import 'widgets/destination_card.dart';
 import 'widgets/home_filter_bar.dart';
@@ -239,10 +238,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    // The ไปกัน board already decorates this very list with a distance and a
-    // Top PunGuide badge, so the cards read the same on both screens.
+    // The same decoration the ไปกัน board puts on a card — distance and the
+    // Top PunGuide badge — over Home's own unfiltered rows.
     final nearby = {
-      for (final row in ref.watch(paigunTripsProvider).valueOrNull ?? const [])
+      for (final row in ref.watch(homeBoardRowsProvider).valueOrNull ?? const [])
         row.trip.id: row,
     };
 
@@ -250,6 +249,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       trips: items,
       distanceLabelOf: (trip) => nearby[trip.id]?.distanceLabel,
       featuredOf: (trip) => nearby[trip.id]?.featured ?? false,
+      savedOf: (trip) => nearby[trip.id]?.isSaved,
       onOpen: (trip) => context.goNamed(
         AppRoute.tripDetail.name,
         params: {'tripId': trip.id},

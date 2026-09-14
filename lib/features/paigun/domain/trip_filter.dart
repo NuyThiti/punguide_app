@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/api/pluno_api.dart';
 import '../../create_trip/domain/plan_labels.dart';
+import 'nearby_trip.dart';
 
 /// How the traveller said *when* they are going: exact days off a calendar, or
 /// just a length with no dates attached.
@@ -19,25 +20,22 @@ enum BudgetScope {
 }
 
 /// What the ไปกัน filter wizard hands back — the answers to วันที่ / จำนวนคน /
-/// งบ / สไตล์, and the rule for deciding whether a feed row survives them.
+/// งบ / สไตล์.
 ///
-/// The board has no filtering endpoint (see `paigunTripsProvider`), so this
-/// runs over the cached feed in memory, and it can only ask about the fields a
-/// list row actually carries. Two of the four answers have no column to match
-/// against yet:
+/// Nothing here filters anything on its own: [toFeedQuery] turns the answers
+/// into `GET /trips` parameters and the server decides which rows come back.
+/// That is why all four rows now narrow, including จำนวนคน and
+/// เงื่อนไข / ข้อจำกัด, which used to be collected and ignored because a feed
+/// row carried neither field.
 ///
-/// - **จำนวนคน** — head count lives on the full trip (`TripCustomer.groupSize`),
-///   never on a list row. It is collected, shown in the summary, and used to
-///   scale a per-person budget, but it narrows nothing on its own.
-/// - **เงื่อนไข / ข้อจำกัด** — `TripPlanBrief.constraints` is likewise absent
-///   from a list row.
-///
-/// Both are kept rather than dropped: the moment `GET /trips` grows the fields,
-/// [matches] is the only place that has to change.
+/// The wizard stores Thai chip labels rather than wire values, because a chip
+/// does not always have an enum behind it — "อิสลาม" and anything added through
+/// "+ เพิ่ม" go up as free text instead. [toFeedQuery] is where the two are
+/// told apart.
 @immutable
 class TripFilter {
   const TripFilter({
-    this.dateMode = FilterDateMode.flexible,
+    this.dateMode = FilterDateMode.calendar,
     this.startDate,
     this.endDate,
     this.days,
@@ -54,6 +52,9 @@ class TripFilter {
   /// before the wizard was ever opened.
   static const none = TripFilter();
 
+  /// Which half of the Calendar | Flexible toggle was in force. It decides
+  /// which of [startDate]/[endDate] and [days] carries the answer — and, on a
+  /// filter with no answer at all, which half the wizard opens on.
   final FilterDateMode dateMode;
 
   /// Set only in [FilterDateMode.calendar]. [endDate] is null while a range is
@@ -116,77 +117,81 @@ class TripFilter {
       (hasBudget ? 1 : 0) +
       (hasStyles ? 1 : 0);
 
-  /// Does this feed row survive the filter?
+  /// The answers as `GET /trips` parameters.
   ///
-  /// An **absent** value is unknown, not a mismatch, so it is kept — the same
-  /// call `nearMeTripsProvider` makes about a trip with no coordinates. An
-  /// **empty tag list**, on the other hand, is an answer: a trip that declares
-  /// no style cannot claim to be a beach trip.
-  bool matches(TripListItem trip) =>
-      _matchesLength(trip) && _matchesBudget(trip) && _matchesStyles(trip);
-
-  bool _matchesLength(TripListItem trip) {
-    final want = lengthInDays;
-    if (want == null) return true;
-    final got = tripLengthInDays(trip);
-    if (got == null) return true;
-    // Fits in the time available — a two-day trip is still an answer to "I
-    // have three days", where a five-day one is not.
-    return got <= want;
-  }
-
-  bool _matchesBudget(TripListItem trip) {
-    final spend =
-        trip.budgetLimit ?? (trip.totalBudget > 0 ? trip.totalBudget : null);
-
-    final cap = wholeTripCap;
-    if (cap != null) {
-      if (spend == null) return true;
-      return spend <= cap;
+  /// [sort] picks the wall — nearest for Near Me, popular for Top PunGuide —
+  /// and [origin] rides along whatever the sort is, because `distanceKm` on a
+  /// row is what puts the chip on a card and the server only measures when it
+  /// is given both coordinates.
+  ///
+  /// Two answers do not map one-to-one, and this is where that is decided:
+  ///
+  ///  * a **calendar range** is a window the traveller is free in, not a trip
+  ///    length, so it goes up as `dateFrom`/`dateTo` plus a `maxDurationDays`
+  ///    ceiling — "what fits in these days". The **flexible** tab is the
+  ///    opposite: the stepper is an exact length, so it goes up as
+  ///    `durationDays`;
+  ///  * a **typed budget** overrides the bracket rather than narrowing it
+  ///    further, the way ระบุเอง does in the create wizard, so the tier is left
+  ///    off when there is a figure.
+  TripFeedQuery toFeedQuery({
+    required FeedSort sort,
+    PaigunOrigin? origin,
+    int? limit,
+  }) {
+    final styleEnums = <TravelStyle>[];
+    final freeStyles = <String>[];
+    for (final label in styles) {
+      final style = styleByLabel[label];
+      if (style == null) {
+        freeStyles.add(label);
+      } else {
+        styleEnums.add(style);
+      }
     }
 
-    final tier = budgetTier;
-    if (tier == null) return true;
-    // A row the backend never tiered is unknown, not a mismatch.
-    if (trip.budgetTier == null) return true;
-    return trip.budgetTier == tier;
+    final constraintEnums = <TripConstraint>[];
+    final freeConstraints = <String>[];
+    for (final label in constraints) {
+      final rule = constraintByLabel[label];
+      if (rule == null) {
+        freeConstraints.add(label);
+      } else {
+        constraintEnums.add(rule);
+      }
+    }
+
+    final amount = (budgetAmount ?? 0) > 0 ? budgetAmount : null;
+    final calendar = dateMode == FilterDateMode.calendar;
+    final span = lengthInDays;
+
+    return TripFeedQuery(
+      styles: styleEnums,
+      customStyles: freeStyles,
+      constraints: constraintEnums,
+      customConstraints: freeConstraints,
+      // Sending zeroes would read as "at least nobody", so an untouched row
+      // sends nothing at all.
+      adults: hasPeople ? adults : null,
+      children: hasPeople ? children : null,
+      budgetTiers: amount == null && budgetTier != null
+          ? <BudgetTier>[budgetTier!]
+          : const <BudgetTier>[],
+      budgetMax: amount,
+      budgetScope: amount == null
+          ? null
+          : budgetScope == BudgetScope.everyone
+              ? FeedBudgetScope.total
+              : FeedBudgetScope.perPerson,
+      dateFrom: calendar ? startDate : null,
+      // A half-drawn range is a single day, which is what the wizard shows.
+      dateTo: calendar ? (endDate ?? startDate) : null,
+      durationDays: calendar ? null : days,
+      maxDurationDays: calendar ? span : null,
+      latitude: origin?.latitude,
+      longitude: origin?.longitude,
+      sort: sort,
+      limit: limit,
+    );
   }
-
-  /// The typed figure as a whole-trip total, which is the shape a trip's own
-  /// budget is stored in. Null when nothing was typed.
-  double? get wholeTripCap {
-    final amount = budgetAmount;
-    if (amount == null || amount <= 0) return null;
-    return budgetScope == BudgetScope.everyone ? amount : amount * heads;
-  }
-
-  bool _matchesStyles(TripListItem trip) {
-    if (styles.isEmpty) return true;
-    final wanted = <String>{
-      for (final label in styles) ...[
-        label.toLowerCase(),
-        if (styleByLabel[label] != null) styleByLabel[label]!.wire,
-      ],
-    };
-    return trip.tags.any((tag) => wanted.contains(tag.toLowerCase()));
-  }
-}
-
-/// How long a feed row runs, in days.
-///
-/// `durationDays` is derived server-side whenever a trip has both dates, so it
-/// is the first thing to trust; the other two shapes are what is left on a trip
-/// that was planned by length alone. Null means the row never said.
-int? tripLengthInDays(TripListItem trip) {
-  final schedule = trip.schedule;
-  final days = schedule.durationDays;
-  if (days != null && days > 0) return days;
-
-  final start = schedule.startDate;
-  final end = schedule.endDate;
-  if (start != null && end != null) return end.difference(start).inDays + 1;
-
-  final nights = schedule.durationNights;
-  if (nights != null && nights > 0) return nights + 1;
-  return null;
 }

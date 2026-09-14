@@ -43,7 +43,8 @@ class PaigunFilterScreen extends ConsumerStatefulWidget {
 class _PaigunFilterScreenState extends ConsumerState<PaigunFilterScreen> {
   int _step = 0;
 
-  FilterDateMode _mode = FilterDateMode.calendar;
+  // Seeded in initState, so the default lives in [TripFilter] alone.
+  late FilterDateMode _mode;
   int? _days;
   DateTime? _start;
   DateTime? _end;

@@ -23,6 +23,7 @@ class PunGuideCard extends StatelessWidget {
     required this.onSave,
     this.distanceLabel,
     this.featured = false,
+    this.saved,
   });
 
   final TripListItem trip;
@@ -34,6 +35,11 @@ class PunGuideCard extends StatelessWidget {
 
   /// Whether this row wears the Top PunGuide badge.
   final bool featured;
+
+  /// The bookmark as it stands now, when something outside the row is keeping
+  /// track — the board flips one on a card that sits in two walls at once.
+  /// Null falls back to what the row itself came back with.
+  final bool? saved;
 
   /// Only the cover has a fixed shape; the card is as tall as its own text.
   static const double coverAspectRatio = 0.9;
@@ -81,7 +87,10 @@ class PunGuideCard extends StatelessWidget {
                   Positioned(
                     top: 10,
                     right: 10,
-                    child: _SaveButton(saved: trip.isSaved, onTap: onSave),
+                    child: _SaveButton(
+                      saved: saved ?? trip.isSaved,
+                      onTap: onSave,
+                    ),
                   ),
                   Positioned(
                     left: 10,

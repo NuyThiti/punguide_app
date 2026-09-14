@@ -1,8 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/api/models/trip_content.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../domain/models/post_draft.dart';
+
+class PostBlockItem {
+  const PostBlockItem({
+    required this.bodyController,
+    required this.imagePaths,
+    this.place,
+    this.location,
+    this.legacyMapId,
+  });
+
+  final TextEditingController bodyController;
+  final List<String> imagePaths;
+  final PostPlace? place;
+  final ContentLocation? location;
+  final String? legacyMapId;
+}
+
+typedef PostPhotoMove = ({int block, int item, int photo});
 
 /// One section of the composer: the story, then whatever was added to it.
 ///
@@ -34,11 +53,35 @@ class PostBlock extends StatelessWidget {
     this.onDropBeforeImage,
     this.onDropImage,
     this.blockIndex = 0,
+    this.items,
+    this.onAddItem,
+    this.onRemoveItem,
+    this.onPickImageInItem,
+    this.onClearImagesInItem,
+    this.onRemoveImageInItem,
+    this.onMoveImageInItem,
+    this.onDropImageInItem,
+    this.onDropBeforeImageInItem,
+    this.onPickPlaceInItem,
+    this.onClearPlaceInItem,
+    this.onConfirmLocationInItem,
   });
 
   final void Function((int, int), int)? onDropBeforeImage;
   final ValueChanged<int>? onMoveImage;
   final ValueChanged<(int, int)>? onDropImage;
+  final List<PostBlockItem>? items;
+  final VoidCallback? onAddItem;
+  final ValueChanged<int>? onRemoveItem;
+  final ValueChanged<int>? onPickImageInItem;
+  final ValueChanged<int>? onClearImagesInItem;
+  final void Function(int, int)? onRemoveImageInItem;
+  final void Function(int, int)? onMoveImageInItem;
+  final void Function(PostPhotoMove, int)? onDropImageInItem;
+  final void Function(PostPhotoMove, int, int)? onDropBeforeImageInItem;
+  final ValueChanged<int>? onPickPlaceInItem;
+  final ValueChanged<int>? onClearPlaceInItem;
+  final ValueChanged<int>? onConfirmLocationInItem;
   final int blockIndex;
   final TextEditingController titleController;
   final FocusNode titleFocus;
@@ -69,11 +112,17 @@ class PostBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final photo = imagePath;
-    final pinned = place;
+    final blockItems = items ??
+        [
+          PostBlockItem(
+              bodyController: bodyController,
+              imagePaths: [...imagePaths, if (imagePath != null) imagePath!],
+              place: place)
+        ];
 
-    return DragTarget<(int, int)>(
-        onAcceptWithDetails: (details) => onDropImage?.call(details.data),
+    return DragTarget<PostPhotoMove>(
+        onAcceptWithDetails: (details) =>
+            (onDropImageInItem ?? _legacyDropImage)(details.data, 0),
         builder: (context, candidates, rejected) => Container(
             decoration: BoxDecoration(
                 border: candidates.isEmpty
@@ -136,87 +185,305 @@ class PostBlock extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                 ],
-                TextField(
-                  controller: bodyController,
-                  maxLength: 10000,
-                  minLines: 2,
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 16,
-                    height: 1.6,
-                    fontWeight: FontWeight.w500,
+                for (var item = 0; item < blockItems.length; item++) ...[
+                  if (item > 0)
+                    const Divider(height: 28, color: AppColors.line),
+                  _PostBlockContentItem(
+                    blockIndex: blockIndex,
+                    itemIndex: item,
+                    item: blockItems[item],
+                    showPhotoChip: showTitle,
+                    unavailableImages: unavailableImages,
+                    coverPath: coverPath,
+                    onSelectCover: onSelectCover,
+                    onPickImage: () {
+                      final handler = onPickImageInItem;
+                      if (handler == null) {
+                        onPickImage();
+                      } else {
+                        handler(item);
+                      }
+                    },
+                    onClearImages: () {
+                      final handler = onClearImagesInItem;
+                      if (handler == null) {
+                        onClearImage();
+                      } else {
+                        handler(item);
+                      }
+                    },
+                    onRemoveImage: (photo) => (onRemoveImageInItem ??
+                        _legacyRemoveImage)(item, photo),
+                    onMoveImage: (photo) =>
+                        (onMoveImageInItem ?? _legacyMoveImage)(item, photo),
+                    onDropImage: (move) =>
+                        (onDropImageInItem ?? _legacyDropImage)(move, item),
+                    onDropBeforeImage: (move, position) =>
+                        (onDropBeforeImageInItem ?? _legacyDropBeforeImage)(
+                            move, item, position),
+                    onPickPlace: () =>
+                        (onPickPlaceInItem ?? _legacyPickPlace)(item),
+                    onClearPlace: () =>
+                        (onClearPlaceInItem ?? _legacyClearPlace)(item),
+                    onConfirmLocation: onConfirmLocationInItem == null
+                        ? null
+                        : () => onConfirmLocationInItem!(item),
                   ),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    counterText: '',
-                    hintText: 'เล่าเรื่องราวของทริปนี้…',
-                    hintStyle: TextStyle(
-                      color: AppColors.postFieldHint,
-                      fontSize: 16,
-                      height: 1.6,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                if (photo != null) ...[
-                  const SizedBox(height: 14),
-                  _BlockPhoto(source: photo, onClear: onClearImage),
-                ],
-                for (var index = 0; index < imagePaths.length; index++) ...[
-                  const SizedBox(height: 14),
-                  DragTarget<(int, int)>(
-                      onAcceptWithDetails: (details) =>
-                          onDropBeforeImage?.call(details.data, index),
-                      builder: (context, candidates, rejected) => DecoratedBox(
-                          decoration: BoxDecoration(
-                              border: candidates.isEmpty
-                                  ? null
-                                  : Border.all(
-                                      color: AppColors.createTop, width: 3)),
-                          child: LongPressDraggable<(int, int)>(
-                              data: (blockIndex, index),
-                              feedback: Material(
-                                  color: AppColors.createTop,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: const Padding(
-                                      padding: EdgeInsets.all(16),
-                                      child: Icon(Icons.photo,
-                                          color: Colors.white))),
-                              child: _BlockPhoto(
-                                  source: imagePaths[index],
-                                  unavailable: unavailableImages
-                                      .contains(imagePaths[index]),
-                                  isCover: imagePaths[index] == coverPath,
-                                  onSelectCover: onSelectCover == null
-                                      ? null
-                                      : () => onSelectCover!(imagePaths[index]),
-                                  onClear: () => onRemoveImage?.call(index))))),
-                  if (onMoveImage != null)
+                  if (showTitle &&
+                      blockItems.length > 1 &&
+                      onRemoveItem != null)
                     Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                            onPressed: () => onMoveImage!(index),
-                            icon: const Icon(Icons.drive_file_move_outline),
-                            label: const Text('ย้ายรูป'))),
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => onRemoveItem!(item),
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('ลบชุดข้อมูลนี้'),
+                      ),
+                    ),
                 ],
-                if (pinned != null) ...[
-                  const SizedBox(height: 14),
-                  _PinnedPlaceRow(place: pinned, onClear: onClearPlace),
+                if (showTitle && onAddItem != null) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: onAddItem,
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: const Text('เพิ่มรูปภาพและคำอธิบาย'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: AppColors.createTop),
+                  ),
                 ],
                 const SizedBox(height: 14),
                 _AddRow(
                   onAddTitle: showTitle ? null : onAddTitle,
-                  onPickImage: onPickImage,
-                  onPickPlace: onPickPlace,
+                  onPickImage: showTitle ? null : onPickImage,
+                  onPickPlace: showTitle ? null : onPickPlace,
                 ),
               ],
             )));
   }
+
+  void _legacyMoveImage(int item, int photo) {
+    if (item == 0) onMoveImage?.call(photo);
+  }
+
+  void _legacyRemoveImage(int item, int photo) {
+    if (item == 0) onRemoveImage?.call(photo);
+  }
+
+  void _legacyDropImage(PostPhotoMove move, int item) {
+    if (item == 0) onDropImage?.call((move.block, move.photo));
+  }
+
+  void _legacyDropBeforeImage(PostPhotoMove move, int item, int position) {
+    if (item == 0) onDropBeforeImage?.call((move.block, move.photo), position);
+  }
+
+  void _legacyPickPlace(int item) {
+    if (item == 0) onPickPlace();
+  }
+
+  void _legacyClearPlace(int item) {
+    if (item == 0) onClearPlace();
+  }
+}
+
+class _PostBlockContentItem extends StatelessWidget {
+  const _PostBlockContentItem({
+    required this.blockIndex,
+    required this.itemIndex,
+    required this.item,
+    required this.showPhotoChip,
+    required this.unavailableImages,
+    required this.onPickImage,
+    required this.onClearImages,
+    required this.onRemoveImage,
+    required this.onMoveImage,
+    required this.onDropImage,
+    required this.onDropBeforeImage,
+    required this.onPickPlace,
+    required this.onClearPlace,
+    this.onConfirmLocation,
+    this.coverPath,
+    this.onSelectCover,
+  });
+
+  final int blockIndex, itemIndex;
+  final PostBlockItem item;
+  final bool showPhotoChip;
+  final Set<String> unavailableImages;
+  final String? coverPath;
+  final ValueChanged<String>? onSelectCover;
+  final VoidCallback onPickImage, onClearImages;
+  final ValueChanged<int> onRemoveImage, onMoveImage;
+  final ValueChanged<PostPhotoMove> onDropImage;
+  final void Function(PostPhotoMove, int) onDropBeforeImage;
+  final VoidCallback onPickPlace, onClearPlace;
+  final VoidCallback? onConfirmLocation;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<PostPhotoMove>(
+      onAcceptWithDetails: (details) => onDropImage(details.data),
+      builder: (context, candidates, rejected) => DecoratedBox(
+        decoration: BoxDecoration(
+            border: candidates.isEmpty
+                ? null
+                : Border.all(color: AppColors.createTop)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: item.bodyController,
+              maxLength: 10000,
+              minLines: 2,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: const TextStyle(
+                color: AppColors.foreground,
+                fontSize: 16,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                counterText: '',
+                hintText: 'เล่าเรื่องราวของทริปนี้…',
+                hintStyle: TextStyle(
+                  color: AppColors.postFieldHint,
+                  fontSize: 16,
+                  height: 1.6,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            for (var index = 0; index < item.imagePaths.length; index++) ...[
+              const SizedBox(height: 14),
+              DragTarget<PostPhotoMove>(
+                  onAcceptWithDetails: (details) =>
+                      onDropBeforeImage(details.data, index),
+                  builder: (context, candidates, rejected) => DecoratedBox(
+                      decoration: BoxDecoration(
+                          border: candidates.isEmpty
+                              ? null
+                              : Border.all(
+                                  color: AppColors.createTop, width: 3)),
+                      child: LongPressDraggable<PostPhotoMove>(
+                          data: (
+                            block: blockIndex,
+                            item: itemIndex,
+                            photo: index
+                          ),
+                          feedback: Material(
+                              color: AppColors.createTop,
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child:
+                                      Icon(Icons.photo, color: Colors.white))),
+                          child: _BlockPhoto(
+                              source: item.imagePaths[index],
+                              unavailable: unavailableImages
+                                  .contains(item.imagePaths[index]),
+                              isCover: item.imagePaths[index] == coverPath,
+                              onSelectCover: onSelectCover == null
+                                  ? null
+                                  : () =>
+                                      onSelectCover!(item.imagePaths[index]),
+                              onClear: () => onRemoveImage(index))))),
+              Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                      onPressed: () => onMoveImage(index),
+                      icon: const Icon(Icons.drive_file_move_outline),
+                      label: const Text('ย้ายรูป'))),
+            ],
+            if (showPhotoChip) ...[
+              const SizedBox(height: 14),
+              PostAddChip(
+                icon: Icons.photo_library_outlined,
+                label: 'รูปภาพ',
+                onTap: onPickImage,
+              ),
+            ],
+            if (item.place != null) ...[
+              const SizedBox(height: 14),
+              _PinnedPlaceRow(place: item.place!, onClear: onClearPlace),
+            ],
+            if (item.legacyMapId != null && item.location == null) ...[
+              const SizedBox(height: 14),
+              _LocationTile(
+                title: 'สถานที่เดิม (ยังไม่ยืนยัน)',
+                onTap: onPickPlace,
+                onClear: onClearPlace,
+              ),
+            ],
+            if (item.location != null &&
+                item.location!.status != ContentLocationStatus.none) ...[
+              const SizedBox(height: 14),
+              _LocationTile(
+                title: item.location!.status == ContentLocationStatus.suggested
+                    ? 'สถานที่ที่แนะนำ: ${item.location!.name ?? "รอยืนยัน"}'
+                    : item.location!.name ?? 'สถานที่ที่ยืนยัน',
+                actionLabel:
+                    item.location!.status == ContentLocationStatus.suggested
+                        ? 'ยืนยันสถานที่'
+                        : null,
+                onAction:
+                    item.location!.status == ContentLocationStatus.suggested
+                        ? onConfirmLocation
+                        : null,
+                onTap: onPickPlace,
+                onClear: onClearPlace,
+              ),
+            ],
+            if (showPhotoChip) ...[
+              const SizedBox(height: 10),
+              PostAddChip(
+                icon: Icons.map_outlined,
+                label: 'เพิ่มสถานที่ (ไม่บังคับ)',
+                onTap: onPickPlace,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LocationTile extends StatelessWidget {
+  const _LocationTile({
+    required this.title,
+    required this.onTap,
+    required this.onClear,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final VoidCallback onTap, onClear;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.transparent,
+        child: ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(title),
+          subtitle: actionLabel == null
+              ? null
+              : TextButton(onPressed: onAction, child: Text(actionLabel!)),
+          onTap: onTap,
+          trailing: IconButton(
+            tooltip: 'ลบสถานที่',
+            icon: const Icon(Icons.close),
+            onPressed: onClear,
+          ),
+        ),
+      );
 }
 
 /// A full-width photo with a single-cover selector.
@@ -356,8 +623,8 @@ class _AddRow extends StatelessWidget {
   /// Null once the heading is on screen — there is nothing left to add.
   final VoidCallback? onAddTitle;
 
-  final VoidCallback onPickImage;
-  final VoidCallback onPickPlace;
+  final VoidCallback? onPickImage;
+  final VoidCallback? onPickPlace;
 
   @override
   Widget build(BuildContext context) {
@@ -372,16 +639,18 @@ class _AddRow extends StatelessWidget {
             label: 'หัวข้อ',
             onTap: onAddTitle!,
           ),
-        PostAddChip(
-          icon: Icons.photo_library_outlined,
-          label: 'รูปภาพ',
-          onTap: onPickImage,
-        ),
-        PostAddChip(
-          icon: Icons.map_outlined,
-          label: 'เพิ่มสถานที่ (ไม่บังคับ)',
-          onTap: onPickPlace,
-        ),
+        if (onPickImage != null)
+          PostAddChip(
+            icon: Icons.photo_library_outlined,
+            label: 'รูปภาพ',
+            onTap: onPickImage!,
+          ),
+        if (onPickPlace != null)
+          PostAddChip(
+            icon: Icons.map_outlined,
+            label: 'เพิ่มสถานที่ (ไม่บังคับ)',
+            onTap: onPickPlace!,
+          ),
         // One unit, so a hairline can never end up stranded at the end of a
         // wrapped line with its label on the next.
         const Row(

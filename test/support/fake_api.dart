@@ -65,6 +65,12 @@ class FakeAdapter implements HttpClientAdapter {
 
   List<String> get paths =>
       requests.map((r) => '${r.method} ${r.path}').toList();
+
+  /// Every query string sent to `METHOD /path`, oldest first.
+  List<Map<String, dynamic>> queriesOf(String key) => requests
+      .where((request) => '${request.method} ${request.path}' == key)
+      .map((request) => Map<String, dynamic>.from(request.queryParameters))
+      .toList();
 }
 
 PlunoApi fakeApi(FakeAdapter adapter) {

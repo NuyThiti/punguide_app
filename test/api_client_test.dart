@@ -355,10 +355,77 @@ void main() {
     await api.trips.feed();
     expect(adapter.requests.single.queryParameters, isEmpty);
 
-    await api.trips.feed(destination: 'เชียงใหม่');
+    await api.trips.feed(const TripFeedQuery(destination: 'เชียงใหม่'));
     expect(
       adapter.requests.last.queryParameters,
       <String, dynamic>{'destination': 'เชียงใหม่'},
+    );
+  });
+
+  test('a filtered feed spells every row of the sheet onto the query',
+      () async {
+    final adapter = _FakeAdapter(<String, List<_Reply>>{
+      'GET /trips': [const _Reply(200, <dynamic>[])],
+    });
+    final api = PlunoApi(_client(adapter));
+
+    await api.trips.feed(
+      TripFeedQuery(
+        styles: const [TravelStyle.nature, TravelStyle.cafe],
+        customStyles: const ['อิสลาม'],
+        constraints: const [TripConstraint.seniors],
+        adults: 2,
+        children: 1,
+        budgetTiers: const [BudgetTier.premium],
+        budgetMax: 10000,
+        budgetScope: FeedBudgetScope.perPerson,
+        dateFrom: DateTime(2026, 9, 28),
+        dateTo: DateTime(2026, 9, 30),
+        maxDurationDays: 3,
+        latitude: 13.7563,
+        longitude: 100.5018,
+        sort: FeedSort.nearest,
+        limit: 20,
+      ),
+    );
+
+    // Lists go up comma-joined, enums as their wire values, dates as
+    // YYYY-MM-DD. Anything the sheet did not answer is absent entirely — the
+    // endpoint runs forbidNonWhitelisted, so a stray key is a 400.
+    expect(adapter.requests.last.queryParameters, <String, dynamic>{
+      'styles': 'nature,cafe',
+      'customStyles': 'อิสลาม',
+      'constraints': 'seniors',
+      'adults': 2,
+      'children': 1,
+      'budgetTiers': 'premium',
+      'budgetMax': 10000.0,
+      'budgetScope': 'per_person',
+      'dateFrom': '2026-09-28',
+      'dateTo': '2026-09-30',
+      'maxDurationDays': 3,
+      'lat': 13.7563,
+      'lng': 100.5018,
+      'sort': 'nearest',
+      'limit': 20,
+    });
+  });
+
+  test('half a fix measures nothing, so neither half is sent', () async {
+    final adapter = _FakeAdapter(<String, List<_Reply>>{
+      'GET /trips': [const _Reply(200, <dynamic>[])],
+    });
+    final api = PlunoApi(_client(adapter));
+
+    await api.trips.feed(
+      const TripFeedQuery(latitude: 13.7563, sort: FeedSort.nearest),
+    );
+
+    // Without a pair the server cannot measure, and it answers `recent`
+    // anyway — sending one half would only look like a working filter.
+    expect(
+      adapter.requests.last.queryParameters,
+      <String, dynamic>{'sort': 'nearest'},
     );
   });
 }

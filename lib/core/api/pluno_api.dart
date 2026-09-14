@@ -32,6 +32,7 @@ export 'models/share.dart';
 export 'models/travel_segment.dart';
 export 'models/trip.dart';
 export 'models/trip_draft.dart';
+export 'models/trip_feed_query.dart';
 export 'services/auth_api.dart';
 export 'services/budget_api.dart';
 export 'services/itinerary_api.dart';

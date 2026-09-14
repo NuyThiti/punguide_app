@@ -9,7 +9,6 @@ import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
-import '../../home/presentation/providers/home_feed_providers.dart';
 import '../domain/nearby_trip.dart';
 import 'providers/paigun_providers.dart';
 import 'widgets/paigun_filter_bar.dart';
@@ -18,8 +17,9 @@ import 'widgets/paigun_header.dart';
 
 /// ไปกัน — trips read from where the traveller is standing.
 ///
-/// The corpus is the public feed Home already holds (see [paigunTripsProvider]),
-/// so switching chips re-orders a list in memory rather than calling the API.
+/// Each wall is one `GET /trips` with the wizard's answers on the query string
+/// (see [paigunFeedProvider]) — the server filters, sorts and measures, so a
+/// chip is a request rather than a re-sort in memory.
 class PaigunScreen extends ConsumerWidget {
   const PaigunScreen({super.key});
 
@@ -69,8 +69,7 @@ class PaigunScreen extends ConsumerWidget {
               ),
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(homeFeedProvider.notifier).refresh(),
+                  onRefresh: () => refreshPaigunFeed(ref),
                   child: ListView(
                     padding: EdgeInsets.only(
                       bottom: AppBottomNav.heightOf(context) + 16,
@@ -92,7 +91,7 @@ class PaigunScreen extends ConsumerWidget {
                           onOpen: (row) => _openTrip(context, row),
                           onSave: (row) => _toggleSaved(context, ref, row),
                           onRetry: () =>
-                              ref.read(homeFeedProvider.notifier).refresh(),
+                              refreshPaigunFeed(ref),
                         ),
                       ],
                       if (showTop) ...[
@@ -108,7 +107,7 @@ class PaigunScreen extends ConsumerWidget {
                           onOpen: (row) => _openTrip(context, row),
                           onSave: (row) => _toggleSaved(context, ref, row),
                           onRetry: () =>
-                              ref.read(homeFeedProvider.notifier).refresh(),
+                              refreshPaigunFeed(ref),
                         ),
                       ],
                     ],
@@ -167,7 +166,9 @@ class PaigunScreen extends ConsumerWidget {
     }
 
     try {
-      await ref.read(homeFeedProvider.notifier).toggleSaved(row.trip.id);
+      await ref
+          .read(paigunSavedProvider.notifier)
+          .toggle(row.trip.id, wasSaved: row.isSaved);
     } on ApiException catch (failure) {
       if (!context.mounted) return;
       if (failure.isUnauthorized) {

@@ -28,6 +28,7 @@ class PaigunCard extends StatelessWidget {
       trip: row.trip,
       distanceLabel: row.distanceLabel,
       featured: row.featured,
+      saved: row.isSaved,
       onTap: onTap,
       onSave: onSave,
     );

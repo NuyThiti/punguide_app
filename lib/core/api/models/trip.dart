@@ -138,6 +138,7 @@ class TripListItem {
     this.budgetTier,
     this.coverImage,
     this.creator,
+    this.distanceKm,
   });
 
   factory TripListItem.fromJson(Map<String, dynamic> json) => TripListItem(
@@ -159,6 +160,10 @@ class TripListItem {
         likeCount: Json.integer(json, 'likeCount') ?? 0,
         remixCount: Json.integer(json, 'remixCount') ?? 0,
         creator: TripCreator.maybeFromJson(json['creator']),
+        // Only present when the request carried both `lat` and `lng`; a trip
+        // whose destination is still free text never gets one, so absent is
+        // "unknown" rather than zero.
+        distanceKm: Json.number(json, 'distanceKm'),
         createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
         updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
       );
@@ -193,6 +198,11 @@ class TripListItem {
   /// How many trips were remixed from this one.
   final int remixCount;
   final TripCreator? creator;
+
+  /// Straight-line kilometres from the `lat`/`lng` the feed was asked for, as
+  /// the server measured them. Null unless both were sent — and null, never 0,
+  /// for a trip with no resolved destination.
+  final double? distanceKm;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -218,6 +228,7 @@ class TripListItem {
         likeCount: likeCount,
         remixCount: remixCount,
         creator: creator,
+        distanceKm: distanceKm,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

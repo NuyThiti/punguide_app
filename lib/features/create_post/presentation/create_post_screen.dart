@@ -91,6 +91,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
   }
 
+  int _photoCount() =>
+      _blocks.fold(0, (count, block) => count + block.imagePaths.length);
+
   @override
   void initState() {
     super.initState();
@@ -106,12 +109,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       for (final topic in saved.topics) {
         _blocks.add(_BlockFields()
           ..title.text = topic.title
-          ..body.text = topic.body
           ..showTitle = topic.title.isNotEmpty
-          ..imagePaths.addAll(topic.photos)
-          ..place = topic.place
-          ..location = topic.location
-          ..legacyMapId = topic.legacyMapId);
+          ..replaceItems(topic.contentItems)
+          ..copyLegacyPlaceToFirstItem(topic));
       }
       if (_blocks.isEmpty) _blocks.add(_BlockFields());
       _audience = saved.audience;
@@ -148,9 +148,16 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
       _blocks.clear();
       for (final section in trip.contents) {
-        final block = _BlockFields()
-          ..title.text = section.title
-          ..showTitle = section.title.isNotEmpty
+        final canMerge = section.title.isNotEmpty &&
+            _blocks.isNotEmpty &&
+            _blocks.last.title.text == section.title;
+        final block = canMerge
+            ? _blocks.last
+            : (_BlockFields()
+              ..title.text = section.title
+              ..showTitle = section.title.isNotEmpty);
+        final item = canMerge ? _BlockItemFields() : block.items.first;
+        item
           ..body.text = section.content
           ..location = section.location
           ..legacyMapId = section.mapId;
@@ -159,7 +166,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             final images = section.images.where((image) => image.mediaId == id);
             final image = images.isEmpty ? null : images.first;
             final path = image?.urls?.full ?? 'unavailable:$id';
-            block.imagePaths.add(path);
+            item.imagePaths.add(path);
             if (image == null || image.unavailable || image.urls == null) {
               _unavailablePaths.add(path);
             } else {
@@ -182,10 +189,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             }
           }
         } else {
-          block.imagePaths.addAll(section.imageUrls);
+          item.imagePaths.addAll(section.imageUrls);
           _legacyUrls.addAll(section.imageUrls);
         }
-        _blocks.add(block);
+        if (canMerge) {
+          block.items.add(item);
+        } else {
+          _blocks.add(block);
+        }
       }
       _savedCoverId = trip.coverImage?.mediaId;
       if (_blocks.isEmpty) _blocks.add(_BlockFields());
@@ -248,8 +259,31 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     setState(() {
       _blocks[index]
         ..showTitle = false
-        ..title.clear();
+        ..title.clear()
+        ..collapseToSingleItem(_refresh);
     });
+  }
+
+  void _addItem(int index) {
+    final block = _blocks[index];
+    if (!block.showTitle) return;
+    if (block.items.length >= 20) {
+      _message('เพิ่มชุดข้อมูลได้สูงสุด 20 ชุดต่อหัวข้อ');
+      return;
+    }
+    final item = _BlockItemFields()..listen(_refresh);
+    setState(() => block.items.add(item));
+  }
+
+  void _removeItem(int blockIndex, int itemIndex) {
+    final block = _blocks[blockIndex];
+    if (block.items.length == 1 || itemIndex >= block.items.length) return;
+    final item = block.items[itemIndex];
+    setState(() {
+      block.items.removeAt(itemIndex);
+      _syncCover();
+    });
+    item.dispose(_refresh);
   }
 
   Future<void> _pickAudience() async {
@@ -258,18 +292,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     setState(() => _audience = picked);
   }
 
-  Future<void> _pickPhoto(int index) async {
+  Future<void> _pickPhoto(int index, [int itemIndex = 0]) async {
     final block = _blocks[index];
-    if (block.imagePaths.any(_legacyUrls.contains)) {
+    if (itemIndex >= block.items.length) return;
+    final item = block.items[itemIndex];
+    if (item.imagePaths.any(_legacyUrls.contains)) {
       _message('ส่วนนี้ใช้รูปแบบเดิม กรุณาเพิ่มเนื้อหาส่วนใหม่สำหรับรูปใหม่');
       return;
     }
-    if (_blocks.expand((b) => b.imagePaths).length >= 200) {
+    if (_photoCount() >= 200) {
       _message('รองรับสูงสุด 200 รูปต่อโพสต์');
       return;
     }
-    if (block.imagePaths.length >= 20) {
-      _message('เพิ่มรูปได้สูงสุด 20 รูปต่อส่วน');
+    if (item.imagePaths.length >= 20) {
+      _message('เพิ่มรูปได้สูงสุด 20 รูปต่อชุดข้อมูล');
       return;
     }
     final source = await showPhotoSourceSheet(context);
@@ -277,14 +313,21 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
     try {
       final image = await _picker.pickImage(source: source);
-      if (image == null || !mounted || !_blocks.contains(block)) return;
+      if (image == null ||
+          !mounted ||
+          !_blocks.contains(block) ||
+          !block.items.contains(item)) {
+        return;
+      }
       try {
         _photoMetadata[image.path] =
             await compute(_readPhoto, (await image.readAsBytes(), image.path));
       } catch (_) {}
-      if (!mounted || !_blocks.contains(block)) return;
+      if (!mounted || !_blocks.contains(block) || !block.items.contains(item)) {
+        return;
+      }
       setState(() {
-        block.imagePaths.add(image.path);
+        item.imagePaths.add(image.path);
         _syncCover();
       });
     } catch (_) {
@@ -317,7 +360,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         }
       }
       if (!mounted || token != _arrangement) return;
-      if (_blocks.expand((b) => b.imagePaths).length + photos.length > 200) {
+      if (_photoCount() + photos.length > 200) {
         _message('รองรับสูงสุด 200 รูปต่อโพสต์ กรุณาเลือกให้น้อยลง');
         return;
       }
@@ -333,7 +376,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         if (empty) _blocks.removeLast().dispose(_refresh);
         for (final group in groups) {
           _blocks.add(_BlockFields()
-            ..imagePaths.addAll(group.map((p) => p.path))
+            ..items.first.imagePaths.addAll(group.map((p) => p.path))
             ..listen(_refresh));
         }
         _syncCover();
@@ -350,55 +393,81 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
   }
 
-  void _transferPhoto(int source, int photo, int target, [int? position]) {
+  void _transferPhoto(int source, int photo, int target, [int? position]) =>
+      _transferPhotoFrom(
+          (block: source, item: 0, photo: photo), target, 0, position);
+
+  void _transferPhotoFrom(PostPhotoMove move, int targetBlock, int targetItem,
+      [int? position]) {
+    final source = move.block;
+    final sourceItem = move.item;
+    final photo = move.photo;
     if (source >= _blocks.length ||
-        target >= _blocks.length ||
-        photo >= _blocks[source].imagePaths.length) return;
-    if (source != target && _blocks[target].imagePaths.length >= 20) {
-      _message('เพิ่มรูปได้สูงสุด 20 รูปต่อส่วน');
+        sourceItem >= _blocks[source].items.length ||
+        targetBlock >= _blocks.length ||
+        targetItem >= _blocks[targetBlock].items.length ||
+        photo >= _blocks[source].items[sourceItem].imagePaths.length) return;
+    final sameItem = source == targetBlock && sourceItem == targetItem;
+    if (!sameItem &&
+        _blocks[targetBlock].items[targetItem].imagePaths.length >= 20) {
+      _message('เพิ่มรูปได้สูงสุด 20 รูปต่อชุดข้อมูล');
       return;
     }
-    final movingLegacy =
-        _legacyUrls.contains(_blocks[source].imagePaths[photo]);
-    if (source != target &&
-        _blocks[target]
+    final movingLegacy = _legacyUrls
+        .contains(_blocks[source].items[sourceItem].imagePaths[photo]);
+    if (!sameItem &&
+        _blocks[targetBlock]
+            .items[targetItem]
             .imagePaths
             .any((p) => _legacyUrls.contains(p) != movingLegacy)) {
       _message('กรุณาแยกรูปใหม่กับรูปแบบเดิมเป็นคนละส่วน');
       return;
     }
     setState(() {
-      final path = _blocks[source].imagePaths.removeAt(photo);
-      final images = _blocks[target].imagePaths;
+      final path = _blocks[source].items[sourceItem].imagePaths.removeAt(photo);
+      final images = _blocks[targetBlock].items[targetItem].imagePaths;
       var insertion = position ?? images.length;
-      if (position != null && source == target && photo < position) insertion--;
+      if (position != null && sameItem && photo < position) insertion--;
       images.insert(insertion.clamp(0, images.length), path);
     });
   }
 
-  Future<void> _movePhoto(int source, int photo) async {
-    final target = await showModalBottomSheet<int>(
+  Future<void> _movePhoto(int source, int photo) async =>
+      _movePhotoFrom((block: source, item: 0, photo: photo));
+
+  Future<void> _movePhotoFrom(PostPhotoMove move) async {
+    final target = await showModalBottomSheet<(int, int)>(
         context: context,
         builder: (context) => SafeArea(
               child: ListView(shrinkWrap: true, children: [
                 const ListTile(title: Text('ย้ายรูปไปท้ายเนื้อหา')),
                 for (var i = 0; i < _blocks.length; i++)
-                  ListTile(
-                      title: Text('เนื้อหา ${i + 1}'),
-                      onTap: () => Navigator.pop(context, i)),
+                  for (var item = 0; item < _blocks[i].items.length; item++)
+                    ListTile(
+                        title: Text(_blocks[i].showTitle
+                            ? 'เนื้อหา ${i + 1} · ชุด ${item + 1}'
+                            : 'เนื้อหา ${i + 1}'),
+                        onTap: () => Navigator.pop(context, (i, item))),
               ]),
             ));
-    if (mounted && target != null) _transferPhoto(source, photo, target);
+    if (mounted && target != null) {
+      _transferPhotoFrom(move, target.$1, target.$2);
+    }
   }
 
-  Future<void> _pickPlace(int index) async {
+  Future<void> _pickPlace(int index, [int itemIndex = 0]) async {
     final block = _blocks[index];
+    if (itemIndex >= block.items.length) return;
+    final item = block.items[itemIndex];
     final place = await showPlacePinPicker(context);
-    if (place == null || !mounted || !_blocks.contains(block)) return;
+    if (place == null ||
+        !mounted ||
+        !_blocks.contains(block) ||
+        !block.items.contains(item)) return;
     setState(() {
-      block.place = place;
-      block.location = null;
-      block.legacyMapId = null;
+      item.place = place;
+      item.location = null;
+      item.legacyMapId = null;
     });
   }
 
@@ -454,7 +523,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       return _trimForTripField(linkedDestination);
     }
     for (final topic in draft.topics) {
-      final place = topic.place;
+      PostPlace? place;
+      for (final item in topic.contentItems) {
+        if (item.place != null) {
+          place = item.place;
+          break;
+        }
+      }
       if (place == null) continue;
       if (place.area != null && place.area!.trim().isNotEmpty) {
         return _trimForTripField(place.area!);
@@ -538,61 +613,73 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       final contents = <TripContentRequest>[];
       final occurrences = <String, int>{};
       for (final topic in draft.topics) {
-        final legacy = topic.photos.where(_legacyUrls.contains).toList();
-        if (legacy.isNotEmpty && legacy.length != topic.photos.length)
-          throw const FormatException(
-              'กรุณาแยกรูปใหม่กับรูปแบบเดิมเป็นคนละส่วน');
-        final ids = <String>[];
-        final metadata = <PhotoMetadata>[];
-        for (final path
-            in topic.photos.where((p) => !_legacyUrls.contains(p))) {
-          final occurrence =
-              occurrences.update(path, (n) => n + 1, ifAbsent: () => 0);
-          final key = occurrence == 0 || path.startsWith('http')
-              ? path
-              : '$path::$occurrence';
-          if (_uncertainUploads.contains(key) &&
-              !await _resolveUpload(key, path)) return;
-          if (!_uploaded.containsKey(key)) {
-            if (_uploaded.length >= 200)
-              throw const FormatException(
-                  'มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
-            final prepared = await preparePostPhoto(path);
-            try {
-              _uploaded[key] = await api.media
-                  .upload(_draftId!, bytes: prepared.$1, filename: prepared.$2);
-            } on ApiException catch (error) {
-              if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500)
-                _uncertainUploads.add(key);
-              rethrow;
+        final topicItems = topic.contentItems
+            .where((item) => !item.isEmpty)
+            .toList(growable: false);
+        final publishItems = topicItems.isEmpty && topic.title.trim().isNotEmpty
+            ? [topic.contentItems.first]
+            : topicItems;
+        for (final item in publishItems) {
+          final legacy = item.photos.where(_legacyUrls.contains).toList();
+          if (legacy.isNotEmpty && legacy.length != item.photos.length) {
+            throw const FormatException(
+                'กรุณาแยกรูปใหม่กับรูปแบบเดิมเป็นคนละส่วน');
+          }
+          final ids = <String>[];
+          final metadata = <PhotoMetadata>[];
+          for (final path
+              in item.photos.where((p) => !_legacyUrls.contains(p))) {
+            final occurrence =
+                occurrences.update(path, (n) => n + 1, ifAbsent: () => 0);
+            final key = occurrence == 0 || path.startsWith('http')
+                ? path
+                : '$path::$occurrence';
+            if (_uncertainUploads.contains(key) &&
+                !await _resolveUpload(key, path)) return;
+            if (!_uploaded.containsKey(key)) {
+              if (_uploaded.length >= 200) {
+                throw const FormatException(
+                    'มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
+              }
+              final prepared = await preparePostPhoto(path);
+              try {
+                _uploaded[key] = await api.media.upload(_draftId!,
+                    bytes: prepared.$1, filename: prepared.$2);
+              } on ApiException catch (error) {
+                if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500) {
+                  _uncertainUploads.add(key);
+                }
+                rethrow;
+              }
+            }
+            final id = _uploaded[key]!.mediaId;
+            ids.add(id);
+            final m = _photoMetadata[path];
+            if (m != null && (m.captureTimestamp != null || m.hasLocation)) {
+              metadata.add(PhotoMetadata(
+                  mediaId: id,
+                  takenAt: m.captureTimestamp,
+                  latitude: m.hasLocation ? m.latitude : null,
+                  longitude: m.hasLocation ? m.longitude : null));
             }
           }
-          final id = _uploaded[key]!.mediaId;
-          ids.add(id);
-          final m = _photoMetadata[path];
-          if (m != null && (m.captureTimestamp != null || m.hasLocation))
-            metadata.add(PhotoMetadata(
-                mediaId: id,
-                takenAt: m.captureTimestamp,
-                latitude: m.hasLocation ? m.latitude : null,
-                longitude: m.hasLocation ? m.longitude : null));
+          final location = item.place == null
+              ? item.location
+              : ContentLocation(
+                  status: ContentLocationStatus.confirmed,
+                  name: item.place!.name);
+          contents.add(TripContentRequest(
+              title: topic.title,
+              content: item.body,
+              mediaIds: legacy.isEmpty ? ids : null,
+              imageUrls: legacy,
+              location: item.legacyMapId != null && location == null
+                  ? null
+                  : location ??
+                      const ContentLocation(status: ContentLocationStatus.none),
+              mapId: location == null ? item.legacyMapId : null,
+              photoMetadata: metadata));
         }
-        final location = topic.place == null
-            ? topic.location
-            : ContentLocation(
-                status: ContentLocationStatus.confirmed,
-                name: topic.place!.name);
-        contents.add(TripContentRequest(
-            title: topic.title,
-            content: topic.body,
-            mediaIds: legacy.isEmpty ? ids : null,
-            imageUrls: legacy,
-            location: topic.legacyMapId != null && location == null
-                ? null
-                : location ??
-                    const ContentLocation(status: ContentLocationStatus.none),
-            mapId: location == null ? topic.legacyMapId : null,
-            photoMetadata: metadata));
       }
       TripContentRequest.serializeAll(contents);
 
@@ -797,65 +884,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                               _blocks.insert(index + 1, block);
                                             })),
                               ]),
-                        if (_blocks[index].legacyMapId != null &&
-                            _blocks[index].location == null)
-                          Material(
-                              color: Colors.transparent,
-                              child: ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text('สถานที่เดิม (ยังไม่ยืนยัน)'),
-                                onTap: () => _pickPlace(index),
-                                trailing: IconButton(
-                                    tooltip: 'ลบสถานที่เดิม',
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () => setState(() {
-                                          _blocks[index].legacyMapId = null;
-                                          _blocks[index].location =
-                                              const ContentLocation(
-                                                  status: ContentLocationStatus
-                                                      .none);
-                                        })),
-                              )),
-                        if (_blocks[index].location != null &&
-                            _blocks[index].location!.status !=
-                                ContentLocationStatus.none)
-                          Material(
-                              color: Colors.transparent,
-                              child: ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(_blocks[index].location!.status ==
-                                        ContentLocationStatus.suggested
-                                    ? 'สถานที่ที่แนะนำ: ${_blocks[index].location!.name ?? "รอยืนยัน"}'
-                                    : _blocks[index].location!.name ??
-                                        'สถานที่ที่ยืนยัน'),
-                                subtitle: _blocks[index].location!.status ==
-                                        ContentLocationStatus.suggested
-                                    ? TextButton(
-                                        onPressed: () => setState(() {
-                                              final l =
-                                                  _blocks[index].location!;
-                                              _blocks[index].location =
-                                                  ContentLocation(
-                                                      status:
-                                                          ContentLocationStatus
-                                                              .confirmed,
-                                                      name: l.name,
-                                                      placeId: l.placeId,
-                                                      latitude: l.latitude,
-                                                      longitude: l.longitude);
-                                            }),
-                                        child: const Text('ยืนยันสถานที่'))
-                                    : null,
-                                onTap: () => _pickPlace(index),
-                                trailing: IconButton(
-                                    tooltip: 'ลบสถานที่',
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () => setState(() =>
-                                        _blocks[index].location =
-                                            const ContentLocation(
-                                                status: ContentLocationStatus
-                                                    .none))),
-                              )),
                         PostBlock(
                           key: ValueKey(_blocks[index]),
                           titleController: _blocks[index].title,
@@ -863,6 +891,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           bodyController: _blocks[index].body,
                           showTitle: _blocks[index].showTitle,
                           imagePath: null,
+                          items: _blocks[index]
+                              .items
+                              .map((item) => PostBlockItem(
+                                  bodyController: item.body,
+                                  imagePaths: item.imagePaths,
+                                  place: item.place,
+                                  location: item.location,
+                                  legacyMapId: item.legacyMapId))
+                              .toList(growable: false),
                           imagePaths: _blocks[index].imagePaths,
                           unavailableImages: _unavailablePaths,
                           coverPath: _coverPath,
@@ -870,9 +907,57 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                               _movePhoto(index, photoIndex),
                           onDropImage: (move) =>
                               _transferPhoto(move.$1, move.$2, index),
-                          blockIndex: index,
                           onDropBeforeImage: (move, position) =>
                               _transferPhoto(move.$1, move.$2, index, position),
+                          onAddItem: () => _addItem(index),
+                          onRemoveItem: (itemIndex) =>
+                              _removeItem(index, itemIndex),
+                          onPickImageInItem: (itemIndex) =>
+                              _pickPhoto(index, itemIndex),
+                          onClearImagesInItem: (itemIndex) => setState(() {
+                            _blocks[index].items[itemIndex].imagePaths.clear();
+                            _syncCover();
+                          }),
+                          onRemoveImageInItem: (itemIndex, photoIndex) =>
+                              setState(() {
+                            _blocks[index]
+                                .items[itemIndex]
+                                .imagePaths
+                                .removeAt(photoIndex);
+                            _syncCover();
+                          }),
+                          onMoveImageInItem: (itemIndex, photoIndex) =>
+                              _movePhotoFrom((
+                            block: index,
+                            item: itemIndex,
+                            photo: photoIndex
+                          )),
+                          onDropImageInItem: (move, itemIndex) =>
+                              _transferPhotoFrom(move, index, itemIndex),
+                          blockIndex: index,
+                          onDropBeforeImageInItem:
+                              (move, itemIndex, position) => _transferPhotoFrom(
+                                  move, index, itemIndex, position),
+                          onPickPlaceInItem: (itemIndex) =>
+                              _pickPlace(index, itemIndex),
+                          onClearPlaceInItem: (itemIndex) => setState(() {
+                            final item = _blocks[index].items[itemIndex];
+                            item.place = null;
+                            item.location = const ContentLocation(
+                                status: ContentLocationStatus.none);
+                            item.legacyMapId = null;
+                          }),
+                          onConfirmLocationInItem: (itemIndex) => setState(() {
+                            final item = _blocks[index].items[itemIndex];
+                            final location = item.location;
+                            if (location == null) return;
+                            item.location = ContentLocation(
+                                status: ContentLocationStatus.confirmed,
+                                name: location.name,
+                                placeId: location.placeId,
+                                latitude: location.latitude,
+                                longitude: location.longitude);
+                          }),
                           onSelectCover: (path) {
                             if (_legacyUrls.contains(path)) {
                               _message(
@@ -882,23 +967,28 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                             setState(() => _coverPath = path);
                           },
                           onRemoveImage: (photoIndex) => setState(() {
-                            _blocks[index].imagePaths.removeAt(photoIndex);
+                            _blocks[index]
+                                .items
+                                .first
+                                .imagePaths
+                                .removeAt(photoIndex);
                             _syncCover();
                           }),
-                          place: _blocks[index].place,
+                          place: _blocks[index].items.first.place,
                           onAddTitle: () => _addTitle(index),
                           onClearTitle: () => _clearTitle(index),
                           onPickImage: () => _pickPhoto(index),
                           onClearImage: () => setState(() {
-                            _blocks[index].imagePaths.clear();
+                            _blocks[index].items.first.imagePaths.clear();
                             _syncCover();
                           }),
                           onPickPlace: () => _pickPlace(index),
                           onClearPlace: () => setState(() {
-                            _blocks[index].place = null;
-                            _blocks[index].location = const ContentLocation(
+                            final item = _blocks[index].items.first;
+                            item.place = null;
+                            item.location = const ContentLocation(
                                 status: ContentLocationStatus.none);
-                            _blocks[index].legacyMapId = null;
+                            item.legacyMapId = null;
                           }),
                           onRemove: _blocks.length == 1
                               ? null
@@ -937,38 +1027,108 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 /// block itself stays stateless.
 class _BlockFields {
   final TextEditingController title = TextEditingController();
-  final TextEditingController body = TextEditingController();
   final FocusNode titleFocus = FocusNode();
+  final List<_BlockItemFields> items = [_BlockItemFields()];
+
+  TextEditingController get body => items.first.body;
+  List<String> get imagePaths => items.length == 1
+      ? items.first.imagePaths
+      : items.expand((item) => item.imagePaths).toList(growable: false);
 
   /// The heading field has been asked for. Not the same as the heading having
   /// text: one just added is on screen and still blank.
   bool showTitle = false;
 
+  PostTopic toTopic() => PostTopic(
+        title: title.text,
+        body: body.text,
+        imagePaths: List.of(items.first.imagePaths),
+        items: items
+            .map((item) => PostTopicItem(
+                  body: item.body.text,
+                  imagePaths: List.of(item.imagePaths),
+                  place: item.place,
+                  location: item.location,
+                  legacyMapId: item.legacyMapId,
+                ))
+            .toList(growable: false),
+        place: items.first.place,
+        location: items.first.location,
+        legacyMapId: items.first.legacyMapId,
+      );
+
+  void replaceItems(List<PostTopicItem> topics) {
+    for (final item in items) {
+      item.dispose(null);
+    }
+    items
+      ..clear()
+      ..addAll(topics.map((topic) => _BlockItemFields()
+        ..body.text = topic.body
+        ..imagePaths.addAll(topic.photos)
+        ..place = topic.place
+        ..location = topic.location
+        ..legacyMapId = topic.legacyMapId));
+    if (items.isEmpty) items.add(_BlockItemFields());
+  }
+
+  void copyLegacyPlaceToFirstItem(PostTopic topic) {
+    if (topic.items.isNotEmpty) return;
+    items.first
+      ..place = topic.place
+      ..location = topic.location
+      ..legacyMapId = topic.legacyMapId;
+  }
+
+  void collapseToSingleItem(VoidCallback onChanged) {
+    if (items.length == 1) return;
+    final first = items.first;
+    for (final item in items.skip(1)) {
+      first.imagePaths.addAll(item.imagePaths);
+      if (first.body.text.trim().isEmpty && item.body.text.trim().isNotEmpty) {
+        first.body.text = item.body.text;
+      }
+      if (first.place == null &&
+          first.location == null &&
+          first.legacyMapId == null) {
+        first.place = item.place;
+        first.location = item.location;
+        first.legacyMapId = item.legacyMapId;
+      }
+      item.dispose(onChanged);
+    }
+    items.removeRange(1, items.length);
+  }
+
+  void listen(VoidCallback onChanged) {
+    title.addListener(onChanged);
+    for (final item in items) {
+      item.listen(onChanged);
+    }
+  }
+
+  void dispose(VoidCallback onChanged) {
+    title.removeListener(onChanged);
+    title.dispose();
+    for (final item in items) {
+      item.dispose(onChanged);
+    }
+    titleFocus.dispose();
+  }
+}
+
+class _BlockItemFields {
+  final TextEditingController body = TextEditingController();
   final List<String> imagePaths = [];
   PostPlace? place;
   ContentLocation? location;
   String? legacyMapId;
 
-  PostTopic toTopic() => PostTopic(
-        title: title.text,
-        body: body.text,
-        imagePaths: List.of(imagePaths),
-        place: place,
-        location: location,
-        legacyMapId: legacyMapId,
-      );
+  void listen(VoidCallback onChanged) => body.addListener(onChanged);
 
-  void listen(VoidCallback onChanged) {
-    title.addListener(onChanged);
-    body.addListener(onChanged);
-  }
-
-  void dispose(VoidCallback onChanged) {
-    title.removeListener(onChanged);
-    body.removeListener(onChanged);
-    title.dispose();
+  void dispose(VoidCallback? onChanged) {
+    if (onChanged != null) body.removeListener(onChanged);
     body.dispose();
-    titleFocus.dispose();
   }
 }
 

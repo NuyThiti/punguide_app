@@ -8,6 +8,7 @@ import '../models/plan_generation.dart';
 import '../models/trip.dart';
 import '../models/trip_content.dart';
 import '../models/trip_draft.dart';
+import '../models/trip_feed_query.dart';
 
 /// Trips: the feed, the traveller's own trips, saving a plan, remixing,
 /// bookmarks and likes.
@@ -70,13 +71,28 @@ class TripsApi {
     return ApiTrip.fromJson(Json.asMap(body));
   }
 
-  /// The public feed. Not paginated yet — it returns everything public.
+  /// The public feed, newest first.
   ///
-  /// [destination] is a case-insensitive partial match.
-  Future<List<TripListItem>> feed({String? destination}) async {
+  /// Every filter lives on [TripFeedQuery]; an empty one is the plain feed —
+  /// every public trip, unpaginated — which is what this returned before there
+  /// were any filters at all.
+  ///
+  /// Optional-auth: with a token the rows carry the caller's own `isSaved` and
+  /// `isLiked`, without one both are false.
+  ///
+  /// Two traps worth knowing before adding a parameter here:
+  ///
+  ///  * the endpoint runs `forbidNonWhitelisted`, so a key it does not
+  ///    recognise fails the whole request with a `400` — a typo is loud, but
+  ///    it also means nothing may be invented client-side;
+  ///  * `distanceKm` comes back on a row only when the query carried both
+  ///    coordinates, which [TripFeedQuery] enforces as a pair.
+  Future<List<TripListItem>> feed([
+    TripFeedQuery query = const TripFeedQuery(),
+  ]) async {
     final body = await _client.get<List<dynamic>>(
       '/trips',
-      query: <String, dynamic>{'destination': destination},
+      query: query.toQuery(),
     );
     return TripListItem.listFrom(body);
   }

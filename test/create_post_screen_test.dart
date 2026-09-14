@@ -282,7 +282,9 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
     expect(find.text('สถานที่ที่แนะนำ: ร้านที่แนะนำ'), findsOneWidget);
-    await tester.tap(find.text('ยืนยันสถานที่'));
+    tester
+        .widget<PostBlock>(find.byType(PostBlock))
+        .onConfirmLocationInItem!(0);
     await tester.pumpAndSettle();
     tester.widget<PostBlock>(find.byType(PostBlock)).onDropBeforeImage!(
         (0, 1), 0);
@@ -747,6 +749,70 @@ void main() {
 
     expect(find.text('คาเฟ่วิวภูเขา'), findsNothing);
     expect(find.widgetWithText(PostAddChip, 'หัวข้อ'), findsOneWidget);
+  });
+
+  testWidgets('a titled section can publish multiple photo description sets',
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.tap(find.widgetWithText(PostAddChip, 'หัวข้อ'));
+    await tester.pumpAndSettle();
+    var block = tester.widget<PostBlock>(find.byType(PostBlock));
+    block.titleController.text = '1st Nagisa Park';
+    block.bodyController.text = 'ทุ่งดอกไม้ริมทะเลสาบ';
+    block.onPickImageInItem!(0);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+
+    block = tester.widget<PostBlock>(find.byType(PostBlock));
+    block.onAddItem!();
+    await tester.pumpAndSettle();
+    block = tester.widget<PostBlock>(find.byType(PostBlock));
+    block.items![1].bodyController.text = 'มุมภูเขาและดอกทานตะวัน';
+    block.onPickImageInItem!(1);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+    block = tester.widget<PostBlock>(find.byType(PostBlock));
+    block.onPickPlaceInItem!(1);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'เชียงใหม่');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เชียงใหม่').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ปันไกด์'));
+    await _finishPublish(tester);
+
+    expect(find.text('home'), findsOneWidget);
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'], [
+      {
+        'title': '1st Nagisa Park',
+        'content': 'ทุ่งดอกไม้ริมทะเลสาบ',
+        'mediaIds': [_a],
+        'location': {'status': 'confirmed', 'name': 'เชียงใหม่'}
+      },
+      {
+        'title': '1st Nagisa Park',
+        'content': 'มุมภูเขาและดอกทานตะวัน',
+        'mediaIds': [_b],
+        'location': {'status': 'confirmed', 'name': 'เชียงใหม่'}
+      },
+    ]);
   });
 
   testWidgets('เผยแพร่ waits for something to post', (tester) async {

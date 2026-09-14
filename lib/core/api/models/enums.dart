@@ -13,6 +13,33 @@ enum TripType {
 /// Values are case-sensitive on the wire. Unknown values decode to `null`
 /// rather than throwing, so a server-side addition does not crash the app.
 
+/// How `GET /trips` orders the feed.
+///
+/// [nearest] needs `lat`/`lng` alongside it; without them the server falls
+/// back to [recent] rather than failing, so a traveller who refused location
+/// still gets a feed.
+enum FeedSort {
+  recent('recent'),
+  nearest('nearest'),
+  popular('popular');
+
+  const FeedSort(this.wire);
+
+  final String wire;
+}
+
+/// Whether a budget ceiling on the feed filter is one traveller's share or the
+/// whole group's bill. The server divides by the *trip's* head count for
+/// [perPerson] — not by the head count in the filter.
+enum FeedBudgetScope {
+  total('total'),
+  perPerson('per_person');
+
+  const FeedBudgetScope(this.wire);
+
+  final String wire;
+}
+
 /// Where a trip is in its life cycle.
 enum TripStatus {
   draft('draft'),

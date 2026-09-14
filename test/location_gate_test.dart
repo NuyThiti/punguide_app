@@ -24,7 +24,9 @@ Future<ProviderContainer> _pumpApp(
 
   final container = ProviderContainer(
     overrides: [
-      ...homeOverrides(const []),
+      // The board reads `GET /trips` itself now, so the gate test has to
+      // answer the transport rather than a feed provider.
+      ...paigunOverrides(feedAdapter(const [])),
       storedLocationPermissionProvider.overrideWithValue(answered),
       locationPermissionStoreProvider
           .overrideWithValue(InMemoryLocationPermissionStore(answered)),

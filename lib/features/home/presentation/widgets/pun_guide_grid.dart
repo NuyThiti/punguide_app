@@ -17,6 +17,7 @@ class PunGuideGrid extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
     this.distanceLabelOf,
     this.featuredOf,
+    this.savedOf,
   });
 
   final List<TripListItem> trips;
@@ -30,6 +31,9 @@ class PunGuideGrid extends StatelessWidget {
 
   /// Whether a row wears the Top PunGuide badge.
   final bool Function(TripListItem trip)? featuredOf;
+
+  /// Resolves the bookmark when something outside the row tracks it.
+  final bool Function(TripListItem trip)? savedOf;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +67,7 @@ class PunGuideGrid extends StatelessWidget {
               trip: trip,
               distanceLabel: distanceLabelOf?.call(trip),
               featured: featuredOf?.call(trip) ?? false,
+              saved: savedOf?.call(trip),
               onTap: () => onOpen(trip),
               onSave: () => onSave(trip),
             ),
