@@ -59,6 +59,20 @@ class AppColors {
   /// ไปกัน board (Figma 1539-8070): the well behind the location pin, the dark
   /// control beside the address, and the violet distance chip on a card. The
   /// header itself sits on Home's photo rather than a colour of its own.
+  /// Create post composer, second pass (design 1967-24885): a dark header over
+  /// a white sheet, purple actions, and the photo-import gradient.
+  static const postHeader = Color(0xFF19191C);
+  static const postPurple = Color(0xFF7C3AED);
+  static const postPurpleSoft = Color(0xFFEDE4FF);
+  static const postPurpleWell = Color(0xFFF4EEFF);
+  static const postImportStart = Color(0xFF6D3BF5);
+  static const postImportMid = Color(0xFFB05CF6);
+  static const postImportEnd = Color(0xFFD8F25E);
+  static const postDashed = Color(0xFFD6CDEC);
+  static const postRowIcon = Color(0xFF2B2B2E);
+  static const postDraftBg = Color(0xFFF2F1EE);
+  static const postToggleBg = Color(0xFFF4F3F1);
+
   static const paigunPinWell = Color(0xFFFFEDE3);
   static const paigunControl = Color(0xFF1E1A18);
   static const paigunDistance = Color(0xFF7C3AED);

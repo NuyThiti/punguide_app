@@ -27,13 +27,13 @@ class PostTripRow extends StatelessWidget {
               height: 44,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppColors.postIconWell,
+                color: AppColors.postPurpleWell,
                 borderRadius: BorderRadius.circular(13),
               ),
               child: const Icon(
                 Icons.route,
                 size: 22,
-                color: AppColors.brandOrange,
+                color: AppColors.postPurple,
               ),
             ),
             const SizedBox(width: 12),

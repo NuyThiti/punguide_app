@@ -90,12 +90,12 @@ class CreateSheet extends StatelessWidget {
                         Navigator.of(context).pop(CreateAction.ownPlan),
                   ),
                   const SizedBox(height: 14),
-                  _PlainOption(
-                    icon: 'assets/icons/create_post.svg',
-                    title: 'Post',
-                    subtitle: 'สร้างโพส อัปเดตสเตตัส และพูดคุยกับคอมมูนิตี้',
-                    onTap: () => Navigator.of(context).pop(CreateAction.post),
-                  ),
+                  // _PlainOption(
+                  //   icon: 'assets/icons/create_post.svg',
+                  //   title: 'Post',
+                  //   subtitle: 'สร้างโพส อัปเดตสเตตัส และพูดคุยกับคอมมูนิตี้',
+                  //   onTap: () => Navigator.of(context).pop(CreateAction.post),
+                  // ),
                   const SizedBox(height: 14),
                   _PlainOption(
                     icon: 'assets/icons/create_puntok.svg',

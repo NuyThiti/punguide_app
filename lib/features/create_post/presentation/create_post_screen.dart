@@ -20,6 +20,7 @@ import 'widgets/create_post_header.dart';
 import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
 import 'widgets/post_audience_chip.dart';
+import 'widgets/post_action_bar.dart';
 import 'widgets/post_block.dart';
 import 'widgets/post_trip_row.dart';
 import 'widgets/trip_link_picker.dart';
@@ -61,6 +62,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final List<_BlockFields> _blocks = <_BlockFields>[_BlockFields()];
 
   PostAudience _audience = PostAudience.public;
+
+  /// "Every one can remix your trip". Held here so the switch answers, but
+  /// `createDraft`/`update` have no remix field — see [_setAllowRemix].
+  bool _allowRemix = false;
+  bool _remixNoteShown = false;
+
   PostTripLink? _trip;
   String? _tripDestination;
 
@@ -109,7 +116,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       for (final topic in saved.topics) {
         _blocks.add(_BlockFields()
           ..title.text = topic.title
-          ..showTitle = topic.title.isNotEmpty
           ..replaceItems(topic.contentItems)
           ..copyLegacyPlaceToFirstItem(topic));
       }
@@ -155,7 +161,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             ? _blocks.last
             : (_BlockFields()
               ..title.text = section.title
-              ..showTitle = section.title.isNotEmpty);
+);
         final item = canMerge ? _BlockItemFields() : block.items.first;
         item
           ..body.text = section.content
@@ -250,23 +256,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   /// Puts the heading field on screen and drops the caret in it.
-  void _addTitle(int index) {
-    setState(() => _blocks[index].showTitle = true);
-    _blocks[index].titleFocus.requestFocus();
-  }
-
-  void _clearTitle(int index) {
-    setState(() {
-      _blocks[index]
-        ..showTitle = false
-        ..title.clear()
-        ..collapseToSingleItem(_refresh);
-    });
-  }
-
   void _addItem(int index) {
     final block = _blocks[index];
-    if (!block.showTitle) return;
     if (block.items.length >= 20) {
       _message('เพิ่มชุดข้อมูลได้สูงสุด 20 ชุดต่อหัวข้อ');
       return;
@@ -286,13 +277,26 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     item.dispose(_refresh);
   }
 
+  /// The switch moves, and says once that nothing carries it up yet — the
+  /// trip API has no remix flag, and `forbidNonWhitelisted` rejects invented
+  /// keys outright.
+  void _setAllowRemix(bool value) {
+    setState(() => _allowRemix = value);
+    if (_remixNoteShown) return;
+    _remixNoteShown = true;
+    _message('การอนุญาตรีมิกซ์ยังไม่มีฟิลด์ใน API จึงยังไม่ถูกบันทึก');
+  }
+
   Future<void> _pickAudience() async {
     final picked = await showAudiencePicker(context, _audience);
     if (picked == null || !mounted) return;
     setState(() => _audience = picked);
   }
 
-  Future<void> _pickPhoto(int index, [int itemIndex = 0]) async {
+  /// [forcedSource] is the camera chip, which has already said where the photo
+  /// comes from; without it the source sheet asks.
+  Future<void> _pickPhoto(int index,
+      [int itemIndex = 0, ImageSource? forcedSource]) async {
     final block = _blocks[index];
     if (itemIndex >= block.items.length) return;
     final item = block.items[itemIndex];
@@ -308,7 +312,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _message('เพิ่มรูปได้สูงสุด 20 รูปต่อชุดข้อมูล');
       return;
     }
-    final source = await showPhotoSourceSheet(context);
+    final source = forcedSource ?? await showPhotoSourceSheet(context);
     if (source == null || !mounted) return;
 
     try {
@@ -444,9 +448,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 for (var i = 0; i < _blocks.length; i++)
                   for (var item = 0; item < _blocks[i].items.length; item++)
                     ListTile(
-                        title: Text(_blocks[i].showTitle
-                            ? 'เนื้อหา ${i + 1} · ชุด ${item + 1}'
-                            : 'เนื้อหา ${i + 1}'),
+                        title: Text(_blocks[i].items.length > 1
+                            ? 'จุด ${i + 1} · ชุด ${item + 1}'
+                            : 'จุด ${i + 1}'),
                         onTap: () => Navigator.pop(context, (i, item))),
               ]),
             ));
@@ -459,14 +463,23 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final block = _blocks[index];
     if (itemIndex >= block.items.length) return;
     final item = block.items[itemIndex];
-    final place = await showPlacePinPicker(context);
+    final hasPlace = item.place != null ||
+        item.location?.status == ContentLocationStatus.confirmed ||
+        item.legacyMapId != null;
+    final place = await showPlacePinPicker(context, hasPlace: hasPlace);
     if (place == null ||
         !mounted ||
         !_blocks.contains(block) ||
         !block.items.contains(item)) return;
+
+    // The row itself carries only a chevron now, so taking the pin off again
+    // comes back from the sheet.
+    final cleared = place == clearedPlacePin;
     setState(() {
-      item.place = place;
-      item.location = null;
+      item.place = cleared ? null : place;
+      item.location = cleared
+          ? const ContentLocation(status: ContentLocationStatus.none)
+          : null;
       item.legacyMapId = null;
     });
   }
@@ -667,7 +680,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               ? item.location
               : ContentLocation(
                   status: ContentLocationStatus.confirmed,
-                  name: item.place!.name);
+                  name: item.place!.name,
+                  // `/places/search` answers with coordinates, and the content
+                  // location takes them — dropping them would lose the pin.
+                  latitude: item.place!.latitude,
+                  longitude: item.place!.longitude);
           contents.add(TripContentRequest(
               title: topic.title,
               content: item.body,
@@ -781,11 +798,37 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return true;
   }
 
+  /// Floated clear of the pinned action bar: a docked snack bar lands exactly
+  /// on top of Save Draft and Share PunGuide and swallows taps meant for them.
   void _message(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(text)));
+      ..showSnackBar(SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          bottom: 88 + MediaQuery.paddingOf(context).bottom,
+        ),
+      ));
+  }
+
+  /// The rows the design draws but the trip API has no field for yet.
+  ///
+  /// `POST /trips` runs `forbidNonWhitelisted`, so an invented key fails the
+  /// whole request — these stay unsent until the API grows a home for them
+  /// rather than being smuggled into `content`.
+  void _onExtra(PostSpotExtra extra) =>
+      _message('${extra.label} ยังไม่มีที่เก็บใน API จึงยังบันทึกไม่ได้');
+
+  /// Keeps what has been written and leaves. The draft lives in this app run,
+  /// not on the server: a post only becomes a trip when it is shared.
+  void _saveDraftAndClose() {
+    _saveLocal();
+    _message('เก็บร่างไว้ในเครื่องแล้ว');
+    _close();
   }
 
   @override
@@ -802,220 +845,189 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         },
         child: AbsorbPointer(
           absorbing: _publishing,
-          child: SafeArea(
-            child: Column(
-              children: [
-                CreatePostHeader(
-                  onClose: _close,
-                  onPublish: _publish,
-                  canPublish:
-                      !_publishing && !_arranging && _draft.isPublishable,
-                ),
-                if (_publishing) const LinearProgressIndicator(),
-                Expanded(
-                  child: ListView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-                    children: [
-                      PostAuthorRow(
-                        session: session,
-                        audience: _audience,
-                        onChangeAudience: _pickAudience,
-                      ),
-                      Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                              onPressed: () => _editPostInfo(
-                                  _titleForPublish(_draft),
-                                  _destinationForPublish(_draft)),
-                              child: const Text('ชื่อโพสต์และจุดหมาย'))),
-                      const SizedBox(height: 12),
-                      if (_arranging)
-                        Row(children: [
-                          const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2)),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                              child: Text('กำลังจัดรูปเป็นเรื่องราว…')),
-                          TextButton(
-                              onPressed: _cancelArrangement,
-                              child: const Text('ยกเลิก')),
-                        ])
-                      else
-                        Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _createFromPhotos,
-                              icon: const Icon(Icons.auto_awesome_outlined,
-                                  size: 19),
-                              label: const Text('สร้างจากรูปทริป'),
-                              style: TextButton.styleFrom(
-                                  foregroundColor: AppColors.createTop),
-                            )),
-                      const SizedBox(height: 12),
-                      for (var index = 0; index < _blocks.length; index++) ...[
-                        if (index > 0)
-                          const Divider(height: 30, color: AppColors.line),
-                        if (_blocks.length > 1)
-                          Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text('เนื้อหา ${index + 1}'),
-                                IconButton(
-                                    tooltip: 'เลื่อนขึ้น',
-                                    icon: const Icon(Icons.arrow_upward),
-                                    onPressed: index == 0
-                                        ? null
-                                        : () => setState(() {
-                                              final block =
-                                                  _blocks.removeAt(index);
-                                              _blocks.insert(index - 1, block);
-                                            })),
-                                IconButton(
-                                    tooltip: 'เลื่อนลง',
-                                    icon: const Icon(Icons.arrow_downward),
-                                    onPressed: index == _blocks.length - 1
-                                        ? null
-                                        : () => setState(() {
-                                              final block =
-                                                  _blocks.removeAt(index);
-                                              _blocks.insert(index + 1, block);
-                                            })),
-                              ]),
-                        PostBlock(
-                          key: ValueKey(_blocks[index]),
-                          titleController: _blocks[index].title,
-                          titleFocus: _blocks[index].titleFocus,
-                          bodyController: _blocks[index].body,
-                          showTitle: _blocks[index].showTitle,
-                          imagePath: null,
-                          items: _blocks[index]
-                              .items
-                              .map((item) => PostBlockItem(
-                                  bodyController: item.body,
-                                  imagePaths: item.imagePaths,
-                                  place: item.place,
-                                  location: item.location,
-                                  legacyMapId: item.legacyMapId))
-                              .toList(growable: false),
-                          imagePaths: _blocks[index].imagePaths,
-                          unavailableImages: _unavailablePaths,
-                          coverPath: _coverPath,
-                          onMoveImage: (photoIndex) =>
-                              _movePhoto(index, photoIndex),
-                          onDropImage: (move) =>
-                              _transferPhoto(move.$1, move.$2, index),
-                          onDropBeforeImage: (move, position) =>
-                              _transferPhoto(move.$1, move.$2, index, position),
-                          onAddItem: () => _addItem(index),
-                          onRemoveItem: (itemIndex) =>
-                              _removeItem(index, itemIndex),
-                          onPickImageInItem: (itemIndex) =>
-                              _pickPhoto(index, itemIndex),
-                          onClearImagesInItem: (itemIndex) => setState(() {
-                            _blocks[index].items[itemIndex].imagePaths.clear();
-                            _syncCover();
-                          }),
-                          onRemoveImageInItem: (itemIndex, photoIndex) =>
-                              setState(() {
-                            _blocks[index]
-                                .items[itemIndex]
-                                .imagePaths
-                                .removeAt(photoIndex);
-                            _syncCover();
-                          }),
-                          onMoveImageInItem: (itemIndex, photoIndex) =>
-                              _movePhotoFrom((
-                            block: index,
-                            item: itemIndex,
-                            photo: photoIndex
-                          )),
-                          onDropImageInItem: (move, itemIndex) =>
-                              _transferPhotoFrom(move, index, itemIndex),
-                          blockIndex: index,
-                          onDropBeforeImageInItem:
-                              (move, itemIndex, position) => _transferPhotoFrom(
-                                  move, index, itemIndex, position),
-                          onPickPlaceInItem: (itemIndex) =>
-                              _pickPlace(index, itemIndex),
-                          onClearPlaceInItem: (itemIndex) => setState(() {
-                            final item = _blocks[index].items[itemIndex];
-                            item.place = null;
-                            item.location = const ContentLocation(
-                                status: ContentLocationStatus.none);
-                            item.legacyMapId = null;
-                          }),
-                          onConfirmLocationInItem: (itemIndex) => setState(() {
-                            final item = _blocks[index].items[itemIndex];
-                            final location = item.location;
-                            if (location == null) return;
-                            item.location = ContentLocation(
-                                status: ContentLocationStatus.confirmed,
-                                name: location.name,
-                                placeId: location.placeId,
-                                latitude: location.latitude,
-                                longitude: location.longitude);
-                          }),
-                          onSelectCover: (path) {
-                            if (_legacyUrls.contains(path)) {
-                              _message(
-                                  'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
-                              return;
-                            }
-                            setState(() => _coverPath = path);
-                          },
-                          onRemoveImage: (photoIndex) => setState(() {
-                            _blocks[index]
-                                .items
-                                .first
-                                .imagePaths
-                                .removeAt(photoIndex);
-                            _syncCover();
-                          }),
-                          place: _blocks[index].items.first.place,
-                          onAddTitle: () => _addTitle(index),
-                          onClearTitle: () => _clearTitle(index),
-                          onPickImage: () => _pickPhoto(index),
-                          onClearImage: () => setState(() {
-                            _blocks[index].items.first.imagePaths.clear();
-                            _syncCover();
-                          }),
-                          onPickPlace: () => _pickPlace(index),
-                          onClearPlace: () => setState(() {
-                            final item = _blocks[index].items.first;
-                            item.place = null;
-                            item.location = const ContentLocation(
-                                status: ContentLocationStatus.none);
-                            item.legacyMapId = null;
-                          }),
-                          onRemove: _blocks.length == 1
-                              ? null
-                              : () => _removeBlock(index),
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      _AddBlockButton(onTap: _addBlock),
-                      const SizedBox(height: 10),
-                      const Center(
-                        child: Text(
-                          'เพิ่มเรื่องราวส่วนถัดไป',
-                          style: TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const Divider(height: 30, color: AppColors.line),
-                      PostTripRow(trip: _trip?.title, onTap: _pickTrip),
-                      const Divider(height: 1, color: AppColors.line),
+          child: Column(
+            children: [
+              // The dark cap runs under the status bar, so it takes the top
+              // inset itself instead of sitting inside a SafeArea.
+              CreatePostHeader(
+                onClose: _close,
+                onImportPhotos: _createFromPhotos,
+                importing: _arranging,
+                onCancelImport: _cancelArrangement,
+              ),
+              if (_publishing) const LinearProgressIndicator(),
+              Expanded(
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+                  children: [
+                    PostAuthorRow(
+                      session: session,
+                      audience: _audience,
+                      onChangeAudience: _pickAudience,
+                    ),
+                    const SizedBox(height: 6),
+                    for (var index = 0; index < _blocks.length; index++) ...[
+                      if (index > 0) const SizedBox(height: 18),
+                      if (_blocks.length > 1)
+                        Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                          Text('จุด ${index + 1}',
+                              style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700)),
+                          IconButton(
+                              tooltip: 'เลื่อนขึ้น',
+                              icon: const Icon(Icons.arrow_upward, size: 18),
+                              onPressed: index == 0
+                                  ? null
+                                  : () => setState(() {
+                                        final block = _blocks.removeAt(index);
+                                        _blocks.insert(index - 1, block);
+                                      })),
+                          IconButton(
+                              tooltip: 'เลื่อนลง',
+                              icon: const Icon(Icons.arrow_downward, size: 18),
+                              onPressed: index == _blocks.length - 1
+                                  ? null
+                                  : () => setState(() {
+                                        final block = _blocks.removeAt(index);
+                                        _blocks.insert(index + 1, block);
+                                      })),
+                        ]),
+                    PostBlock(
+                      key: ValueKey(_blocks[index]),
+                      titleController: _blocks[index].title,
+                      titleFocus: _blocks[index].titleFocus,
+                      bodyController: _blocks[index].body,
+                      imagePath: null,
+                      items: _blocks[index]
+                          .items
+                          .map((item) => PostBlockItem(
+                              bodyController: item.body,
+                              imagePaths: item.imagePaths,
+                              place: item.place,
+                              location: item.location,
+                              legacyMapId: item.legacyMapId))
+                          .toList(growable: false),
+                      imagePaths: _blocks[index].imagePaths,
+                      unavailableImages: _unavailablePaths,
+                      coverPath: _coverPath,
+                      onMoveImage: (photoIndex) =>
+                          _movePhoto(index, photoIndex),
+                      onDropImage: (move) =>
+                          _transferPhoto(move.$1, move.$2, index),
+                      onDropBeforeImage: (move, position) =>
+                          _transferPhoto(move.$1, move.$2, index, position),
+                      onAddItem: () => _addItem(index),
+                      onRemoveItem: (itemIndex) =>
+                          _removeItem(index, itemIndex),
+                      onPickImageInItem: (itemIndex) =>
+                          _pickPhoto(index, itemIndex),
+                      onClearImagesInItem: (itemIndex) => setState(() {
+                        _blocks[index].items[itemIndex].imagePaths.clear();
+                        _syncCover();
+                      }),
+                      onRemoveImageInItem: (itemIndex, photoIndex) =>
+                          setState(() {
+                        _blocks[index]
+                            .items[itemIndex]
+                            .imagePaths
+                            .removeAt(photoIndex);
+                        _syncCover();
+                      }),
+                      onMoveImageInItem: (itemIndex, photoIndex) =>
+                          _movePhotoFrom((
+                        block: index,
+                        item: itemIndex,
+                        photo: photoIndex
+                      )),
+                      onDropImageInItem: (move, itemIndex) =>
+                          _transferPhotoFrom(move, index, itemIndex),
+                      blockIndex: index,
+                      onDropBeforeImageInItem:
+                          (move, itemIndex, position) => _transferPhotoFrom(
+                              move, index, itemIndex, position),
+                      onPickPlaceInItem: (itemIndex) =>
+                          _pickPlace(index, itemIndex),
+                      onClearPlaceInItem: (itemIndex) => setState(() {
+                        final item = _blocks[index].items[itemIndex];
+                        item.place = null;
+                        item.location = const ContentLocation(
+                            status: ContentLocationStatus.none);
+                        item.legacyMapId = null;
+                      }),
+                      onConfirmLocationInItem: (itemIndex) => setState(() {
+                        final item = _blocks[index].items[itemIndex];
+                        final location = item.location;
+                        if (location == null) return;
+                        item.location = ContentLocation(
+                            status: ContentLocationStatus.confirmed,
+                            name: location.name,
+                            placeId: location.placeId,
+                            latitude: location.latitude,
+                            longitude: location.longitude);
+                      }),
+                      onSelectCover: (path) {
+                        if (_legacyUrls.contains(path)) {
+                          _message(
+                              'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
+                          return;
+                        }
+                        setState(() => _coverPath = path);
+                      },
+                      onRemoveImage: (photoIndex) => setState(() {
+                        _blocks[index]
+                            .items
+                            .first
+                            .imagePaths
+                            .removeAt(photoIndex);
+                        _syncCover();
+                      }),
+                      place: _blocks[index].items.first.place,
+                      onPickImage: () => _pickPhoto(index),
+                      onCaptureImage: () =>
+                          _pickPhoto(index, 0, ImageSource.camera),
+                      onExtra: _onExtra,
+                      onClearImage: () => setState(() {
+                        _blocks[index].items.first.imagePaths.clear();
+                        _syncCover();
+                      }),
+                      onPickPlace: () => _pickPlace(index),
+                      onClearPlace: () => setState(() {
+                        final item = _blocks[index].items.first;
+                        item.place = null;
+                        item.location = const ContentLocation(
+                            status: ContentLocationStatus.none);
+                        item.legacyMapId = null;
+                      }),
+                      onRemove: _blocks.length == 1
+                          ? null
+                          : () => _removeBlock(index),
+                    ),
                     ],
-                  ),
+                    const SizedBox(height: 12),
+                    // Not in the reference image, but linking a post to a trip
+                    // is wired to the API and has nowhere else to live — it
+                    // stays until the design says to drop the feature.
+                    PostTripRow(trip: _trip?.title, onTap: _pickTrip),
+                    const SizedBox(height: 14),
+                    PostRemixToggle(
+                      value: _allowRemix,
+                      onChanged: _setAllowRemix,
+                    ),
+                    const SizedBox(height: 16),
+                    AddSpotButton(onTap: _addBlock),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              PostActionBar(
+                onSaveDraft: _saveDraftAndClose,
+                onShare: _publish,
+                canShare: !_publishing && !_arranging && _draft.isPublishable,
+                busy: _publishing || _arranging,
+              ),
+            ],
           ),
         ),
       ),
@@ -1034,10 +1046,6 @@ class _BlockFields {
   List<String> get imagePaths => items.length == 1
       ? items.first.imagePaths
       : items.expand((item) => item.imagePaths).toList(growable: false);
-
-  /// The heading field has been asked for. Not the same as the heading having
-  /// text: one just added is on screen and still blank.
-  bool showTitle = false;
 
   PostTopic toTopic() => PostTopic(
         title: title.text,
@@ -1129,35 +1137,6 @@ class _BlockItemFields {
   void dispose(VoidCallback? onChanged) {
     if (onChanged != null) body.removeListener(onChanged);
     body.dispose();
-  }
-}
-
-class _AddBlockButton extends StatelessWidget {
-  const _AddBlockButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 52,
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: const Icon(Icons.add, size: 21),
-        label: const Text(
-          'เพิ่มเนื้อหา',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-        ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.createTop,
-          side: const BorderSide(color: AppColors.createTop, width: 1.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      ),
-    );
   }
 }
 

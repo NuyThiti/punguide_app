@@ -18,17 +18,21 @@ class PostAudienceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.postField,
+      color: AppColors.screen,
       borderRadius: BorderRadius.circular(99),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(99),
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(color: AppColors.chipBorder),
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(audience.icon, size: 16, color: AppColors.foreground),
+              Icon(audience.icon, size: 15, color: AppColors.foreground),
               const SizedBox(width: 6),
               Text(
                 audience.label,

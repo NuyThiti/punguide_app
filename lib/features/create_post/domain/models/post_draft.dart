@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 /// The pill shows only the current choice, so the list lives here — the chip
 /// and the picker sheet read the same enum and cannot drift apart.
 enum PostAudience {
-  public('สาธารณะ', Icons.public),
-  followers('ผู้ติดตาม', Icons.group_outlined),
-  onlyMe('เฉพาะฉัน', Icons.lock_outline);
+  public('Public', Icons.public),
+  followers('Followers', Icons.group_outlined),
+  onlyMe('Only me', Icons.lock_outline);
 
   const PostAudience(this.label, this.icon);
 
@@ -19,18 +19,49 @@ enum PostAudience {
 /// A place pinned to one topic, as `/places/search` returned it.
 @immutable
 class PostPlace {
-  const PostPlace(
-      {required this.id, required this.name, this.area, this.mapId});
+  const PostPlace({
+    required this.id,
+    required this.name,
+    this.area,
+    this.mapId,
+    this.address,
+    this.distanceKm,
+    this.latitude,
+    this.longitude,
+  });
 
   final String? mapId;
 
   final String id;
   final String name;
 
-  /// Where it sits — the place's address, when the search carried one.
+  /// The locality alone — "เชียงใหม่". This is what a post falls back to for
+  /// the trip's `destination`, so it stays short on purpose.
   final String? area;
 
-  /// One line for the pin row: "Akha Ama Coffee, เชียงใหม่".
+  /// The whole street line, for the second row of the picker and of the spot's
+  /// location row: "ถนนพระสุเมรุ แขวงบวรนิเวศ เขตพระนคร กรุงเทพมหานคร".
+  final String? address;
+
+  /// How far it sits from where the traveller is, when that is known.
+  final double? distanceKm;
+
+  final double? latitude, longitude;
+
+  /// "240 m." under a kilometre, then "1.2 km", then whole kilometres — the
+  /// precision the design prints.
+  String? get distanceLabel {
+    final km = distanceKm;
+    if (km == null) return null;
+    if (km < 1) return '${(km * 1000).round()} m.';
+    return km < 10 ? '${km.toStringAsFixed(1)} km' : '${km.round()} km';
+  }
+
+  /// "240 m. • ถนนพระสุเมรุ …", dropping whichever half is missing.
+  String get subtitle =>
+      [distanceLabel, address].whereType<String>().join(' • ');
+
+  /// One line, for anywhere with room for only one: "Akha Ama Coffee, เชียงใหม่".
   String get label {
     final where = area?.trim() ?? '';
     return where.isEmpty ? name : '$name, $where';
@@ -42,10 +73,15 @@ class PostPlace {
       other.id == id &&
       other.name == name &&
       other.area == area &&
-      other.mapId == mapId;
+      other.mapId == mapId &&
+      other.address == address &&
+      other.distanceKm == distanceKm &&
+      other.latitude == latitude &&
+      other.longitude == longitude;
 
   @override
-  int get hashCode => Object.hash(id, name, area, mapId);
+  int get hashCode => Object.hash(
+      id, name, area, mapId, address, distanceKm, latitude, longitude);
 }
 
 /// The trip a post hangs off, kept as its own type so the composer does not
