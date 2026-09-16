@@ -502,6 +502,8 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
+    // The id the server gives the new draft, so the editor can be opened on it.
+    String? createdTripId;
     final destination = _destinationController.text.trim();
     final title = _titleController.text.trim().isEmpty
         ? destination
@@ -527,7 +529,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         final api = await ref.read(plunoApiProvider.future);
         // POST /trips — the manual-mode draft. `status` is never sent: the
         // backend always creates a draft and rejects the field outright.
-        await api.trips.createDraft(
+        final created = await api.trips.createDraft(
           type: TripType.planTrip,
           idempotencyKey: _draftCreationKey, title: title,
           destination: destination,
@@ -547,6 +549,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
           budgetTier: _tierToSave,
           specialNotes: _specialNotes,
         );
+        createdTripId = created.id;
         // The new draft belongs in the feed the rest of the app reads.
         ref.invalidate(homeFeedProvider);
       }
@@ -564,7 +567,17 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       if (mounted) setState(() => _isSaving = false);
     }
 
-    if (mounted) context.goNamed(AppRoute.home.name);
+    if (!mounted) return;
+    // A brand-new plan is empty, so the traveller lands in the editor to fill
+    // it in. Editing an existing trip has nowhere new to go.
+    if (createdTripId == null) {
+      context.goNamed(AppRoute.home.name);
+      return;
+    }
+    context.goNamed(
+      AppRoute.editTrip.name,
+      params: {'tripId': createdTripId},
+    );
   }
 
   void _showError(String message) {

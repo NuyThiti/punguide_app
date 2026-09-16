@@ -314,7 +314,7 @@ class _StickyFilterBar extends StatelessWidget {
         border: Border(bottom: BorderSide(color: AppColors.line)),
       ),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.only(top: 15, bottom: 10),
         child: child,
       ),
     );

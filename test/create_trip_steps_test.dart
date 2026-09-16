@@ -61,6 +61,12 @@ Widget _harness() {
             name: AppRoute.home.name,
             builder: (_, __) => const Scaffold(body: Text('home')),
           ),
+          GoRoute(
+            path: '/trips/:tripId/edit',
+            name: AppRoute.editTrip.name,
+            builder: (_, state) =>
+                Scaffold(body: Text('edit ${state.params['tripId']}')),
+          ),
         ],
       ),
     ),
@@ -338,6 +344,15 @@ void main() {
       expect(body['budgetTier'], 'comfort');
       // ฿3,000 a head a day — the middle of the bracket — over seven days.
       expect(body['budgetLimit'], 3000 * 7);
+    });
+
+    testWidgets('creating opens the editor on the new trip', (tester) async {
+      await fillAndSubmit(tester, bracket: 'Comfort');
+
+      // A fresh plan is empty, so the traveller belongs in the editor filling
+      // it in — not back on Home wondering where the plan went.
+      expect(find.text('edit trip-new'), findsOneWidget);
+      expect(find.text('home'), findsNothing);
     });
 
     testWidgets('never sends status: the backend rejects the field',

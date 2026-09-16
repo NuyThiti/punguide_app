@@ -11,8 +11,8 @@ class HomeHero extends StatelessWidget {
     required this.coverImage,
     required this.avatarImage,
     required this.onProfile,
-    required this.onFindTrip,
-    required this.onShareTrip,
+    required this.onPaigun,
+    required this.onPunGuide,
   });
 
   final String coverImage;
@@ -20,8 +20,8 @@ class HomeHero extends StatelessWidget {
   /// Null while signed out, or when the account has no photo.
   final String? avatarImage;
   final VoidCallback onProfile;
-  final VoidCallback onFindTrip;
-  final VoidCallback onShareTrip;
+  final VoidCallback onPaigun;
+  final VoidCallback onPunGuide;
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +86,7 @@ class HomeHero extends StatelessWidget {
                           subtitle:
                               'ค้นหา แนะนำการทริปเที่ยว\nจากสถานที่ของคุณ',
                           color: AppColors.brandOrange,
-                          onTap: onFindTrip,
+                          onTap: onPaigun,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -95,7 +95,7 @@ class HomeHero extends StatelessWidget {
                           title: 'ปันไกด์',
                           subtitle: 'แบ่งปันประสบการณ์\nเที่ยวของคุณ',
                           color: AppColors.brandPurple,
-                          onTap: onShareTrip,
+                          onTap: onPunGuide,
                         ),
                       ),
                     ],

@@ -426,10 +426,7 @@ void main() {
 
     // Each tap replaces the last message, so settle between them: the new
     // SnackBar is queued behind the outgoing one and misses a single pump.
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
-    await tester.pumpAndSettle();
-    expect(find.text('ลบ "วัดเชียงทอง" ยังไม่เปิดใช้งาน'), findsOneWidget);
-
+    // ลบ is wired now and has a test of its own.
     await tester.tap(find.byIcon(Icons.edit_outlined).first);
     await tester.pumpAndSettle();
     expect(find.text('แก้ไข "วัดเชียงทอง" ยังไม่เปิดใช้งาน'), findsOneWidget);
@@ -597,6 +594,43 @@ void main() {
     expect(find.text('brief page'), findsOneWidget);
   });
 
+  testWidgets('a stop opens its writing and offers นำทาง, then closes again',
+      (tester) async {
+    // Tall on purpose: the cards sit under the map and the day picker, and a
+    // lazy list does not build what it cannot show.
+    tester.view.physicalSize = const Size(393 * 3, 2400 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+
+    // Closed, the only action a card offers is to open it.
+    expect(find.text('นำทาง'), findsNothing);
+
+    await tester.tap(find.text('รายละเอียด').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('นำทาง'), findsOneWidget);
+    expect(find.text('ย่อรายละเอียด'), findsOneWidget);
+
+    // It is a design row with nowhere to go yet, and says so rather than
+    // doing nothing.
+    await tester.tap(find.text('นำทาง'));
+    await tester.pumpAndSettle();
+    expect(find.text('นำทางยังไม่เปิดใช้งาน'), findsOneWidget);
+
+    await tester.tap(find.text('ย่อรายละเอียด'));
+    await tester.pumpAndSettle();
+    expect(find.text('นำทาง'), findsNothing);
+  });
+
   testWidgets('ทริปของฉัน lays out on a phone without overflow',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);
@@ -613,5 +647,65 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('แก้ไขทริป'), findsOneWidget);
+  });
+
+  testWidgets('ลบ asks first, then deletes the stop and refreshes the plan',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+    adapter.replies['DELETE /items/s1'] = [FakeReply(200, null)];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    expect(find.text('ลบสถานที่นี้?'), findsOneWidget);
+
+    // Backing out must not touch the server.
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+    expect(adapter.paths.contains('DELETE /items/s1'), isFalse);
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ลบ').last);
+    await tester.pumpAndSettle();
+
+    expect(adapter.paths.contains('DELETE /items/s1'), isTrue);
+    // The plan was re-read, so the list reflects the deletion.
+    expect(
+      adapter.paths.where((p) => p == 'GET /trips/trip-1').length,
+      greaterThan(1),
+    );
+  });
+
+  testWidgets('a signed-out delete says so instead of failing silently',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+    adapter.replies['DELETE /items/s1'] = [
+      FakeReply(401, {'message': 'Unauthorized'})
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ลบ').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('เข้าสู่ระบบก่อนลบสถานที่'), findsOneWidget);
   });
 }

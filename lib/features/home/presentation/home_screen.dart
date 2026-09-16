@@ -113,8 +113,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   coverImage: _heroImage,
                   avatarImage: session?.avatarImage,
                   onProfile: () => context.goNamed(AppRoute.profile.name),
-                  onFindTrip: _openCreate,
-                  onShareTrip: () => context.goNamed(AppRoute.createTrip.name),
+                  onPaigun: () => context.goNamed(AppRoute.paigun.name),
+                  onPunGuide: _openCreate,
                 ),
                 const SizedBox(height: _filterGap),
                 _filterBar(),
@@ -212,7 +212,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// The create sheet, from the nav bar's Create button and the ไปกัน card.
+  /// The create sheet, from the nav bar's Create button and the ปันไกด์ card.
   void _openCreate() {
     openCreateSheet(
       context,

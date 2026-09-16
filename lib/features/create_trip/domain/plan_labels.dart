@@ -83,3 +83,25 @@ const travelModeLabels = <TravelMode, String>{
   TravelMode.bicycle: 'จักรยาน',
   TravelMode.transit: 'ขนส่งสาธารณะ',
 };
+
+/// The category chips on the แนะนำสถานที่ sheet. `null` is the "ทั้งหมด" chip,
+/// which asks the server for every category at once.
+const placeCategoryByLabel = <String, PlaceCategory?>{
+  'ทั้งหมด': null,
+  'แลนด์มาร์ค': PlaceCategory.attraction,
+  'สถานที่เที่ยว': PlaceCategory.activity,
+  'อาหาร': PlaceCategory.restaurant,
+  'คาเฟ่': PlaceCategory.cafe,
+  'ที่พัก': PlaceCategory.hotel,
+  'ช้อปปิ้ง': PlaceCategory.shopping,
+  'เดินทาง': PlaceCategory.transport,
+};
+
+/// The badge on a suggestion card. Falls back to the chip labels above.
+String placeCategoryLabel(PlaceCategory? category) {
+  if (category == null) return 'ทั่วไป';
+  for (final entry in placeCategoryByLabel.entries) {
+    if (entry.value == category) return entry.key;
+  }
+  return 'ทั่วไป';
+}

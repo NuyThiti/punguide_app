@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/api/api_providers.dart';
 import '../../../core/api/pluno_api.dart';
 import '../../../core/config/maps_config.dart';
 import '../../../core/constants/app_constants.dart';
@@ -18,6 +19,7 @@ import '../../trips/presentation/itinerary_display.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 import '../domain/plan_labels.dart';
 import 'providers/edit_plan_providers.dart';
+import 'widgets/suggest_places_sheet.dart';
 
 /// The deep green the design uses for the active tab and the day numbers. It
 /// is darker than [AppColors.primary], which is the button green.
@@ -164,6 +166,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
             stop: day.stops[i],
             position: i + 1,
             segment: day.segmentInto(day.stops[i]),
+            onNavigate: () => _todo('นำทางยังไม่เปิดใช้งาน'),
           ),
           if (i != day.stops.length - 1) const SizedBox(height: 12),
         ],
@@ -216,15 +219,20 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         child: _ScheduleList(
           days: plan.days,
           callbacks: _ScheduleCallbacks(
-            onExplore: () => _todo('สำรวจสถานที่แนะนำยังไม่เปิดใช้งาน'),
-            onAddPlace: (day) =>
-                _todo('เพิ่มสถานที่ในวันที่ ${day.number} ยังไม่เปิดใช้งาน'),
+            onExplore: () => _addPlaces(
+                plan,
+                plan.days.isEmpty
+                    ? null
+                    : plan.days.firstWhere(
+                        (day) => day.id.isNotEmpty,
+                        orElse: () => plan.days.first,
+                      )),
+            onAddPlace: (day) => _addPlaces(plan, day),
             onAddTravel: (day) =>
                 _todo('เพิ่มการเดินทางในวันที่ ${day.number} ยังไม่เปิดใช้งาน'),
             onEditStop: (stop) =>
                 _todo('แก้ไข "${stop.title}" ยังไม่เปิดใช้งาน'),
-            onDeleteStop: (stop) =>
-                _todo('ลบ "${stop.title}" ยังไม่เปิดใช้งาน'),
+            onDeleteStop: _deleteStop,
             onReorder: (day) =>
                 _todo('จัดเรียงสถานที่ในวันที่ ${day.number} ยังไม่เปิดใช้งาน'),
           ),
@@ -276,6 +284,71 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         ),
       ),
     );
+  }
+
+  /// Removes a stop, after asking. Deleting re-measures the legs around the
+  /// gap it leaves, which is why [calculateTravelSegments] is left on.
+  Future<void> _deleteStop(Activity stop) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ลบสถานที่นี้?'),
+        content: Text('"${stop.title}" จะถูกเอาออกจากแผน'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('ยกเลิก'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style:
+                TextButton.styleFrom(foregroundColor: const Color(0xFFE4574C)),
+            child: const Text('ลบ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.itinerary.deleteItem(stop.id);
+    } on ApiException catch (failure) {
+      _todo(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนลบสถานที่'
+          : 'ลบไม่สำเร็จ: ${failure.message}');
+      return;
+    } catch (error) {
+      _todo('ลบไม่สำเร็จ: $error');
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(apiTripProvider(widget.tripId));
+  }
+
+  /// Opens แนะนำสถานที่ for [day] and folds whatever was added back into the
+  /// trip.
+  Future<void> _addPlaces(_PlanView plan, _PlanDay? day) async {
+    if (day == null || day.id.isEmpty) {
+      _todo('วันนี้ยังไม่มีในแผน เพิ่มวันก่อนจึงจะเพิ่มสถานที่ได้');
+      return;
+    }
+    final anchor = plan.anchor;
+    if (anchor == null) {
+      _todo('ยังไม่รู้พิกัดของทริปนี้ เลือกจุดหมายหรือเพิ่มสถานที่แรกก่อน');
+      return;
+    }
+
+    final added = await showSuggestPlacesSheet(
+      context,
+      tripId: widget.tripId,
+      dayId: day.id,
+      dayNumber: day.number,
+      latitude: anchor.latitude,
+      longitude: anchor.longitude,
+    );
+    if (!added || !mounted) return;
+    ref.invalidate(apiTripProvider(widget.tripId));
   }
 
   void _scrollToMap() {
@@ -1433,8 +1506,7 @@ class _LegRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(legIcon(stop, segment),
-                size: 15, color: AppColors.foreground),
+            Icon(legIcon(stop, segment), size: 15, color: AppColors.foreground),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -1633,11 +1705,16 @@ class _DashedBorderPainter extends CustomPainter {
 /// One row of the schedule.
 class _PlanDay {
   const _PlanDay({
+    required this.id,
     required this.number,
     required this.dateLabel,
     this.stops = const <Activity>[],
     this.segments = const <TravelSegment>[],
   });
+
+  /// The itinerary day's own id. Empty on a placeholder day the trip has no
+  /// itinerary row for yet — nothing can be added to one of those.
+  final String id;
 
   final int number;
 
@@ -1674,6 +1751,7 @@ class _PlanView {
     required this.restaurantCount,
     required this.perDayBudgetLabel,
     required this.days,
+    this.anchor,
   });
 
   factory _PlanView.of(ApiTrip trip) {
@@ -1722,6 +1800,7 @@ class _PlanView {
       restaurantCount: restaurants,
       perDayBudgetLabel: perDay > 0 ? perDay.asBaht : '—',
       days: _daysOf(trip, dayCount, start),
+      anchor: _anchorOf(trip),
     );
   }
 
@@ -1734,6 +1813,10 @@ class _PlanView {
   final int restaurantCount;
   final String perDayBudgetLabel;
   final List<_PlanDay> days;
+
+  /// Where to centre place suggestions. The destination is the right anchor,
+  /// but it is often null on a hand-built trip, so an existing stop stands in.
+  final ({double latitude, double longitude})? anchor;
 
   /// Pace first, then how they get around, then the styles — the order the
   /// design reads them in.
@@ -1748,6 +1831,30 @@ class _PlanView {
     ];
   }
 
+  /// The destination's coordinates, else the first stop that has any. Null
+  /// when the trip has neither, which is the one case suggestions cannot run.
+  static ({double latitude, double longitude})? _anchorOf(ApiTrip trip) {
+    final destination = trip.destinationPlace;
+    if (destination?.latitude != null && destination?.longitude != null) {
+      return (
+        latitude: destination!.latitude!,
+        longitude: destination.longitude!,
+      );
+    }
+    for (final day in trip.days) {
+      for (final stop in day.activities) {
+        final location = stop.location;
+        if (location != null && location.hasCoordinates) {
+          return (
+            latitude: location.latitude!,
+            longitude: location.longitude!,
+          );
+        }
+      }
+    }
+    return null;
+  }
+
   /// The itinerary's own days, or a placeholder row per day so a plan that has
   /// not been filled in yet still shows somewhere to add the first stop.
   static List<_PlanDay> _daysOf(ApiTrip trip, int dayCount, DateTime? start) {
@@ -1757,6 +1864,7 @@ class _PlanView {
       return [
         for (final day in ordered)
           _PlanDay(
+            id: day.id,
             number: day.dayNumber,
             dateLabel: weekdayDate(
               day.date ?? start?.add(Duration(days: day.dayNumber - 1)),
@@ -1770,13 +1878,14 @@ class _PlanView {
     return [
       for (var i = 0; i < dayCount; i++)
         _PlanDay(
+          // A trip with no itinerary rows yet has no day to add a stop to.
+          id: '',
           number: i + 1,
           dateLabel: weekdayDate(start?.add(Duration(days: i))),
         ),
     ];
   }
 }
-
 
 /// The day's stops on a Google map, with the design's own chrome over it.
 ///
@@ -2141,19 +2250,35 @@ class _DayChip extends StatelessWidget {
 
 /// A stop as ทริปของฉัน shows it: a bigger thumbnail, the time in orange, the
 /// leg and cost as chips, and the note in full underneath.
-class _MyTripStopCard extends StatelessWidget {
+class _MyTripStopCard extends StatefulWidget {
   const _MyTripStopCard({
     required this.stop,
     required this.position,
     required this.segment,
+    required this.onNavigate,
   });
 
   final Activity stop;
   final int position;
   final TravelSegment? segment;
 
+  /// "นำทาง", which only shows once the card is open.
+  final VoidCallback onNavigate;
+
+  @override
+  State<_MyTripStopCard> createState() => _MyTripStopCardState();
+}
+
+class _MyTripStopCardState extends State<_MyTripStopCard> {
+  /// Cards start closed: the day reads as a list of stops, and the writing
+  /// opens one at a time.
+  bool _open = false;
+
   @override
   Widget build(BuildContext context) {
+    final stop = widget.stop;
+    final position = widget.position;
+    final segment = widget.segment;
     final note = stop.notes ?? '';
     return Container(
       padding: const EdgeInsets.all(12),
@@ -2225,8 +2350,10 @@ class _MyTripStopCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               note,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
+              // Closed, the note is a taste of what is there; open, it is the
+              // whole thing, which is what the expander is for.
+              maxLines: _open ? null : 2,
+              overflow: _open ? TextOverflow.clip : TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.muted,
                 fontSize: 13,
@@ -2235,7 +2362,83 @@ class _MyTripStopCard extends StatelessWidget {
               ),
             ),
           ],
+          if (_open) ...[
+            const SizedBox(height: 12),
+            _NavigateButton(onTap: widget.onNavigate),
+          ],
+          const SizedBox(height: 10),
+          _DetailsToggle(
+            open: _open,
+            onTap: () => setState(() => _open = !_open),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// "นำทาง" — the one action the open card offers.
+class _NavigateButton extends StatelessWidget {
+  const _NavigateButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.near_me_outlined, size: 19),
+        label: const Text(
+          'นำทาง',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.brandOrange,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
+    );
+  }
+}
+
+/// "รายละเอียด" when the card is closed, "ย่อรายละเอียด" when it is open.
+class _DetailsToggle extends StatelessWidget {
+  const _DetailsToggle({required this.open, required this.onTap});
+
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.foreground,
+          side: const BorderSide(color: AppColors.line),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              open ? 'ย่อรายละเอียด' : 'รายละเอียด',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 6),
+            Icon(open ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                size: 20, color: AppColors.muted),
+          ],
+        ),
       ),
     );
   }

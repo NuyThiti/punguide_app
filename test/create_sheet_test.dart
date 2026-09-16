@@ -38,7 +38,6 @@ void main() {
     expect(find.text('Create'), findsOneWidget);
     expect(find.text('PunGuide'), findsOneWidget);
     expect(find.text('สร้างแพลนเอง'), findsOneWidget);
-    expect(find.text('Post'), findsOneWidget);
     expect(find.text('Puntok'), findsOneWidget);
     expect(find.text('ตกลง'), findsOneWidget);
   });
@@ -86,7 +85,7 @@ void main() {
     expect(find.text('PunGuide'), findsNothing);
   });
 
-  testWidgets('the ไปกัน card on Home opens the same sheet', (tester) async {
+  testWidgets('the ปันไกด์ card on Home opens the same sheet', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -109,7 +108,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('ไปกัน'));
+    await tester.tap(find.text('ปันไกด์'));
     await tester.pumpAndSettle();
 
     expect(find.text('สร้างแพลนเอง'), findsOneWidget);
@@ -120,24 +119,27 @@ void main() {
       (tester) async {
     await _pumpHome(tester);
 
-    await tester.tap(find.text('ไปกัน'));
+    await tester.tap(find.text('ปันไกด์'));
+    await tester.pumpAndSettle();
+    // "Puntok" is also a nav-bar label; the sheet's row is the later one.
+    await tester.tap(find.text('Puntok').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('สร้างคลิป Puntok ยังไม่เปิดใช้งาน'), findsOneWidget);
+  });
+
+  testWidgets('PunGuide opens the post composer', (tester) async {
+    await _pumpHome(tester);
+
+    await tester.tap(find.text('ปันไกด์'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('PunGuide'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ปันไกด์ทริปยังไม่เปิดใช้งาน'), findsOneWidget);
-  });
-
-  testWidgets('Post opens the composer', (tester) async {
-    await _pumpHome(tester);
-
-    await tester.tap(find.text('ไปกัน'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Post'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('สร้างโพสต์'), findsOneWidget);
-    expect(find.text('เพิ่มเนื้อหา'), findsOneWidget);
+    // Assert the destination, not its copy: the composer's heading is built
+    // at runtime and has changed once already.
+    expect(find.byType(CreatePostScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
   });
 }
 
