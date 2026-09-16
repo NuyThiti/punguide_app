@@ -79,7 +79,7 @@ class CreateSheet extends StatelessWidget {
                     title: 'PunGuide',
                     subtitle: 'แบ่งปันประสบการณ์ทริปของคุณ',
                     onTap: () =>
-                        Navigator.of(context).pop(CreateAction.punGuide),
+                         Navigator.of(context).pop(CreateAction.post),
                   ),
                   const SizedBox(height: 14),
                   _PlainOption(

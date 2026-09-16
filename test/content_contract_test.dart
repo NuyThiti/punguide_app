@@ -101,6 +101,133 @@ void main() {
     expect(() => TripContentRequest.serializeAll(List.filled(11, section)),
         throwsFormatException);
   });
+  test('the assistant call carries the photos, its context and its key',
+      () async {
+    final adapter = FakeAdapter({
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'สองวันช้า ๆ',
+          'contents': [
+            {
+              'content': 'แดดเช้าตกลงมาบนอิฐเก่าพอดี',
+              'mediaIds': [a],
+              'location': {
+                'status': 'suggested',
+                'name': 'วัดเจดีย์หลวง',
+                'placeId': 'ChIJ',
+                'latitude': 18.787,
+                'longitude': 98.9867,
+              },
+            },
+            {
+              'content': '',
+              'mediaIds': [b],
+              'location': {'status': 'none'},
+            },
+          ],
+          'locationOptions': [
+            {
+              'sectionIndex': 0,
+              'confidence': 'high',
+              'options': [
+                {'name': 'วัดเจดีย์หลวง', 'placeId': 'ChIJ', 'rating': 4.6}
+              ],
+            },
+            {'sectionIndex': 1, 'confidence': 'low', 'options': []},
+          ],
+          'warnings': ['2 photos have no caption yet'],
+        })
+      ]
+    });
+    final api = fakeApi(adapter);
+    addTearDown(api.close);
+
+    final draft = await api.trips.generateContents(
+      'trip-new',
+      photos: const [
+        PostAssistantPhoto(
+            mediaId: a,
+            takenAt: '2026-09-01T09:30:00+07:00',
+            latitude: 18.7871,
+            longitude: 98.9867),
+        PostAssistantPhoto(mediaId: b),
+      ],
+      language: 'th',
+      notes: 'ทริปเชียงใหม่กับเพื่อน 3 วัน',
+      locationName: 'วัดเจดีย์หลวง',
+      idempotencyKey: a,
+    );
+
+    // The photos go up in order with only the EXIF that was actually read.
+    expect(adapter.requests.last.data, {
+      'photos': [
+        {
+          'mediaId': a,
+          'takenAt': '2026-09-01T09:30:00+07:00',
+          'latitude': 18.7871,
+          'longitude': 98.9867,
+        },
+        {'mediaId': b},
+      ],
+      'language': 'th',
+      'notes': 'ทริปเชียงใหม่กับเพื่อน 3 วัน',
+      'locationName': 'วัดเจดีย์หลวง',
+    });
+    expect(adapter.requests.last.headers['Idempotency-Key'], a);
+
+    // A card per photo, the wordless one kept, and the place still unconfirmed.
+    expect(draft.title, 'สองวันช้า ๆ');
+    expect(draft.contents, hasLength(2));
+    expect(draft.contents.last.content, isEmpty);
+    expect(draft.contents.first.location!.status,
+        ContentLocationStatus.suggested);
+    expect(draft.optionsFor(0)!.options.single.name, 'วัดเจดีย์หลวง');
+    expect(draft.optionsFor(1)!.confidence, PlaceConfidence.low);
+    expect(draft.optionsFor(1)!.options, isEmpty);
+    expect(draft.warnings, ['2 photos have no caption yet']);
+  });
+
+  test('the assistant call refuses what the endpoint would reject', () async {
+    final api = fakeApi(FakeAdapter({}));
+    addTearDown(api.close);
+
+    Future<void> call({
+      List<PostAssistantPhoto> photos = const [PostAssistantPhoto(mediaId: a)],
+      String? notes,
+      String? locationName,
+    }) =>
+        api.trips.generateContents('trip-new',
+            photos: photos, notes: notes, locationName: locationName);
+
+    // 1-20 photos, none repeated.
+    expect(() => call(photos: const []), throwsA(isA<FormatException>()));
+    expect(
+        () => call(
+            photos: List.generate(21, (_) => const PostAssistantPhoto(mediaId: a))),
+        throwsA(isA<FormatException>()));
+    expect(
+        () => call(photos: const [
+              PostAssistantPhoto(mediaId: a),
+              PostAssistantPhoto(mediaId: a),
+            ]),
+        throwsA(isA<FormatException>()));
+
+    // Context and the one place name it may write are both capped.
+    expect(() => call(notes: 'x' * 501), throwsA(isA<FormatException>()));
+    expect(() => call(locationName: 'x' * 201), throwsA(isA<FormatException>()));
+
+    // A time without a zone is a guess; coordinates come in pairs.
+    expect(
+        () => call(photos: const [
+              PostAssistantPhoto(mediaId: a, takenAt: '2026-09-01T09:30:00')
+            ]),
+        throwsA(isA<FormatException>()));
+    expect(
+        () => call(
+            photos: const [PostAssistantPhoto(mediaId: a, latitude: 18.7)]),
+        throwsA(isA<FormatException>()));
+  });
+
   testWidgets(
       'public reader keeps unavailable slot and hides suggested/legacy pins',
       (tester) async {

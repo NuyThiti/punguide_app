@@ -26,6 +26,7 @@ export 'models/expense.dart';
 export 'models/json.dart' show Json, Patch;
 export 'models/media.dart';
 export 'models/place.dart';
+export 'models/post_assistant.dart';
 export 'models/plan_generation.dart';
 export 'models/schedule.dart';
 export 'models/share.dart';

@@ -21,9 +21,14 @@ import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
 import 'widgets/post_audience_chip.dart';
 import 'widgets/post_action_bar.dart';
+import 'widgets/post_warnings.dart';
 import 'widgets/post_block.dart';
 import 'widgets/post_trip_row.dart';
 import 'widgets/trip_link_picker.dart';
+
+/// What `POST /trips/:id/contents/generate` takes in one call. A cost ceiling
+/// billed per photo, not a limit on the post, which still holds 200.
+const _assistantPhotoLimit = 20;
 
 final _localDraftProvider =
     StateProvider.family<PostDraft?, String>((ref, id) => null);
@@ -62,6 +67,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final List<_BlockFields> _blocks = <_BlockFields>[_BlockFields()];
 
   PostAudience _audience = PostAudience.public;
+
+  /// What the assistant warned about on the last draft. The contract requires
+  /// every one of these to reach the screen, so they stay until dismissed.
+  List<String> _warnings = const [];
+
+  /// The places the assistant offered for a spot, kept against the spot itself
+  /// so reordering or deleting cannot point them at the wrong one.
+  final Map<_BlockFields, SectionPlaceOptions> _placeOptions = {};
+
+  /// One key per draft attempt: replaying it inside five minutes returns the
+  /// same draft without paying for the model again. "ร่างใหม่" mints a new one.
+  String _assistKey = uuidV4();
 
   /// "Every one can remix your trip". Held here so the switch answers, but
   /// `createDraft`/`update` have no remix field — see [_setAllowRemix].
@@ -345,6 +362,257 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     setState(() => _arranging = false);
   }
 
+  /// The draft trip the photos and the assistant both need.
+  ///
+  /// Shares [_createKey] and [_creationTitle] with publish, so a draft made
+  /// here is the one publish goes on to fill in — never a second trip. Returns
+  /// false when the traveller backed out of naming it.
+  Future<bool> _ensureDraftTrip(PlunoApi api) async {
+    if (_draftId != null) return true;
+
+    // `POST /trips` needs both, and nothing is worth interrupting the draft
+    // for: these are provisional and publish sends whatever they have become
+    // by then — including the headline the assistant is about to write. The
+    // stand-in destination is the photos' own coordinates, never a place name
+    // the app would be making up.
+    final derivedTitle = _titleForPublish(_draft);
+    final title = derivedTitle.isEmpty ? 'ร่างจากรูป' : derivedTitle;
+    final derivedDestination = _destinationForPublish(_draft);
+    final destination = derivedDestination.isEmpty
+        ? _coordinatesOfFirstPhoto() ?? 'ยังไม่ระบุ'
+        : derivedDestination;
+
+    _creationTitle ??= title;
+    _creationDestination ??= destination;
+    final created = await api.trips.createDraft(
+        type: TripType.content,
+        title: _creationTitle!,
+        destination: _creationDestination!,
+        idempotencyKey: _createKey);
+    _draftId = created.id;
+    return true;
+  }
+
+  /// The place the traveller pinned themselves, which is the only name the
+  /// assistant may write into a caption.
+  ///
+  /// A place the assistant suggested does not count, however sure it was: a
+  /// name it guessed goes public the moment the post does, while a pin it
+  /// guessed stays `suggested` and never leaves the draft unseen.
+  String? _confirmedPlaceName() {
+    for (final block in _blocks) {
+      for (final item in block.items) {
+        final picked = item.place;
+        if (picked != null && picked.name.trim().isNotEmpty) {
+          return picked.name.trim();
+        }
+        final location = item.location;
+        if (location?.status == ContentLocationStatus.confirmed &&
+            (location?.name?.trim().isNotEmpty ?? false)) {
+          return location!.name!.trim();
+        }
+      }
+    }
+    return null;
+  }
+
+  /// "13.7563, 100.4930" for the first photo that carries coordinates — a fact
+  /// off the photo, standing in for a destination until publish sets the real
+  /// one. Null when no photo has any.
+  String? _coordinatesOfFirstPhoto() {
+    for (final photo in _photoMetadata.values) {
+      if (photo.hasLocation) {
+        return '${photo.latitude!.toStringAsFixed(4)}, '
+            '${photo.longitude!.toStringAsFixed(4)}';
+      }
+    }
+    return null;
+  }
+
+  /// Uploads [photos] and asks the assistant for a draft.
+  ///
+  /// Returns false when it could not run at all — no key on the server, the
+  /// quota is spent, the network is down — so the caller can still group the
+  /// photos locally. The uploads are kept either way: publish reuses them
+  /// rather than sending the same files twice.
+  Future<bool> _draftWithAssistant(List<TripPhoto> photos, int token) async {
+    // A fresh key per attempt. Replaying one returns the draft it returned
+    // before, which is right for a retry and wrong for a different set of
+    // photos — and the traveller may well have picked different photos.
+    _assistKey = uuidV4();
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      if (!mounted || token != _arrangement) return false;
+      if (!await _ensureDraftTrip(api)) return false;
+      if (!mounted || token != _arrangement) return false;
+
+      // The endpoint takes 20 photos a call — a cost ceiling, not the post's.
+      // The rest still reach the draft, at the end, with a warning.
+      final sent = photos.take(_assistantPhotoLimit).toList(growable: false);
+      final extra = photos.skip(_assistantPhotoLimit).toList(growable: false);
+
+      final uploaded = <PostAssistantPhoto>[];
+      for (final photo in sent) {
+        if (!mounted || token != _arrangement) return false;
+        final media = await _uploadForAssistant(api, photo.path);
+        if (media == null) return false;
+        uploaded.add(PostAssistantPhoto(
+          mediaId: media.mediaId,
+          takenAt: photo.captureTimestamp,
+          latitude: photo.hasLocation ? photo.latitude : null,
+          longitude: photo.hasLocation ? photo.longitude : null,
+        ));
+      }
+      if (!mounted || token != _arrangement) return false;
+
+      final notes = _postTitle.text.trim();
+      final draft = await api.trips.generateContents(
+        _draftId!,
+        photos: uploaded,
+        language: 'th',
+        notes: notes.isEmpty ? null : notes,
+        locationName: _confirmedPlaceName(),
+        idempotencyKey: _assistKey,
+      );
+      if (!mounted || token != _arrangement) return false;
+
+      _applyAssistantDraft(draft, sent, extra);
+      return true;
+    } on ApiException catch (error) {
+      _noteAssistantFailure(_assistantFailure(error), token);
+      return false;
+    } on FormatException catch (error) {
+      _noteAssistantFailure(error.message, token);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Puts one photo in the trip's gallery, reusing anything already uploaded
+  /// so a retry never sends the same file twice.
+  Future<Media?> _uploadForAssistant(PlunoApi api, String path) async {
+    final existing = _uploaded[path];
+    if (existing != null) return existing;
+    if (_uploaded.length >= 200) {
+      _message('มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
+      return null;
+    }
+
+    final prepared = await preparePostPhoto(path);
+    try {
+      final media = await api.media
+          .upload(_draftId!, bytes: prepared.$1, filename: prepared.$2);
+      _uploaded[path] = media;
+      return media;
+    } on ApiException catch (error) {
+      // Same rule publish follows: a timeout or a 5xx may still have stored
+      // the file, so the next attempt checks the gallery instead of resending.
+      if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500) {
+        _uncertainUploads.add(path);
+      }
+      rethrow;
+    }
+  }
+
+  /// Why the draft is grouped rather than written. It goes on the warnings
+  /// card, not into a snack bar: the fallback shows one of its own a moment
+  /// later, and the reason would be gone before it was read.
+  void _noteAssistantFailure(String reason, int token) {
+    if (!mounted || token != _arrangement) return;
+    setState(() => _warnings = List.unmodifiable([reason]));
+  }
+
+  String _assistantFailure(ApiException error) {
+    final status = error.statusCode ?? 0;
+    if (status == 503) {
+      return 'ผู้ช่วยเขียนโพสต์ยังไม่เปิดใช้งาน จัดรูปให้ตามเวลาและสถานที่แทน';
+    }
+    if (status == 429) {
+      return 'ร่างด้วยผู้ช่วยบ่อยเกินกำหนด ลองใหม่ในอีกสักครู่ — จัดรูปให้ก่อน';
+    }
+    return 'ร่างด้วยผู้ช่วยไม่สำเร็จ (${error.message}) จัดรูปให้ตามเวลาและสถานที่แทน';
+  }
+
+  /// Lays the assistant's draft into the composer for review.
+  ///
+  /// Every photo that was sent comes back in some section — the server
+  /// guarantees it — but anything it left out is appended rather than trusted
+  /// away, and so are the photos past the per-call limit.
+  void _applyAssistantDraft(
+    GeneratedPostDraft draft,
+    List<TripPhoto> sent,
+    List<TripPhoto> extra,
+  ) {
+    final pathOf = <String, String>{
+      for (final entry in _uploaded.entries) entry.value.mediaId: entry.key,
+    };
+    final warnings = <String>[...draft.warnings];
+
+    final blocks = <_BlockFields>[];
+    final placed = <String>{};
+    for (var index = 0; index < draft.contents.length; index++) {
+      final section = draft.contents[index];
+      final paths = <String>[];
+      for (final mediaId in section.mediaIds ?? const <String>[]) {
+        final path = pathOf[mediaId];
+        if (path == null || !placed.add(path)) continue;
+        paths.add(path);
+      }
+
+      final block = _BlockFields()
+        ..title.text = section.title
+        ..items.first.body.text = section.content
+        ..items.first.imagePaths.addAll(paths)
+        ..items.first.location = section.location;
+      block.listen(_refresh);
+      blocks.add(block);
+
+      final options = draft.optionsFor(index);
+      if (options != null && options.options.isNotEmpty) {
+        _placeOptions[block] = options;
+      }
+    }
+
+    // The draft holds a card per photo it was given, so anything left over —
+    // a photo the answer somehow missed, or one past the per-call ceiling —
+    // gets a card of its own rather than being stacked onto the last one.
+    final leftovers = <String>[
+      for (final photo in sent)
+        if (!placed.contains(photo.path)) photo.path,
+      ...extra.map((photo) => photo.path),
+    ];
+    for (final path in leftovers) {
+      blocks.add(_BlockFields()
+        ..items.first.imagePaths.add(path)
+        ..listen(_refresh));
+    }
+    if (extra.isNotEmpty) {
+      warnings.add(
+          'ส่งให้ผู้ช่วยได้ครั้งละ $_assistantPhotoLimit รูป อีก ${extra.length} รูปได้การ์ดของตัวเองไว้ให้เติมคำเอง');
+    }
+    if (blocks.isEmpty) {
+      blocks.add(_BlockFields()..listen(_refresh));
+    }
+
+    setState(() {
+      final empty = _blocks.length == 1 && _blocks.first.toTopic().isEmpty;
+      if (empty) {
+        final spare = _blocks.removeLast();
+        _placeOptions.remove(spare);
+        spare.dispose(_refresh);
+      }
+      _blocks.addAll(blocks);
+      if (_postTitle.text.trim().isEmpty && draft.title.trim().isNotEmpty) {
+        _postTitle.text = draft.title.trim();
+      }
+      _warnings = List.unmodifiable(warnings);
+      _syncCover();
+    });
+    _saveLocal();
+    _message('ร่างให้แล้ว ตรวจและแก้ได้ก่อนแชร์ สถานที่ต้องกดยืนยันเอง');
+  }
+
   Future<void> _createFromPhotos() async {
     if (_arranging) return;
     final token = ++_arrangement;
@@ -369,6 +637,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         return;
       }
       _photoMetadata.addEntries(photos.map((p) => MapEntry(p.path, p)));
+
+      // The assistant writes the draft when it can. It needs the trip and the
+      // uploaded photos first, so anything short of a working endpoint falls
+      // back to grouping them here, which is what this button did before.
+      if (await _draftWithAssistant(photos, token)) return;
+      if (!mounted || token != _arrangement) return;
+
       final groups = const TripPhotoGrouper().group(photos);
       final empty = _blocks.length == 1 && _blocks.first.toTopic().isEmpty;
       if (_blocks.length + groups.length - (empty ? 1 : 0) > 100) {
@@ -466,7 +741,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final hasPlace = item.place != null ||
         item.location?.status == ContentLocationStatus.confirmed ||
         item.legacyMapId != null;
-    final place = await showPlacePinPicker(context, hasPlace: hasPlace);
+    final place = await showPlacePinPicker(
+      context,
+      hasPlace: hasPlace,
+      // Only the first item carries the assistant's candidates: they were
+      // drafted for the spot, and the extra items are photo groups inside it.
+      suggestions: itemIndex == 0 ? _placeOptions[block] : null,
+    );
     if (place == null ||
         !mounted ||
         !_blocks.contains(block) ||
@@ -476,6 +757,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     // comes back from the sheet.
     final cleared = place == clearedPlacePin;
     setState(() {
+      if (itemIndex == 0) _placeOptions.remove(block);
       item.place = cleared ? null : place;
       item.location = cleared
           ? const ContentLocation(status: ContentLocationStatus.none)
@@ -683,6 +965,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   name: item.place!.name,
                   // `/places/search` answers with coordinates, and the content
                   // location takes them — dropping them would lose the pin.
+                  placeId: item.place!.placeId,
                   latitude: item.place!.latitude,
                   longitude: item.place!.longitude);
           contents.add(TripContentRequest(
@@ -867,6 +1150,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       onChangeAudience: _pickAudience,
                     ),
                     const SizedBox(height: 6),
+                    PostWarnings(
+                      warnings: _warnings,
+                      onDismiss: () => setState(() => _warnings = const []),
+                    ),
                     for (var index = 0; index < _blocks.length; index++) ...[
                       if (index > 0) const SizedBox(height: 18),
                       if (_blocks.length > 1)

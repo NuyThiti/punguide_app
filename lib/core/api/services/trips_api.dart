@@ -5,6 +5,7 @@ import '../models/destination_place.dart';
 import '../models/enums.dart';
 import '../models/json.dart';
 import '../models/plan_generation.dart';
+import '../models/post_assistant.dart';
 import '../models/trip.dart';
 import '../models/trip_content.dart';
 import '../models/trip_draft.dart';
@@ -69,6 +70,70 @@ class TripsApi {
       }),
     );
     return ApiTrip.fromJson(Json.asMap(body));
+  }
+
+  /// Drafts a post out of photos already uploaded to this trip: a headline,
+  /// the sections, and the places the assistant thinks each one is at.
+  ///
+  /// Writes nothing. The traveller reviews the draft and saves it with
+  /// [update], which is the only thing that touches the trip — a draft nobody
+  /// keeps must leave nothing behind, and a place the model guessed has to
+  /// pass a human first, so every location comes back `suggested`.
+  ///
+  /// [photos] carry the EXIF the app read: the server cannot, because every
+  /// stored variant is stripped of metadata on upload. Their order is the
+  /// order of the post, and the answer holds exactly one section per photo in
+  /// that same order — a card each, however the model grouped them.
+  ///
+  /// [locationName] is the one place name the assistant may write into the
+  /// captions, and only a place the traveller confirmed themselves may be
+  /// passed: coordinates near somewhere are not confirmation. Left out, the
+  /// captions describe the place without naming it — the suggestions in
+  /// `locationOptions` are unaffected either way.
+  ///
+  /// [notes] is context, not instruction, and is the only thing that lets the
+  /// assistant write "เรา" instead of the first person singular.
+  ///
+  /// Pass an [idempotencyKey] per attempt: the same key within five minutes
+  /// returns the draft it returned the first time, free. "Draft again" needs a
+  /// fresh one.
+  Future<GeneratedPostDraft> generateContents(
+    String tripId, {
+    required List<PostAssistantPhoto> photos,
+    String? language,
+    String? notes,
+    String? locationName,
+    String? idempotencyKey,
+  }) async {
+    // The endpoint is billed per photo and caps a call at 20; the app splits
+    // nothing itself, so this is a mistake worth catching before the request.
+    if (photos.isEmpty || photos.length > 20) {
+      throw const FormatException('ร่างโพสต์ได้ครั้งละ 1-20 รูป');
+    }
+    final ids = photos.map((photo) => photo.mediaId).toList();
+    if (ids.toSet().length != ids.length) {
+      throw const FormatException('รหัสรูปซ้ำในคำขอเดียวกัน');
+    }
+    if ((notes?.length ?? 0) > 500) {
+      throw const FormatException('บริบทเพิ่มเติมต้องไม่เกิน 500 ตัวอักษร');
+    }
+    if ((locationName?.length ?? 0) > 200) {
+      throw const FormatException('ชื่อสถานที่ต้องไม่เกิน 200 ตัวอักษร');
+    }
+
+    final body = await _client.post<Map<String, dynamic>>(
+      '/trips/$tripId/contents/generate',
+      headers: idempotencyKey == null
+          ? null
+          : PlunoHeaders.idempotent(idempotencyKey),
+      body: Json.compact(<String, dynamic>{
+        'photos': photos.map((photo) => photo.toJson()).toList(),
+        'language': language,
+        'notes': notes,
+        'locationName': locationName,
+      }),
+    );
+    return GeneratedPostDraft.fromJson(Json.asMap(body));
   }
 
   /// The public feed, newest first.

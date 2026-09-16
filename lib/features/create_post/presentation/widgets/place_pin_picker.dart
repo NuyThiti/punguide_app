@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/api/pluno_api.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../location_access/domain/location_service.dart';
@@ -19,21 +20,37 @@ const clearedPlacePin = PostPlace(id: '', name: '');
 Future<PostPlace?> showPlacePinPicker(
   BuildContext context, {
   bool hasPlace = false,
+  SectionPlaceOptions? suggestions,
 }) {
   return showModalBottomSheet<PostPlace>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.42),
-    builder: (_) => _PlacePinPicker(hasPlace: hasPlace),
+    builder: (_) =>
+        _PlacePinPicker(hasPlace: hasPlace, suggestions: suggestions),
   );
 }
 
+/// One of the assistant's candidates as a pin. It keeps Google's `placeId`,
+/// which is what the confirmed location carries up.
+PostPlace postPlaceFromSuggestion(SuggestedPlace place) => PostPlace(
+      id: place.placeId ?? '',
+      placeId: place.placeId,
+      name: place.name,
+      latitude: place.latitude,
+      longitude: place.longitude,
+    );
+
 class _PlacePinPicker extends ConsumerStatefulWidget {
-  const _PlacePinPicker({required this.hasPlace});
+  const _PlacePinPicker({required this.hasPlace, this.suggestions});
 
   /// The spot already carries a place, so the sheet offers to remove it.
   final bool hasPlace;
+
+  /// What the assistant thinks this spot is, when it drafted one. These lead
+  /// the sheet: they are the rows the traveller came to confirm.
+  final SectionPlaceOptions? suggestions;
 
   @override
   ConsumerState<_PlacePinPicker> createState() => _PlacePinPickerState();
@@ -81,6 +98,44 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
     router.pushNamed(AppRoute.locationPicker.name);
   }
 
+  /// What fills the sheet: the assistant's candidates first when it drafted
+  /// any, then whatever the traveller is searching for or standing near.
+  Widget _body({
+    required bool searching,
+    required List<SuggestedPlace> suggested,
+    required ({double lat, double lng})? origin,
+    required AsyncValue<List<PostPlace>> results,
+    required List<PostPlace> rows,
+  }) {
+    if (!searching && suggested.isNotEmpty) {
+      return _SuggestedList(
+        options: widget.suggestions!,
+        onPick: (place) =>
+            Navigator.of(context).pop(postPlaceFromSuggestion(place)),
+        nearby: origin == null
+            ? null
+            : _Results(
+                searching: false,
+                results: results,
+                rows: rows,
+                showCurrent: ref.watch(hasDeviceFixProvider),
+                onPick: (place) => Navigator.of(context).pop(place),
+                shrinkWrap: true,
+              ),
+      );
+    }
+    if (origin == null && !searching) {
+      return _LocationOffState(busy: _asking, onTurnOn: _turnOnLocation);
+    }
+    return _Results(
+      searching: searching,
+      results: results,
+      rows: rows,
+      showCurrent: !searching && ref.watch(hasDeviceFixProvider),
+      onPick: (place) => Navigator.of(context).pop(place),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final query = ref.watch(placePinQueryProvider).trim();
@@ -90,6 +145,7 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
         : ref.watch(nearbyPlacePinsProvider);
     final rows = results.valueOrNull ?? const <PostPlace>[];
     final origin = ref.watch(placePinOriginProvider);
+    final suggested = widget.suggestions?.options ?? const <SuggestedPlace>[];
 
     // A fixed tall sheet, as the design draws it in every state: hugging the
     // content would make it jump between the prompt, the spinner and a full
@@ -128,17 +184,13 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
                 ),
                 const SizedBox(height: 14),
                 Expanded(
-                  child: origin == null && !searching
-                      ? _LocationOffState(
-                          busy: _asking, onTurnOn: _turnOnLocation)
-                      : _Results(
-                          searching: searching,
-                          results: results,
-                          rows: rows,
-                          showCurrent:
-                              !searching && ref.watch(hasDeviceFixProvider),
-                          onPick: (place) => Navigator.of(context).pop(place),
-                        ),
+                  child: _body(
+                    searching: searching,
+                    suggested: suggested,
+                    origin: origin,
+                    results: results,
+                    rows: rows,
+                  ),
                 ),
                 if (widget.hasPlace)
                   Padding(
@@ -301,6 +353,7 @@ class _Results extends StatelessWidget {
     required this.rows,
     required this.showCurrent,
     required this.onPick,
+    this.shrinkWrap = false,
   });
 
   final bool searching;
@@ -311,6 +364,9 @@ class _Results extends StatelessWidget {
   final bool showCurrent;
 
   final ValueChanged<PostPlace> onPick;
+
+  /// Nested under the suggestions, where the scroll belongs to the parent.
+  final bool shrinkWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -329,6 +385,7 @@ class _Results extends StatelessWidget {
 
     return ListView.separated(
       shrinkWrap: true,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       padding: EdgeInsets.zero,
       itemCount: rows.length + (showCurrent ? 1 : 0),
       separatorBuilder: (_, __) => const Divider(
@@ -456,6 +513,114 @@ class _PlaceRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: AppColors.muted, fontSize: 13),
             ),
+    );
+  }
+}
+
+/// The assistant's candidates for this spot, with whatever it is standing near
+/// underneath. Nothing here is confirmed until one is tapped — the draft comes
+/// back `suggested` on purpose, so a guessed place can never go public unseen.
+class _SuggestedList extends StatelessWidget {
+  const _SuggestedList({
+    required this.options,
+    required this.onPick,
+    required this.nearby,
+  });
+
+  final SectionPlaceOptions options;
+  final ValueChanged<SuggestedPlace> onPick;
+  final Widget? nearby;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            children: [
+              const Text(
+                'สถานที่ที่ผู้ช่วยแนะนำ',
+                style: TextStyle(
+                  color: AppColors.foreground,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (options.confidence == PlaceConfidence.low)
+                const Text(
+                  'ยังไม่ค่อยมั่นใจ ลองตรวจดู',
+                  style: TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+            ],
+          ),
+        ),
+        for (final place in options.options)
+          _SuggestedRow(place: place, onTap: () => onPick(place)),
+        if (nearby != null) ...[
+          const Divider(height: 26, thickness: 1, color: AppColors.line),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text(
+              'ใกล้ตัวคุณ',
+              style: TextStyle(
+                color: AppColors.foreground,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          nearby!,
+        ],
+      ],
+    );
+  }
+}
+
+class _SuggestedRow extends StatelessWidget {
+  const _SuggestedRow({required this.place, required this.onTap});
+
+  final SuggestedPlace place;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final rating = place.rating;
+    final subtitle = <String>[
+      if (place.category != null && place.category!.isNotEmpty) place.category!,
+      if (rating != null) '★ ${rating.toStringAsFixed(1)}',
+    ].join(' • ');
+
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: Container(
+        width: 38,
+        height: 38,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: AppColors.postPurpleWell,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.auto_awesome,
+            size: 18, color: AppColors.postPurple),
+      ),
+      title: Text(
+        place.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppColors.foreground,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: subtitle.isEmpty
+          ? null
+          : Text(subtitle,
+              style: const TextStyle(color: AppColors.muted, fontSize: 13)),
     );
   }
 }

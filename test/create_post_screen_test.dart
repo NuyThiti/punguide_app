@@ -44,10 +44,12 @@ class _TripPicker extends ImagePickerPlatform {
 }
 
 Widget _harness({FakeAdapter? adapter, ApiTrip? initialTrip}) {
+  // Always a fake client: importing photos now talks to the API before it
+  // draws anything, and an unstubbed route answers 500 rather than reaching
+  // for plugins the test environment does not have.
+  final client = adapter ?? FakeAdapter(<String, List<FakeReply>>{});
   return ProviderScope(
-    overrides: adapter == null
-        ? const []
-        : [plunoApiProvider.overrideWith((ref) async => fakeApi(adapter))],
+    overrides: [plunoApiProvider.overrideWith((ref) async => fakeApi(client))],
     child: MaterialApp.router(
       routerConfig: GoRouter(
         initialLocation: '/posts/create',
@@ -99,6 +101,18 @@ Future<void> _confirmPlace(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(find.text('เชียงใหม่').last);
   await tester.pumpAndSettle();
+}
+
+/// Turns the wheel for work that leaves the framework — uploads, the assistant
+/// call, decoding a photo. Plain pumping never advances those, and the import
+/// spinner keeps `pumpAndSettle` from ever settling on its own.
+Future<void> _settleImport(WidgetTester tester) async {
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+  }
+  await tester.pump(const Duration(milliseconds: 50));
 }
 
 /// Scrolls the composer until [target] is built and on screen. The page is a
@@ -176,12 +190,12 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.tap(find.text('Creates post from Photos'));
-    await tester.pumpAndSettle();
+    await _settleImport(tester);
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
         'วันหยุด';
     await _confirmPlace(tester);
-    await tester.tap(find.text('Share PunGuide'));
-    await _finishPublish(tester);
+    // The import uploaded both and the second answered 500, so it is already
+    // the uncertain one before anything is published.
     expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'),
         hasLength(2));
     expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
@@ -201,6 +215,281 @@ void main() {
     expect(adapter.paths.where((p) => p == 'POST /trips'), hasLength(1));
     expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['mediaIds'],
         [_a, _b]);
+  });
+
+  testWidgets('the assistant drafts the post out of the uploaded photos',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+      _UnreadablePhoto('assets/images/puntok_london.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'สองวันช้า ๆ ในเชียงใหม่',
+          'contents': [
+            {
+              'content': 'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า',
+              'mediaIds': [_a],
+              'location': {
+                'status': 'suggested',
+                'name': 'วัดเจดีย์หลวง',
+                'placeId': 'ChIJ-wat',
+                'latitude': 18.787,
+                'longitude': 98.9867,
+              },
+            },
+            {
+              'content': 'ตอนเย็นแวะร้านเล็ก ๆ ริมทาง',
+              'mediaIds': [_b],
+              'location': {'status': 'none'},
+            },
+          ],
+          'locationOptions': [
+            {
+              'sectionIndex': 0,
+              'confidence': 'high',
+              'options': [
+                {
+                  'name': 'วัดเจดีย์หลวง',
+                  'placeId': 'ChIJ-wat',
+                  'category': 'attraction',
+                  'latitude': 18.787,
+                  'longitude': 98.9867,
+                  'rating': 4.6,
+                }
+              ],
+            },
+            {'sectionIndex': 1, 'confidence': 'low', 'options': []},
+          ],
+          'warnings': ['รูปที่สองมืดเกินกว่าจะอธิบายได้'],
+        })
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.tap(find.text('Creates post from Photos'));
+    await _settleImport(tester);
+
+    // A spot per section, each holding the photo it was written about.
+    final blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
+    expect(blocks, hasLength(2));
+    expect(blocks.first.items!.first.bodyController.text,
+        'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
+    expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
+    expect(blocks.last.imagePaths, ['assets/images/puntok_london.jpg']);
+
+    // Its warnings have to be on screen, and its place stays unconfirmed.
+    expect(find.text('• รูปที่สองมืดเกินกว่าจะอธิบายได้'), findsOneWidget);
+    expect(find.text('วัดเจดีย์หลวง'), findsOneWidget);
+    expect(find.text('สถานที่ที่แนะนำจากรูป'), findsOneWidget);
+
+    // The photos went up in order, with the key that makes a replay free.
+    final body = adapter.bodyOf('POST /trips/trip-new/contents/generate')!;
+    expect(body['photos'], [
+      {'mediaId': _a},
+      {'mediaId': _b},
+    ]);
+    expect(body['language'], 'th');
+    // Nothing was pinned by hand, so the assistant gets no name it may write.
+    expect(body.containsKey('locationName'), isFalse);
+    final request = adapter.requests
+        .lastWhere((r) => r.path == '/trips/trip-new/contents/generate');
+    expect(request.headers['Idempotency-Key'], isNotEmpty);
+  });
+
+  testWidgets('a place the traveller pinned is the one name the assistant gets',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(
+        Future.value([_UnreadablePhoto('assets/images/puntok_osaka.jpg')]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg'))
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'เชียงใหม่',
+          'contents': [
+            {
+              'content': 'เดินเล่นในเมืองเก่า',
+              'mediaIds': [_a],
+              'location': {'status': 'none'},
+            }
+          ],
+          'locationOptions': [],
+          'warnings': [],
+        })
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await _confirmPlace(tester);
+    await tester.tap(find.text('Creates post from Photos'));
+    await _settleImport(tester);
+
+    expect(adapter.bodyOf('POST /trips/trip-new/contents/generate')!['locationName'],
+        'เชียงใหม่');
+  });
+
+  testWidgets('a photo the assistant skipped still gets its own card',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+      _UnreadablePhoto('assets/images/puntok_london.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'เชียงใหม่',
+          'contents': [
+            {
+              'content': 'แดดเช้าตกลงมาบนอิฐเก่าพอดี',
+              'mediaIds': [_a],
+              'location': {'status': 'none'},
+            },
+            {
+              'content': '',
+              'mediaIds': [_b],
+              'location': {'status': 'none'},
+            },
+          ],
+          'locationOptions': [],
+          'warnings': ['2 photos have no caption yet'],
+        })
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.tap(find.text('Creates post from Photos'));
+    await _settleImport(tester);
+
+    // One card per photo, in the order they were sent, the wordless one kept
+    // for the traveller to fill in rather than folded into its neighbour.
+    final blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
+    expect(blocks, hasLength(2));
+    expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
+    expect(blocks.last.imagePaths, ['assets/images/puntok_london.jpg']);
+    expect(blocks.last.items!.first.bodyController.text, isEmpty);
+    expect(find.text('• 2 photos have no caption yet'), findsOneWidget);
+  });
+
+  testWidgets('a draft the assistant cannot write falls back to grouping',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+      _UnreadablePhoto('assets/images/puntok_london.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(503, {'message': 'assistant is off'})
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.tap(find.text('Creates post from Photos'));
+    await _settleImport(tester);
+
+    // No draft, but the photos are still laid out and the traveller is told.
+    expect(find.byType(PostBlock), findsOneWidget);
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
+        hasLength(2));
+    expect(
+        find.textContaining('ผู้ช่วยเขียนโพสต์ยังไม่เปิดใช้งาน'), findsOneWidget);
+  });
+
+  testWidgets('only a tap turns the assistant\'s place into a confirmed one',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(
+        Future.value([_UnreadablePhoto('assets/images/puntok_osaka.jpg')]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg'))
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'เชียงใหม่',
+          'contents': [
+            {
+              'content': 'เดินเล่นในเมืองเก่า',
+              'mediaIds': [_a],
+              'location': {'status': 'suggested', 'name': 'วัดเจดีย์หลวง'},
+            }
+          ],
+          'locationOptions': [
+            {
+              'sectionIndex': 0,
+              'confidence': 'high',
+              'options': [
+                {
+                  'name': 'วัดเจดีย์หลวง',
+                  'placeId': 'ChIJ-wat',
+                  'latitude': 18.787,
+                  'longitude': 98.9867,
+                }
+              ],
+            }
+          ],
+          'warnings': [],
+        })
+      ],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.tap(find.text('Creates post from Photos'));
+    await _settleImport(tester);
+
+    // The sheet leads with what the assistant suggested.
+    await tester.tap(find.text('วัดเจดีย์หลวง'));
+    await tester.pumpAndSettle();
+    expect(find.text('สถานที่ที่ผู้ช่วยแนะนำ'), findsOneWidget);
+    await tester.tap(find.text('วัดเจดีย์หลวง').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Share PunGuide'));
+    await _finishPublish(tester);
+
+    // Confirmed only because a person tapped it, and it carries the id and
+    // coordinates the suggestion came with.
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['location'], {
+      'status': 'confirmed',
+      'name': 'วัดเจดีย์หลวง',
+      'placeId': 'ChIJ-wat',
+      'latitude': 18.787,
+      'longitude': 98.9867,
+    });
   });
 
   testWidgets('draft creation retry reuses key and original creation payload',
@@ -246,7 +535,7 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.tap(find.text('Creates post from Photos'));
-    await tester.pumpAndSettle();
+    await _settleImport(tester);
     await tester.tap(find.text('Share PunGuide'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -257,8 +546,13 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'บันทึก'));
     await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
+    // The import created the draft before there was anything to name it with,
+    // so the trip carries provisional fields until publish sends the real ones.
     expect(adapter.bodyOf('POST /trips'),
-        {'type': 'content', 'title': 'วันหยุด', 'destination': 'ระหว่างทาง'});
+        {'type': 'content', 'title': 'ร่างจากรูป', 'destination': 'ยังไม่ระบุ'});
+    final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
+    expect(patched['title'], 'วันหยุด');
+    expect(patched['destination'], 'ระหว่างทาง');
     expect(
         adapter.requests
             .firstWhere((r) => r.method == 'POST')
@@ -392,7 +686,7 @@ void main() {
     await _pumpComposer(tester);
     await tester.enterText(_bodyField().first, 'ข้อความเดิม');
     await tester.tap(find.text('Creates post from Photos'));
-    await tester.pumpAndSettle();
+    await _settleImport(tester);
     var blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
     expect(blocks, hasLength(2));
     expect(blocks.first.bodyController.text, 'ข้อความเดิม');
@@ -464,7 +758,7 @@ void main() {
     addTearDown(() => ImagePickerPlatform.instance = previous);
     await _pumpComposer(tester, adapter: adapter);
     await tester.tap(find.text('Creates post from Photos'));
-    await tester.pumpAndSettle();
+    await _settleImport(tester);
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
         hasLength(1));
     await tester.tap(find.text('Share PunGuide'));
@@ -473,7 +767,11 @@ void main() {
     await tester.tap(find.text('กลับไปแก้ไข'));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(adapter.paths, isEmpty);
+    // The import had to make the draft and upload the photo — that is the
+    // assistant's price of entry. Backing out of publishing still writes
+    // nothing to the trip itself.
+    expect(adapter.paths, contains('POST /trips'));
+    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
   });
 
   for (final denied in [false, true]) {

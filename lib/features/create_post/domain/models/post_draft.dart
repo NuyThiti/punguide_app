@@ -28,6 +28,7 @@ class PostPlace {
     this.distanceKm,
     this.latitude,
     this.longitude,
+    this.placeId,
   });
 
   final String? mapId;
@@ -47,6 +48,11 @@ class PostPlace {
   final double? distanceKm;
 
   final double? latitude, longitude;
+
+  /// Google's own id, set only when the assistant suggested this place — it is
+  /// what `ContentLocation.placeId` takes. A row from `/places/search` carries
+  /// our [id] instead, which is a different namespace and is not sent.
+  final String? placeId;
 
   /// "240 m." under a kilometre, then "1.2 km", then whole kilometres — the
   /// precision the design prints.
@@ -77,11 +83,12 @@ class PostPlace {
       other.address == address &&
       other.distanceKm == distanceKm &&
       other.latitude == latitude &&
-      other.longitude == longitude;
+      other.longitude == longitude &&
+      other.placeId == placeId;
 
   @override
-  int get hashCode => Object.hash(
-      id, name, area, mapId, address, distanceKm, latitude, longitude);
+  int get hashCode => Object.hash(id, name, area, mapId, address, distanceKm,
+      latitude, longitude, placeId);
 }
 
 /// The trip a post hangs off, kept as its own type so the composer does not
