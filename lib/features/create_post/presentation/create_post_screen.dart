@@ -21,9 +21,10 @@ import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
 import 'widgets/post_audience_chip.dart';
 import 'widgets/post_action_bar.dart';
+import 'widgets/post_plan_link_card.dart';
+import 'widgets/post_title_field.dart';
 import 'widgets/post_warnings.dart';
 import 'widgets/post_block.dart';
-import 'widgets/post_trip_row.dart';
 import 'widgets/trip_link_picker.dart';
 
 /// What `POST /trips/:id/contents/generate` takes in one call. A cost ceiling
@@ -76,14 +77,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// so reordering or deleting cannot point them at the wrong one.
   final Map<_BlockFields, SectionPlaceOptions> _placeOptions = {};
 
+  /// The Trip Activity chips from the Title sheet. These have a field behind
+  /// them — `travelStyles` on the trip — so they go up with the post.
+  List<TravelStyle> _styles = const [];
+
   /// One key per draft attempt: replaying it inside five minutes returns the
   /// same draft without paying for the model again. "ร่างใหม่" mints a new one.
   String _assistKey = uuidV4();
-
-  /// "Every one can remix your trip". Held here so the switch answers, but
-  /// `createDraft`/`update` have no remix field — see [_setAllowRemix].
-  bool _allowRemix = false;
-  bool _remixNoteShown = false;
 
   PostTripLink? _trip;
   String? _tripDestination;
@@ -294,14 +294,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     item.dispose(_refresh);
   }
 
-  /// The switch moves, and says once that nothing carries it up yet — the
-  /// trip API has no remix flag, and `forbidNonWhitelisted` rejects invented
-  /// keys outright.
-  void _setAllowRemix(bool value) {
-    setState(() => _allowRemix = value);
-    if (_remixNoteShown) return;
-    _remixNoteShown = true;
-    _message('การอนุญาตรีมิกซ์ยังไม่มีฟิลด์ใน API จึงยังไม่ถูกบันทึก');
+  /// Names the post and records what kind of trip it was.
+  Future<void> _editTitle() async {
+    final result = await showPostTitleSheet(
+      context,
+      title: _postTitle.text,
+      styles: _styles,
+      onAddCustom: () => _message('เพิ่มกิจกรรมเองยังไม่มีที่เก็บใน API'),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _postTitle.text = result.title;
+      _styles = List.unmodifiable(result.styles);
+    });
+    _saveLocal();
   }
 
   Future<void> _pickAudience() async {
@@ -1003,6 +1009,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           type: TripType.content,
           title: title,
           destination: destination,
+          // Only when something was chosen: an empty list would clear whatever
+          // the trip already carries.
+          travelStyles: _styles.isEmpty ? null : _styles,
           contents: contents,
           visibility: draft.audience == PostAudience.public
               ? TripVisibility.public
@@ -1144,6 +1153,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
                   children: [
+                    PostTitleField(
+                      title: _postTitle.text,
+                      onTap: _editTitle,
+                    ),
+                    const SizedBox(height: 14),
+                    PostPlanLinkCard(trip: _trip?.title, onTap: _pickTrip),
+                    const SizedBox(height: 16),
                     PostAuthorRow(
                       session: session,
                       audience: _audience,
@@ -1273,8 +1289,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       }),
                       place: _blocks[index].items.first.place,
                       onPickImage: () => _pickPhoto(index),
-                      onCaptureImage: () =>
-                          _pickPhoto(index, 0, ImageSource.camera),
                       onExtra: _onExtra,
                       onClearImage: () => setState(() {
                         _blocks[index].items.first.imagePaths.clear();
@@ -1293,16 +1307,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           : () => _removeBlock(index),
                     ),
                     ],
-                    const SizedBox(height: 12),
-                    // Not in the reference image, but linking a post to a trip
-                    // is wired to the API and has nowhere else to live — it
-                    // stays until the design says to drop the feature.
-                    PostTripRow(trip: _trip?.title, onTap: _pickTrip),
-                    const SizedBox(height: 14),
-                    PostRemixToggle(
-                      value: _allowRemix,
-                      onChanged: _setAllowRemix,
-                    ),
                     const SizedBox(height: 16),
                     AddSpotButton(onTap: _addBlock),
                   ],

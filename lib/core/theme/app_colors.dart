@@ -63,6 +63,10 @@ class AppColors {
   /// a white sheet, purple actions, and the photo-import gradient.
   static const postHeader = Color(0xFF19191C);
   static const postPurple = Color(0xFF7C3AED);
+
+  /// The Share button and the Title sheet's ตกลง, a shade deeper than the
+  /// accents around them.
+  static const postShare = Color(0xFF6D28D9);
   static const postPurpleSoft = Color(0xFFEDE4FF);
   static const postPurpleWell = Color(0xFFF4EEFF);
   static const postImportStart = Color(0xFF6D3BF5);

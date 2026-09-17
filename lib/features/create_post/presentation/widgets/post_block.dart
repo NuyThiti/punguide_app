@@ -28,11 +28,9 @@ typedef PostPhotoMove = ({int block, int item, int photo});
 /// They are real rows in the design, so they are drawn; the screen answers for
 /// them in one place rather than each row inventing somewhere to be stored.
 enum PostSpotExtra {
-  video('วิดีโอ'),
   tripHack('Trip Hack'),
-  recommendTime('Recommend Time'),
-  activityAndStyle('Activity And Style'),
-  howToGetHere('How to Get Here');
+  recommendTime('เวลาที่แนะนำ'),
+  howToGetHere('การเดินทาง');
 
   const PostSpotExtra(this.label);
 
@@ -77,7 +75,6 @@ class PostBlock extends StatelessWidget {
     this.onPickPlaceInItem,
     this.onClearPlaceInItem,
     this.onConfirmLocationInItem,
-    this.onCaptureImage,
     this.onRemove,
   });
 
@@ -109,9 +106,6 @@ class PostBlock extends StatelessWidget {
   final PostPlace? place;
 
   final VoidCallback onPickImage;
-
-  /// Straight to the camera, from the first chip.
-  final VoidCallback? onCaptureImage;
 
   final VoidCallback onClearImage;
   final VoidCallback onPickPlace;
@@ -213,29 +207,8 @@ class PostBlock extends StatelessWidget {
                 ),
             ],
             const SizedBox(height: 16),
-            _AttachmentRow(
-              onCapture: onCaptureImage ?? onPickImage,
-              onPickImage: onPickImage,
-              onExtra: onExtra,
-            ),
-            const SizedBox(height: 8),
-            _ExtraRow(
-              icon: Icons.schedule,
-              extra: PostSpotExtra.recommendTime,
-              onTap: onExtra,
-            ),
-            const _Hairline(),
-            _ExtraRow(
-              icon: Icons.emoji_emotions_outlined,
-              extra: PostSpotExtra.activityAndStyle,
-              onTap: onExtra,
-            ),
-            const _Hairline(),
-            _ExtraRow(
-              icon: Icons.directions_car_outlined,
-              extra: PostSpotExtra.howToGetHere,
-              onTap: onExtra,
-            ),
+            _AttachmentRow(onPickImage: onPickImage, onExtra: onExtra),
+            const SizedBox(height: 16),
             const _Hairline(),
           ],
         ),
@@ -268,7 +241,8 @@ class PostBlock extends StatelessWidget {
   }
 }
 
-/// The spot's name, with the pencil that puts the caret in it.
+/// The spot's heading: a purple + and the name beside it, which is how the
+/// design offers it — one line, no label.
 class _TitleRow extends StatelessWidget {
   const _TitleRow({required this.controller, required this.focusNode});
 
@@ -279,6 +253,17 @@ class _TitleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
+        // The plus is the affordance, and it stays once the heading is
+        // written — the design keeps it on a filled row too.
+        IconButton(
+          onPressed: focusNode.requestFocus,
+          icon: const Icon(Icons.add, size: 21),
+          color: AppColors.postPurple,
+          tooltip: 'ตั้งชื่อหัวข้อ',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        ),
+        const SizedBox(width: 6),
         Expanded(
           child: TextField(
             controller: controller,
@@ -287,30 +272,23 @@ class _TitleRow extends StatelessWidget {
             textInputAction: TextInputAction.next,
             style: const TextStyle(
               color: AppColors.foreground,
-              fontSize: 17,
+              fontSize: 15,
               height: 1.4,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
             decoration: const InputDecoration(
               counterText: '',
               isDense: true,
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(vertical: 12),
-              hintText: 'ตั้งชื่อโพส..',
+              hintText: 'ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)',
               hintStyle: TextStyle(
                 color: AppColors.postFieldHint,
-                fontSize: 17,
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
-        ),
-        IconButton(
-          onPressed: focusNode.requestFocus,
-          icon: const Icon(Icons.edit_outlined, size: 20),
-          color: AppColors.postPurple,
-          tooltip: 'แก้ชื่อ',
-          visualDensity: VisualDensity.compact,
         ),
       ],
     );
@@ -514,18 +492,14 @@ class _LocationRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.paigunPinWell,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.location_on,
-                  size: 18,
-                  color: AppColors.locationPin,
+              // A plain purple pin, the size of the heading's plus above it —
+              // this pass drops the tinted plate the last one had.
+              const SizedBox(
+                width: 34,
+                child: Icon(
+                  Icons.location_on_outlined,
+                  size: 21,
+                  color: AppColors.postPurple,
                 ),
               ),
               const SizedBox(width: 12),
@@ -650,13 +624,8 @@ class _BlockPhoto extends StatelessWidget {
 
 /// The dashed row under the story: camera, gallery, video, and Trip Hack.
 class _AttachmentRow extends StatelessWidget {
-  const _AttachmentRow({
-    required this.onCapture,
-    required this.onPickImage,
-    required this.onExtra,
-  });
+  const _AttachmentRow({required this.onPickImage, required this.onExtra});
 
-  final VoidCallback onCapture;
   final VoidCallback onPickImage;
   final ValueChanged<PostSpotExtra> onExtra;
 
@@ -667,19 +636,19 @@ class _AttachmentRow extends StatelessWidget {
       runSpacing: 10,
       children: [
         PostAddChip(
-          icon: Icons.photo_camera_outlined,
-          tooltip: 'ถ่ายรูป',
-          onTap: onCapture,
-        ),
-        PostAddChip(
-          icon: Icons.photo_library_outlined,
+          icon: Icons.add_photo_alternate_outlined,
           tooltip: 'รูปภาพ',
           onTap: onPickImage,
         ),
         PostAddChip(
-          icon: Icons.videocam_outlined,
-          tooltip: PostSpotExtra.video.label,
-          onTap: () => onExtra(PostSpotExtra.video),
+          icon: Icons.schedule,
+          tooltip: PostSpotExtra.recommendTime.label,
+          onTap: () => onExtra(PostSpotExtra.recommendTime),
+        ),
+        PostAddChip(
+          icon: Icons.directions_car_outlined,
+          tooltip: PostSpotExtra.howToGetHere.label,
+          onTap: () => onExtra(PostSpotExtra.howToGetHere),
         ),
         PostAddChip(
           icon: Icons.info_outline,
@@ -724,7 +693,7 @@ class PostAddChip extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(14),
             child: CustomPaint(
-              painter: const _DashedBorder(
+              painter: const PostDashedBorder(
                 color: AppColors.postDashed,
                 radius: 14,
               ),
@@ -762,53 +731,6 @@ class PostAddChip extends StatelessWidget {
   }
 }
 
-/// One of the three rows under the attachments.
-class _ExtraRow extends StatelessWidget {
-  const _ExtraRow({
-    required this.icon,
-    required this.extra,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final PostSpotExtra extra;
-  final ValueChanged<PostSpotExtra> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onTap(extra),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Row(
-            children: [
-              Icon(icon, size: 21, color: AppColors.postRowIcon),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  extra.label,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right,
-                size: 22,
-                color: Color(0xFF9A9A95),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _Hairline extends StatelessWidget {
   const _Hairline();
 
@@ -817,10 +739,10 @@ class _Hairline extends StatelessWidget {
       const Divider(height: 1, thickness: 1, color: AppColors.line);
 }
 
-/// Flutter has no dashed border; the attachment chips are the one place that
-/// needs one.
-class _DashedBorder extends CustomPainter {
-  const _DashedBorder({required this.color, required this.radius});
+/// Flutter has no dashed border, and this design leans on one: the attachment
+/// chips and the "เพิ่มจุดต่อไป" button.
+class PostDashedBorder extends CustomPainter {
+  const PostDashedBorder({required this.color, required this.radius});
 
   final Color color;
   final double radius;
@@ -849,7 +771,7 @@ class _DashedBorder extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashedBorder old) =>
+  bool shouldRepaint(PostDashedBorder old) =>
       old.color != color || old.radius != radius;
 }
 

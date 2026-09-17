@@ -281,17 +281,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     return [
       const _ThaiSectionTitle(title: 'สไตล์การเที่ยว'),
       _ChoiceWrap(
-        items: const [
-          ['ทะเล', Icons.beach_access_outlined],
-          ['ภูเขา', Icons.terrain_outlined],
-          ['ธรรมชาติ', Icons.eco_outlined],
-          ['คาเฟ่', Icons.coffee_outlined],
-          ['เข้าถึงท้องถิ่น', Icons.storefront_outlined],
-          ['วัฒนธรรม', Icons.museum_outlined],
-          ['อาหาร', Icons.restaurant_outlined],
-          ['ไนท์ไลฟ์', Icons.local_bar_outlined],
-          ['ช้อปปิ้ง', Icons.shopping_bag_outlined],
-          ['ผจญภัย', Icons.hiking_outlined],
+        // One list, shared with the composer's Trip Activity sheet.
+        items: [
+          for (final entry in styleByLabel.entries)
+            [entry.key, styleIcon(entry.value)],
         ],
         selected: _selectedVibes,
         onTap: _toggleVibe,

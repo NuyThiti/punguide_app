@@ -1,51 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
-
-/// "Every one can remix your trip" — the switch that says whether other
-/// travellers may fork this post into a plan of their own.
-class PostRemixToggle extends StatelessWidget {
-  const PostRemixToggle({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
-      decoration: BoxDecoration(
-        color: AppColors.postToggleBg,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.shuffle, size: 20, color: AppColors.postRowIcon),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Every one can remix your trip',
-              style: TextStyle(
-                color: AppColors.foreground,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeTrackColor: AppColors.postPurple,
-          ),
-        ],
-      ),
-    );
-  }
-}
+import 'post_block.dart';
 
 /// "+ เพิ่มจุดต่อไป" — the next spot in the same post.
 class AddSpotButton extends StatelessWidget {
@@ -58,19 +14,33 @@ class AddSpotButton extends StatelessWidget {
     return SizedBox(
       height: 54,
       width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: onTap,
-        icon: const Icon(Icons.add, size: 21),
-        label: const Text(
-          'เพิ่มจุดต่อไป',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-        ),
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.postPurpleSoft,
-          foregroundColor: AppColors.postPurple,
-          elevation: 0,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Material(
+        color: AppColors.screen,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: CustomPaint(
+            painter: const PostDashedBorder(
+                color: AppColors.postDashed, radius: 16),
+            child: const Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 21, color: AppColors.foreground),
+                  SizedBox(width: 8),
+                  Text(
+                    'เพิ่มจุดต่อไป',
+                    style: TextStyle(
+                      color: AppColors.foreground,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -139,7 +109,7 @@ class PostActionBar extends StatelessWidget {
               child: FilledButton(
                 onPressed: canShare ? onShare : null,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.postPurple,
+                  backgroundColor: AppColors.postShare,
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: AppColors.postPurpleSoft,
                   disabledForegroundColor: AppColors.postPurple,
@@ -148,7 +118,7 @@ class PostActionBar extends StatelessWidget {
                       borderRadius: BorderRadius.circular(26)),
                 ),
                 child: const Text(
-                  'Share PunGuide',
+                  'Share',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                 ),
               ),

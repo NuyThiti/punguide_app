@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../../../core/api/pluno_api.dart';
 
 /// Thai chip labels for the plan brief, shared by the create wizard (which
@@ -105,3 +106,19 @@ String placeCategoryLabel(PlaceCategory? category) {
   }
   return 'ทั่วไป';
 }
+
+/// The glyph each travel style wears, wherever it is offered — the plan
+/// wizard's สไตล์การเที่ยว and the post composer's Trip Activity read the same
+/// list, so they cannot drift apart.
+IconData styleIcon(TravelStyle style) => switch (style) {
+      TravelStyle.beach => Icons.beach_access_outlined,
+      TravelStyle.mountain => Icons.terrain_outlined,
+      TravelStyle.nature => Icons.eco_outlined,
+      TravelStyle.cafe => Icons.coffee_outlined,
+      TravelStyle.local => Icons.storefront_outlined,
+      TravelStyle.culture => Icons.museum_outlined,
+      TravelStyle.food => Icons.restaurant_outlined,
+      TravelStyle.nightlife => Icons.local_bar_outlined,
+      TravelStyle.shopping => Icons.shopping_bag_outlined,
+      TravelStyle.adventure => Icons.hiking_outlined,
+    };

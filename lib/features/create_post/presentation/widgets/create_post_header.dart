@@ -57,7 +57,7 @@ class CreatePostHeader extends StatelessWidget {
                 _RoundBackButton(onTap: onClose),
                 const Expanded(
                   child: Text(
-                    'Create Post',
+                    'PunGuide',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
@@ -193,7 +193,7 @@ class _ImportButton extends StatelessWidget {
                       SizedBox(width: 10),
                       Flexible(
                         child: Text(
-                          'Creates post from Photos',
+                          'Create from Photos',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
