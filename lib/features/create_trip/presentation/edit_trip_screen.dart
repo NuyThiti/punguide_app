@@ -51,6 +51,10 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
   /// So the map FAB can bring the card back into view from down the list.
   final _mapKey = GlobalKey();
+
+  /// The FAB hides and shows the map. Folding it away gives the day's stops
+  /// the whole screen, which is the point of the button.
+  bool _mapOpen = true;
   bool _lodgingOpen = false;
   bool _scheduleOpen = true;
 
@@ -63,11 +67,11 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
       // The map shortcut belongs to ทริปของฉัน, and only once the trip loaded.
       floatingActionButton: _tab == 1 && trip.hasValue
           ? FloatingActionButton(
-              onPressed: _scrollToMap,
+              onPressed: _toggleMap,
               backgroundColor: AppColors.brandOrange,
               foregroundColor: Colors.white,
-              tooltip: 'ดูบนแผนที่',
-              child: const Icon(Icons.map_outlined),
+              tooltip: _mapOpen ? 'ซ่อนแผนที่' : 'ดูบนแผนที่',
+              child: Icon(_mapOpen ? Icons.close : Icons.map_outlined),
             )
           : null,
       body: trip.when(
@@ -171,7 +175,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                     days: _budgetDays(plan),
                     onShare: () => _todo('แชร์สรุปงบยังไม่เปิดใช้งาน'),
                     onEditBudget: () => _editBudgetLimit(trip),
-                    onAddExpense: () => _addExpense(plan),
+                    onAddExpense: () => _addExpense(plan, trip),
                   )
                 else
                   _ComingSoonPanel(label: _PlanTabs.labels[_tab]),
@@ -207,12 +211,14 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
       const SizedBox(height: 16),
       const Divider(height: 1, color: AppColors.line),
       const SizedBox(height: 16),
-      _TripMapCard(
-        key: _mapKey,
-        stops: day?.stops ?? const <Activity>[],
-        onMenu: () => _todo('ตัวเลือกแผนที่ยังไม่เปิดใช้งาน'),
-      ),
-      const SizedBox(height: 16),
+      if (_mapOpen) ...[
+        _TripMapCard(
+          key: _mapKey,
+          stops: day?.stops ?? const <Activity>[],
+          onMenu: () => _todo('ตัวเลือกแผนที่ยังไม่เปิดใช้งาน'),
+        ),
+        const SizedBox(height: 16),
+      ],
       _DaySelector(
         days: days,
         selectedIndex: index,
@@ -619,6 +625,15 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     return null;
   }
 
+  void _toggleMap() {
+    setState(() => _mapOpen = !_mapOpen);
+    // Showing it from far down the list would otherwise reveal a map nobody
+    // can see, so bring it into view once the frame with it in has been laid
+    // out.
+    if (!_mapOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToMap());
+  }
+
   void _scrollToMap() {
     final target = _mapKey.currentContext;
     if (target == null) return;
@@ -666,26 +681,40 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     }
   }
 
-  /// + เพิ่มค่าใช้จ่าย: a standalone cost. Stop and accommodation costs are
+  /// + เพิ่มค่าใช้จ่าย: standalone costs. Stop and accommodation costs are
   /// not entered here — they already count towards the budget through their
   /// own columns.
-  Future<void> _addExpense(_PlanView plan) async {
-    final expense =
-        await showAddExpenseSheet(context, days: _budgetDays(plan));
-    if (expense == null || !mounted) return;
+  Future<void> _addExpense(_PlanView plan, ApiTrip trip) async {
+    final expenses = await showAddExpenseSheet(
+      context,
+      days: _budgetDays(plan),
+      places: [
+        for (final day in plan.days)
+          for (final stop in day.stops)
+            BudgetPlaceOption(id: stop.id, name: stop.title),
+      ],
+      groupSize: trip.customer?.groupSize ?? 1,
+    );
+    if (expenses == null || expenses.isEmpty || !mounted) return;
 
     try {
       final api = await ref.read(plunoApiProvider.future);
-      await api.budget.addExpense(
-        widget.tripId,
-        title: expense.title,
-        amount: expense.amount,
-        category: expense.category,
-        date: expense.date,
-      );
+      for (final expense in expenses) {
+        await api.budget.addExpense(
+          widget.tripId,
+          title: expense.title,
+          amount: expense.amount,
+          category: expense.category,
+          date: expense.date,
+        );
+      }
       ref.invalidate(planBudgetProvider(widget.tripId));
       ref.invalidate(apiTripProvider(widget.tripId));
-      if (mounted) _todo('เพิ่ม "${expense.title}" แล้ว');
+      if (mounted) {
+        _todo(expenses.length == 1
+            ? 'เพิ่ม "${expenses.single.title}" แล้ว'
+            : 'เพิ่มค่าใช้จ่าย ${expenses.length} รายการแล้ว');
+      }
     } on ApiException catch (failure) {
       _todo(failure.isUnauthorized
           ? 'เข้าสู่ระบบก่อนเพิ่มค่าใช้จ่าย'
@@ -828,7 +857,12 @@ class _StickyBar extends SliverPersistentHeaderDelegate {
       SizedBox(height: extent, child: builder(context));
 
   @override
-  bool shouldRebuild(covariant _StickyBar old) => old.extent != extent;
+  bool shouldRebuild(covariant _StickyBar old) =>
+      // The builder closes over screen state — the tab bar's selected index,
+      // for one — and a new closure every rebuild is exactly the signal that
+      // something it reads may have changed. Comparing only the extent left
+      // the pinned tab bar showing a stale selection.
+      old.extent != extent || old.builder != builder;
 }
 
 /// The nav row on its own bar. It starts as the hero's dark top — the same
@@ -1417,6 +1451,7 @@ class _ScheduleCallbacks {
   final ValueChanged<_PlanDay> onAddTravel;
   final ValueChanged<Activity> onEditStop;
   final ValueChanged<Activity> onDeleteStop;
+
   /// Which day, and where the stop landed. `onReorderItem` hands over the
   /// final index, with the dropped row already taken out of the count.
   final void Function(_PlanDay day, int oldIndex, int newIndex) onReorder;

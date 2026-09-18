@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pluno/core/api/api_providers.dart';
+import 'package:pluno/core/api/pluno_api.dart';
+import 'package:pluno/features/create_trip/domain/plan_labels.dart';
+import 'package:pluno/features/create_trip/presentation/widgets/budget_sheets.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_trip/presentation/edit_trip_screen.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/add_place_sheet.dart';
@@ -657,24 +660,6 @@ void main() {
     expect(time.style?.color, const Color(0xFFF4703A));
   });
 
-  testWidgets('the map shortcut belongs to ทริปของฉัน alone', (tester) async {
-    adapter.replies['GET /trips/trip-1'] = [
-      FakeReply(200, _tripJson(days: _twoDays()))
-    ];
-
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    expect(find.byType(FloatingActionButton), findsNothing);
-
-    await tester.tap(find.text('ทริปของฉัน'));
-    await tester.pumpAndSettle();
-    expect(find.byType(FloatingActionButton), findsOneWidget);
-
-    await tester.tap(find.text('สรุปงบ'));
-    await tester.pumpAndSettle();
-    expect(find.byType(FloatingActionButton), findsNothing);
-  });
-
   testWidgets('แก้ไขทริป opens the brief wizard', (tester) async {
     adapter.replies['GET /trips/trip-1'] = [
       FakeReply(200, _tripJson(days: _twoDays()))
@@ -1196,35 +1181,249 @@ void main() {
     expect(adapter.bodyOf('PATCH /trips/trip-1')?['budgetLimit'], 30000);
   });
 
-  testWidgets('+ เพิ่มค่าใช้จ่าย posts one expense on the chosen day',
+  testWidgets('+ เพิ่มค่าใช้จ่าย files a line under its category and day',
       (tester) async {
-    await openBudgetTab(tester);
+    await openBudgetTab(
+      tester,
+      trip: _tripJson(days: _filledDay())
+        ..['customer'] = <String, dynamic>{'groupSize': 2},
+    );
     adapter.replies['POST /trips/trip-1/expenses'] = [
       FakeReply(201, <String, dynamic>{
         'id': 'e9',
         'tripId': 'trip-1',
-        'title': 'ค่าทางด่วน',
-        'amount': 120,
-        'currency': 'THB',
+        'title': 'การเดินทาง',
+        'amount': 240,
       })
     ];
 
     await tester.tap(inBudgetTab('เพิ่มค่าใช้จ่าย'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, 'ค่าทางด่วน');
-    await tester.enterText(find.byType(TextField).at(1), '120');
+    expect(find.text('รายการที่ 1'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, '120');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('ค่าเดินทาง').last);
+
+    // The type row opens a sheet of its own.
+    await tester.tap(find.byIcon(Icons.chevron_right).first);
     await tester.pumpAndSettle();
+    expect(find.text('เลือกหมวดหมู่'), findsOneWidget);
+
+    await tester.tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.transport)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ยืนยัน'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.widgetWithText(FilledButton, 'เพิ่มค่าใช้จ่าย'));
     await tester.pumpAndSettle();
 
     final body = adapter.bodyOf('POST /trips/trip-1/expenses');
-    expect(body?['title'], 'ค่าทางด่วน');
-    expect(body?['amount'], 120);
+    // The field says ต่อคน but TripExpense.amount is counted as-is, so the
+    // sheet multiplies by the group of 2 before sending.
+    expect(body?['amount'], 240);
     expect(body?['category'], 'transport');
+    // No place was picked, so the category names the line.
+    expect(body?['title'], 'การเดินทาง');
     // The first day of the plan is preselected, and it has a date.
     expect(body?['date'], '2026-08-20');
+  });
+
+  testWidgets('a picked stop becomes the expense title', (tester) async {
+    await openBudgetTab(tester, trip: _tripJson(days: _filledDay()));
+    adapter.replies['POST /trips/trip-1/expenses'] = [
+      FakeReply(201, <String, dynamic>{
+        'id': 'e9',
+        'tripId': 'trip-1',
+        'title': 'วัดเชียงทอง',
+        'amount': 300,
+      })
+    ];
+
+    await tester.tap(inBudgetTab('เพิ่มค่าใช้จ่าย'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '300');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    await tester.pumpAndSettle();
+
+    // จากสถานที่ในแผน lists the plan's own stops. The dropdown sits on its
+    // null item, so ไม่ระบุสถานที่ is what opens it.
+    await tester.tap(find.text('ไม่ระบุสถานที่'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('วัดเชียงทอง').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.shopping)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ยืนยัน'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'เพิ่มค่าใช้จ่าย'));
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('POST /trips/trip-1/expenses');
+    expect(body?['title'], 'วัดเชียงทอง');
+    expect(body?['category'], 'shopping');
+  });
+
+  testWidgets('the sheet stays blocked until a line has an amount and a type',
+      (tester) async {
+    await openBudgetTab(tester, trip: _tripJson(days: _filledDay()));
+
+    await tester.tap(inBudgetTab('เพิ่มค่าใช้จ่าย'));
+    await tester.pumpAndSettle();
+
+    FilledButton confirm() => tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'เพิ่มค่าใช้จ่าย'));
+    expect(confirm().onPressed, isNull);
+
+    // An amount alone is not enough — the category is what files it.
+    await tester.enterText(find.byType(TextField).first, '80');
+    await tester.pumpAndSettle();
+    expect(confirm().onPressed, isNull);
+
+    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.food)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ยืนยัน'));
+    await tester.pumpAndSettle();
+
+    expect(confirm().onPressed, isNotNull);
+  });
+
+  testWidgets('+ เพิ่มค่าใช้จ่าย adds a second line, and the bin removes it',
+      (tester) async {
+    await openBudgetTab(tester, trip: _tripJson(days: _filledDay()));
+
+    await tester.tap(inBudgetTab('เพิ่มค่าใช้จ่าย'));
+    await tester.pumpAndSettle();
+    expect(find.text('รายการที่ 2'), findsNothing);
+
+    // The orange add inside the sheet, not the budget tab's button behind it.
+    await tester.tap(find.byKey(addExpenseLineKey));
+    await tester.pumpAndSettle();
+    expect(find.text('รายการที่ 2'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.delete_outline).last);
+    await tester.pumpAndSettle();
+    expect(find.text('รายการที่ 2'), findsNothing);
+  });
+
+  testWidgets('both expense sheets lay out on a narrow phone', (tester) async {
+    await openBudgetTab(tester, trip: _tripJson(days: _filledDay()));
+    // openBudgetTab uses a tall view; narrow it to the smallest phone the app
+    // supports, which is where the mock's side-by-side labels stop fitting.
+    tester.view.physicalSize = const Size(320 * 3, 1600 * 3);
+
+    await tester.tap(inBudgetTab('เพิ่มค่าใช้จ่าย'));
+    await tester.pumpAndSettle();
+    expect(find.text('รายการที่ 1'), findsOneWidget);
+    expect(find.text('ต่อคน'), findsOneWidget);
+    // The ฿ shows on an untouched field, which prefixText would not do.
+    expect(find.text('฿'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    await tester.pumpAndSettle();
+
+    // Six tiles wrap to three-up rather than overflowing.
+    expect(find.text('จากสถานที่ในแผน'), findsOneWidget);
+    expect(find.text('(ไม่บังคับ)'), findsOneWidget);
+    for (final category in expenseCategoryTiles) {
+      expect(find.byKey(expenseCategoryTileKey(category)), findsOneWidget);
+    }
+  });
+
+  testWidgets('the map FAB hides the map, and brings it back', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+
+    // The map is open to begin with, and the FAB offers to close it.
+    expect(find.textContaining('แผนที่ยังไม่ได้ตั้งค่า'), findsOneWidget);
+    expect(find.byIcon(Icons.close), findsOneWidget);
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('แผนที่ยังไม่ได้ตั้งค่า'), findsNothing);
+    expect(find.byIcon(Icons.map_outlined), findsWidgets);
+    // Folding the map away must not take the day's stops with it.
+    expect(find.text('วันที่ 1'), findsOneWidget);
+    expect(find.text('วัดเชียงทอง'), findsOneWidget);
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('แผนที่ยังไม่ได้ตั้งค่า'), findsOneWidget);
+  });
+
+  testWidgets('the map FAB belongs to ทริปของฉัน alone', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    expect(find.byType(FloatingActionButton), findsNothing);
+
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+
+    // Hiding the map then leaving the tab must not strand the FAB.
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('จัดแผน'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('the pinned tab bar follows the tab that is showing',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    /// The selected tab is the white-on-green one.
+    String selectedTab() => tester
+        .widgetList<Text>(find.descendant(
+          of: find.byType(AnimatedContainer),
+          matching: find.byType(Text),
+        ))
+        .firstWhere((t) => t.style?.color == Colors.white)
+        .data!;
+
+    expect(selectedTab(), 'จัดแผน');
+
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+    // The bar is a pinned SliverPersistentHeader, which will happily keep its
+    // last build unless the delegate says otherwise.
+    expect(selectedTab(), 'ทริปของฉัน');
+
+    await tester.tap(find.text('สรุปงบ'));
+    await tester.pumpAndSettle();
+    expect(selectedTab(), 'สรุปงบ');
   });
 }

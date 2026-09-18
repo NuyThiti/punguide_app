@@ -158,3 +158,30 @@ IconData expenseCategoryIcon(ExpenseCategory category) => switch (category) {
       ExpenseCategory.fuel => Icons.local_gas_station_outlined,
       ExpenseCategory.other => Icons.more_horiz,
     };
+
+/// The six tiles on เลือกหมวดหมู่, in the design's order.
+///
+/// `sightseeing` and `fuel` are deliberately absent — the design offers six,
+/// and anything else is filed under อื่นๆ.
+const expenseCategoryTiles = <ExpenseCategory>[
+  ExpenseCategory.hotel,
+  ExpenseCategory.food,
+  ExpenseCategory.transport,
+  ExpenseCategory.activity,
+  ExpenseCategory.shopping,
+  ExpenseCategory.other,
+];
+
+/// A tile-sized label. [expenseCategoryLabel] is the long form the budget
+/// legend uses ("ค่าอาหาร / ของกิน"); it does not fit a 6-up grid.
+String expenseCategoryShortLabel(ExpenseCategory category) =>
+    switch (category) {
+      ExpenseCategory.hotel => 'ที่พัก',
+      ExpenseCategory.activity => 'กิจกรรม',
+      ExpenseCategory.food => 'อาหาร',
+      ExpenseCategory.shopping => 'ช้อปปิ้ง',
+      ExpenseCategory.transport => 'การเดินทาง',
+      ExpenseCategory.sightseeing => 'เข้าชม',
+      ExpenseCategory.fuel => 'น้ำมัน',
+      ExpenseCategory.other => 'อื่นๆ',
+    };
