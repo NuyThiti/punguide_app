@@ -19,6 +19,9 @@ import '../../trips/presentation/itinerary_display.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 import '../domain/plan_labels.dart';
 import 'providers/edit_plan_providers.dart';
+import 'widgets/add_place_sheet.dart';
+import 'widgets/budget_sheets.dart';
+import 'widgets/plan_budget_tab.dart';
 import 'widgets/suggest_places_sheet.dart';
 
 /// The deep green the design uses for the active tab and the day numbers. It
@@ -78,46 +81,105 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     );
   }
 
+  /// 0 while the nav bar still sits over the hero, 1 once the hero has gone
+  /// by and the bar has to stand on the page's own background.
+  final _navT = ValueNotifier<double>(0);
+  final _heroKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _navT.dispose();
+    super.dispose();
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    final box = _heroKey.currentContext?.findRenderObject() as RenderBox?;
+    final heroHeight = box?.size.height ?? 320;
+    // Start turning solid as the hero's last 60px pass under the bar.
+    final start = (heroHeight - 60).clamp(0.0, double.infinity);
+    final t = ((notification.metrics.pixels - start) / 60).clamp(0.0, 1.0);
+    if ((_navT.value - t).abs() > 0.01) _navT.value = t;
+    return false;
+  }
+
   Widget _body(ApiTrip trip) {
-    final plan = _PlanView.of(trip);
+    final plan = _PlanView.of(trip).withOrder(_localOrder);
     // A budget read that fails must not take the itinerary down with it, so
     // the lodging count falls back to zero rather than to an error state.
     final lodging =
         ref.watch(planAccommodationsProvider(widget.tripId)).valueOrNull ??
             const <BudgetItem>[];
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        SliverToBoxAdapter(
-          child: _PlanHero(
-            plan: plan,
-            lodgingCount: lodging.length,
-            avatarImage: ref.watch(authSessionProvider)?.avatarImage,
-            onBack: _back,
-          ),
-        ),
-        SliverPadding(
-          // The map FAB floats over the bottom of the list on ทริปของฉัน, so
-          // the last card needs room to clear it.
-          padding: EdgeInsets.fromLTRB(20, 20, 20, _tab == 1 ? 96 : 40),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              _PlanTabs(
-                selectedIndex: _tab,
-                onChanged: (index) => setState(() => _tab = index),
+    final topInset = MediaQuery.paddingOf(context).top;
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScroll,
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // Pinned first, so the tabs below stack under it rather than over it.
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StickyBar(
+              extent: topInset + 60,
+              builder: (context) => ValueListenableBuilder<double>(
+                valueListenable: _navT,
+                builder: (context, t, _) => _StickyNavBar(
+                  t: t,
+                  topInset: topInset,
+                  avatarImage: ref.watch(authSessionProvider)?.avatarImage,
+                  onBack: _back,
+                ),
               ),
-              const SizedBox(height: 22),
-              if (_tab == 0)
-                ..._planTab(plan, lodging)
-              else if (_tab == 1)
-                ..._myTripTab(plan)
-              else
-                _ComingSoonPanel(label: _PlanTabs.labels[_tab]),
-            ]),
+            ),
           ),
-        ),
-      ],
+          SliverToBoxAdapter(
+            child: _PlanHero(
+              key: _heroKey,
+              plan: plan,
+              lodgingCount: lodging.length,
+            ),
+          ),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StickyBar(
+              extent: 90,
+              builder: (context) => Container(
+                color: AppColors.softScreen,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
+                child: _PlanTabs(
+                  selectedIndex: _tab,
+                  onChanged: (index) => setState(() => _tab = index),
+                ),
+              ),
+            ),
+          ),
+          SliverPadding(
+            // The map FAB floats over the bottom of the list on ทริปของฉัน, so
+            // the last card needs room to clear it.
+            padding: EdgeInsets.fromLTRB(20, 0, 20, _tab == 1 ? 96 : 40),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                if (_tab == 0)
+                  ..._planTab(plan, lodging)
+                else if (_tab == 1)
+                  ..._myTripTab(plan)
+                else if (_tab == 3)
+                  PlanBudgetTab(
+                    tripId: widget.tripId,
+                    groupSize: trip.customer?.groupSize ?? 1,
+                    days: _budgetDays(plan),
+                    onShare: () => _todo('แชร์สรุปงบยังไม่เปิดใช้งาน'),
+                    onEditBudget: () => _editBudgetLimit(trip),
+                    onAddExpense: () => _addExpense(plan),
+                  )
+                else
+                  _ComingSoonPanel(label: _PlanTabs.labels[_tab]),
+              ]),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -219,22 +281,14 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         child: _ScheduleList(
           days: plan.days,
           callbacks: _ScheduleCallbacks(
-            onExplore: () => _addPlaces(
-                plan,
-                plan.days.isEmpty
-                    ? null
-                    : plan.days.firstWhere(
-                        (day) => day.id.isNotEmpty,
-                        orElse: () => plan.days.first,
-                      )),
-            onAddPlace: (day) => _addPlaces(plan, day),
+            onExplore: () => _explore(plan),
+            onAddPlace: (day) => _addPlaceManually(plan, day),
             onAddTravel: (day) =>
                 _todo('เพิ่มการเดินทางในวันที่ ${day.number} ยังไม่เปิดใช้งาน'),
             onEditStop: (stop) =>
                 _todo('แก้ไข "${stop.title}" ยังไม่เปิดใช้งาน'),
             onDeleteStop: _deleteStop,
-            onReorder: (day) =>
-                _todo('จัดเรียงสถานที่ในวันที่ ${day.number} ยังไม่เปิดใช้งาน'),
+            onReorder: _reorderStops,
           ),
         ),
       ),
@@ -288,6 +342,52 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
   /// Removes a stop, after asking. Deleting re-measures the legs around the
   /// gap it leaves, which is why [calculateTravelSegments] is left on.
+  /// The order a day was just dragged into, until the server confirms it.
+  ///
+  /// Without this the row snaps back to the old position for as long as the
+  /// request takes and then jumps again when the trip reloads.
+  final Map<String, List<String>> _localOrder = {};
+
+  /// Moves a stop inside its day and sends the new order up.
+  ///
+  /// `PATCH /days/:id/items/order` wants **every** stop of that day — one
+  /// missing or one from elsewhere is a 400 — so the whole list goes, and the
+  /// server recalculates the legs while it is there.
+  Future<void> _reorderStops(_PlanDay day, int oldIndex, int newIndex) async {
+    final target = newIndex;
+    if (day.id.isEmpty || target == oldIndex) return;
+    if (oldIndex < 0 || oldIndex >= day.stops.length) return;
+
+    final ids = day.stops.map((stop) => stop.id).toList();
+    final moved = ids.removeAt(oldIndex);
+    ids.insert(target.clamp(0, ids.length), moved);
+
+    setState(() => _localOrder[day.id] = ids);
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.itinerary.reorderItems(day.id, ids);
+    } on ApiException catch (failure) {
+      if (mounted) {
+        setState(() => _localOrder.remove(day.id));
+        _todo(failure.isUnauthorized
+            ? 'เข้าสู่ระบบก่อนจัดเรียงสถานที่'
+            : 'จัดเรียงไม่สำเร็จ: ${failure.message}');
+      }
+      return;
+    } catch (error) {
+      if (mounted) {
+        setState(() => _localOrder.remove(day.id));
+        _todo('จัดเรียงไม่สำเร็จ: $error');
+      }
+      return;
+    }
+    if (!mounted) return;
+    // The reload carries the server's order and its fresh legs; the local
+    // stand-in has done its job.
+    setState(() => _localOrder.remove(day.id));
+    ref.invalidate(apiTripProvider(widget.tripId));
+  }
+
   Future<void> _deleteStop(Activity stop) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -333,11 +433,15 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
       _todo('วันนี้ยังไม่มีในแผน เพิ่มวันก่อนจึงจะเพิ่มสถานที่ได้');
       return;
     }
-    final anchor = plan.anchor;
+    // A destination picked off the trending rail or out of recents carries no
+    // placeId, so the trip has coordinates for nothing. Look them up from the
+    // text before giving up on the explorer.
+    final anchor = plan.anchor ?? await _resolveAnchor(plan.destination);
     if (anchor == null) {
       _todo('ยังไม่รู้พิกัดของทริปนี้ เลือกจุดหมายหรือเพิ่มสถานที่แรกก่อน');
       return;
     }
+    if (!mounted) return;
 
     final added = await showSuggestPlacesSheet(
       context,
@@ -351,6 +455,170 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     ref.invalidate(apiTripProvider(widget.tripId));
   }
 
+  /// เพิ่มสถานที่ — the form, for a stop the traveller already knows. The
+  /// explorer is one tap away inside it, and opens here rather than on top of
+  /// the sheet so only one scrim is ever in play.
+  Future<void> _addPlaceManually(_PlanView plan, _PlanDay? day) async {
+    final target = day ?? _firstRealDay(plan) ?? _firstDay(plan);
+    if (target == null) {
+      _todo('ยังไม่มีวันในแผนนี้');
+      return;
+    }
+
+    // A plan straight out of POST /trips has a duration but no itinerary rows,
+    // so every day on screen is a placeholder with no id. Give the tapped one
+    // a row now — otherwise the day count is real but nothing can be added to
+    // it, and the traveller is stuck.
+    final dayId =
+        target.id.isNotEmpty ? target.id : await _createDay(target.number);
+    if (dayId == null || !mounted) return;
+
+    final outcome = await showAddPlaceSheet(
+      context,
+      tripId: widget.tripId,
+      days: [
+        for (final planDay in plan.days)
+          if (planDay.id.isNotEmpty || planDay.number == target.number)
+            AddPlaceDay(
+              // The day just created is not in `plan` yet, which was read
+              // before the write.
+              id: planDay.number == target.number ? dayId : planDay.id,
+              number: planDay.number,
+              label: planDay.dateLabel,
+            ),
+      ],
+      initialDayId: dayId,
+    );
+    if (!mounted) return;
+
+    switch (outcome) {
+      case AddPlaceOutcome.added:
+        ref.invalidate(apiTripProvider(widget.tripId));
+      case AddPlaceOutcome.explore:
+        await _addPlaces(
+            plan,
+            _PlanDay(
+              id: dayId,
+              number: target.number,
+              dateLabel: target.dateLabel,
+              date: target.date,
+              stops: target.stops,
+              segments: target.segments,
+            ));
+      case AddPlaceOutcome.cancelled:
+        break;
+    }
+  }
+
+  /// The banner's สำรวจ. Same trouble as adding a place by hand: on a new plan
+  /// there is no day row to hang a stop off yet.
+  Future<void> _explore(_PlanView plan) async {
+    final target = _firstRealDay(plan) ?? _firstDay(plan);
+    if (target == null) {
+      _todo('ยังไม่มีวันในแผนนี้');
+      return;
+    }
+    final dayId =
+        target.id.isNotEmpty ? target.id : await _createDay(target.number);
+    if (dayId == null || !mounted) return;
+
+    await _addPlaces(
+        plan,
+        _PlanDay(
+          id: dayId,
+          number: target.number,
+          dateLabel: target.dateLabel,
+          date: target.date,
+          stops: target.stops,
+          segments: target.segments,
+        ));
+  }
+
+  /// Turns the trip's destination text into coordinates, and remembers them on
+  /// the trip so the next tap costs nothing.
+  ///
+  /// Two paid Google calls, which is why the result is written back. Only
+  /// `destinationPlace` is sent: `update` rewrites the plan brief as a whole
+  /// whenever any part of it is present, so the brief is left out entirely.
+  Future<({double latitude, double longitude})?> _resolveAnchor(
+    String destination,
+  ) async {
+    final query = destination.trim();
+    if (query.isEmpty) return null;
+
+    final PlaceLookup lookup;
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final session = PlacesSession();
+      final hits =
+          await api.places.autocomplete(query, sessionToken: session.token);
+      if (hits.isEmpty) return null;
+      lookup = await api.places.details(
+        hits.first.externalRef,
+        sessionToken: session.token,
+      );
+    } catch (error) {
+      debugPrint('Anchor lookup failed for "$query": $error');
+      return null;
+    }
+
+    final latitude = lookup.latitude;
+    final longitude = lookup.longitude;
+    if (latitude == null || longitude == null) return null;
+
+    // Best effort: a failed write costs a repeat lookup, not the explorer.
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.trips.update(
+        widget.tripId,
+        destinationPlace: DestinationPlace(
+          placeId: lookup.externalRef,
+          name: lookup.name,
+          latitude: latitude,
+          longitude: longitude,
+        ),
+      );
+      ref.invalidate(apiTripProvider(widget.tripId));
+    } catch (error) {
+      debugPrint('Could not store the resolved place: $error');
+    }
+
+    return (latitude: latitude, longitude: longitude);
+  }
+
+  /// Creates the itinerary row for [dayNumber] and returns its id, or null
+  /// when the write failed and the traveller has been told why.
+  ///
+  /// The date is left to the server: it already knows the trip's schedule, and
+  /// a plan with no dates has none to send.
+  Future<String?> _createDay(int dayNumber) async {
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final created =
+          await api.itinerary.addDay(widget.tripId, dayNumber: dayNumber);
+      ref.invalidate(apiTripProvider(widget.tripId));
+      return created.id;
+    } on ApiException catch (failure) {
+      _todo(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนเพิ่มวัน'
+          : 'เพิ่มวันที่ $dayNumber ไม่สำเร็จ: ${failure.message}');
+      return null;
+    } catch (error) {
+      _todo('เพิ่มวันที่ $dayNumber ไม่สำเร็จ: $error');
+      return null;
+    }
+  }
+
+  _PlanDay? _firstDay(_PlanView plan) =>
+      plan.days.isEmpty ? null : plan.days.first;
+
+  _PlanDay? _firstRealDay(_PlanView plan) {
+    for (final day in plan.days) {
+      if (day.id.isNotEmpty) return day;
+    }
+    return null;
+  }
+
   void _scrollToMap() {
     final target = _mapKey.currentContext;
     if (target == null) return;
@@ -360,6 +628,71 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
       curve: Curves.easeOut,
       alignment: 0.1,
     );
+  }
+
+  /// The days a new expense can be filed under, in plan order.
+  List<BudgetDayOption> _budgetDays(_PlanView plan) => [
+        for (final day in plan.days)
+          BudgetDayOption(
+            number: day.number,
+            label: day.dateLabel,
+            date: day.date,
+          ),
+      ];
+
+  /// แก้ไขงบ: the cap the สรุปงบ bar measures against. It lives on the trip,
+  /// not in the budget, so this is a `trips.update` — and an empty field
+  /// clears it, which is not the same as setting it to zero.
+  Future<void> _editBudgetLimit(ApiTrip trip) async {
+    final result = await showBudgetLimitSheet(
+      context,
+      current: trip.budgetLimit,
+      groupSize: trip.customer?.groupSize ?? 1,
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.trips.update(widget.tripId, budgetLimit: result.limit ?? 0);
+      ref.invalidate(apiTripProvider(widget.tripId));
+      ref.invalidate(planBudgetProvider(widget.tripId));
+      if (mounted) _todo('บันทึกงบแล้ว');
+    } on ApiException catch (failure) {
+      _todo(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนแก้ไขงบ'
+          : 'บันทึกงบไม่สำเร็จ: ${failure.message}');
+    } catch (error) {
+      _todo('บันทึกงบไม่สำเร็จ: $error');
+    }
+  }
+
+  /// + เพิ่มค่าใช้จ่าย: a standalone cost. Stop and accommodation costs are
+  /// not entered here — they already count towards the budget through their
+  /// own columns.
+  Future<void> _addExpense(_PlanView plan) async {
+    final expense =
+        await showAddExpenseSheet(context, days: _budgetDays(plan));
+    if (expense == null || !mounted) return;
+
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.budget.addExpense(
+        widget.tripId,
+        title: expense.title,
+        amount: expense.amount,
+        category: expense.category,
+        date: expense.date,
+      );
+      ref.invalidate(planBudgetProvider(widget.tripId));
+      ref.invalidate(apiTripProvider(widget.tripId));
+      if (mounted) _todo('เพิ่ม "${expense.title}" แล้ว');
+    } on ApiException catch (failure) {
+      _todo(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนเพิ่มค่าใช้จ่าย'
+          : 'เพิ่มค่าใช้จ่ายไม่สำเร็จ: ${failure.message}');
+    } catch (error) {
+      _todo('เพิ่มค่าใช้จ่ายไม่สำเร็จ: $error');
+    }
   }
 
   void _todo(String message) {
@@ -403,87 +736,141 @@ class _ErrorBody extends StatelessWidget {
 /// The cover card: nav row, trip name, dates, brief chips and the four counts.
 class _PlanHero extends StatelessWidget {
   const _PlanHero({
+    super.key,
     required this.plan,
     required this.lodgingCount,
-    required this.avatarImage,
-    required this.onBack,
   });
 
   final _PlanView plan;
   final int lodgingCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CoverImage(source: plan.coverImage, fit: BoxFit.cover),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.62),
+                    Colors.black.withValues(alpha: 0.52),
+                    Colors.black.withValues(alpha: 0.80),
+                  ],
+                  stops: const [0, 0.42, 1],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  plan.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    height: 1.15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _HeroDateRow(plan: plan),
+                const SizedBox(height: 14),
+                if (plan.chips.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final chip in plan.chips) _HeroChip(label: chip),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                _HeroStats(plan: plan, lodgingCount: lodgingCount),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A sliver header of fixed height, so `pinned: true` makes it stick. Two of
+/// these stack: the nav bar holds the top, the tabs come to rest beneath it.
+class _StickyBar extends SliverPersistentHeaderDelegate {
+  const _StickyBar({required this.extent, required this.builder});
+
+  final double extent;
+  final WidgetBuilder builder;
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      SizedBox(height: extent, child: builder(context));
+
+  @override
+  bool shouldRebuild(covariant _StickyBar old) => old.extent != extent;
+}
+
+/// The nav row on its own bar. It starts as the hero's dark top — the same
+/// wash the gradient opens with — and turns into the page background once the
+/// hero has scrolled by, taking its contents from white to ink with it.
+class _StickyNavBar extends StatelessWidget {
+  const _StickyNavBar({
+    required this.t,
+    required this.topInset,
+    required this.avatarImage,
+    required this.onBack,
+  });
+
+  final double t;
+  final double topInset;
   final String? avatarImage;
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CoverImage(source: plan.coverImage, fit: BoxFit.cover),
+      // The bar covers the status bar, so the clock has to flip with it —
+      // white over the hero's dark wash, ink once the bar turns pale.
+      value: t < 0.5 ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16, topInset + 10, 16, 10),
+        decoration: BoxDecoration(
+          color: Color.lerp(
+            Colors.black.withValues(alpha: 0.62),
+            AppColors.softScreen,
+            t,
+          ),
+          border: Border(
+            bottom: BorderSide(
+              color: AppColors.line.withValues(alpha: t),
             ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.62),
-                      Colors.black.withValues(alpha: 0.52),
-                      Colors.black.withValues(alpha: 0.80),
-                    ],
-                    stops: const [0, 0.42, 1],
-                  ),
-                ),
-              ),
-            ),
-            SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _HeroNavRow(
-                      avatarImage: avatarImage,
-                      onBack: onBack,
-                    ),
-                    const SizedBox(height: 22),
-                    Text(
-                      plan.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        height: 1.15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _HeroDateRow(plan: plan),
-                    const SizedBox(height: 14),
-                    if (plan.chips.isNotEmpty) ...[
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final chip in plan.chips) _HeroChip(label: chip),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    _HeroStats(plan: plan, lodgingCount: lodgingCount),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          ),
+        ),
+        child: _HeroNavRow(
+          t: t,
+          avatarImage: avatarImage,
+          onBack: onBack,
         ),
       ),
     );
@@ -491,8 +878,14 @@ class _PlanHero extends StatelessWidget {
 }
 
 class _HeroNavRow extends StatelessWidget {
-  const _HeroNavRow({required this.avatarImage, required this.onBack});
+  const _HeroNavRow({
+    required this.t,
+    required this.avatarImage,
+    required this.onBack,
+  });
 
+  /// 0 over the hero, 1 over the page background.
+  final double t;
   final String? avatarImage;
   final VoidCallback onBack;
 
@@ -505,12 +898,12 @@ class _HeroNavRow extends StatelessWidget {
           tooltip: 'ย้อนกลับ',
           onTap: onBack,
         ),
-        const Expanded(
+        Expanded(
           child: Text(
             'สร้างทริป',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white,
+              color: Color.lerp(Colors.white, AppColors.foreground, t),
               fontSize: 18,
               fontWeight: FontWeight.w900,
             ),
@@ -523,11 +916,25 @@ class _HeroNavRow extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-                color: Colors.white.withValues(alpha: 0.8), width: 2),
-            color: Colors.white.withValues(alpha: 0.24),
+              color: Color.lerp(
+                Colors.white.withValues(alpha: 0.8),
+                AppColors.chipBorder,
+                t,
+              )!,
+              width: 2,
+            ),
+            color: Color.lerp(
+              Colors.white.withValues(alpha: 0.24),
+              AppColors.line,
+              t,
+            ),
           ),
           child: avatarImage == null
-              ? const Icon(Icons.person, size: 20, color: Colors.white)
+              ? Icon(
+                  Icons.person,
+                  size: 20,
+                  color: Color.lerp(Colors.white, AppColors.muted, t),
+                )
               : CoverImage(source: avatarImage!, fit: BoxFit.cover),
         ),
       ],
@@ -1010,7 +1417,9 @@ class _ScheduleCallbacks {
   final ValueChanged<_PlanDay> onAddTravel;
   final ValueChanged<Activity> onEditStop;
   final ValueChanged<Activity> onDeleteStop;
-  final ValueChanged<_PlanDay> onReorder;
+  /// Which day, and where the stop landed. `onReorderItem` hands over the
+  /// final index, with the dropped row already taken out of the count.
+  final void Function(_PlanDay day, int oldIndex, int newIndex) onReorder;
 }
 
 class _ScheduleList extends StatelessWidget {
@@ -1148,22 +1557,40 @@ class _DayCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
               child: Column(
                 children: [
-                  for (var i = 0; i < day.stops.length; i++) ...[
-                    // The leg belongs to the stop it arrives at, so it is
-                    // drawn above every stop but the first.
-                    if (i > 0)
-                      _LegRow(
-                        stop: day.stops[i],
-                        segment: day.segmentInto(day.stops[i]),
-                      ),
-                    _StopCard(
-                      stop: day.stops[i],
-                      position: i + 1,
-                      onEdit: () => callbacks.onEditStop(day.stops[i]),
-                      onDelete: () => callbacks.onDeleteStop(day.stops[i]),
-                      onReorder: () => callbacks.onReorder(day),
-                    ),
-                  ],
+                  // The stops are draggable; the handle on each card starts
+                  // the drag, so the default handles stay off. The leg above a
+                  // stop travels with it, and the server recalculates every
+                  // leg once the new order lands.
+                  ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    onReorderItem: (oldIndex, newIndex) =>
+                        callbacks.onReorder(day, oldIndex, newIndex),
+                    children: [
+                      for (var i = 0; i < day.stops.length; i++)
+                        Column(
+                          key: ValueKey(day.stops[i].id),
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // The leg belongs to the stop it arrives at, so it
+                            // is drawn above every stop but the first.
+                            if (i > 0)
+                              _LegRow(
+                                stop: day.stops[i],
+                                segment: day.segmentInto(day.stops[i]),
+                              ),
+                            _StopCard(
+                              stop: day.stops[i],
+                              position: i + 1,
+                              onEdit: () => callbacks.onEditStop(day.stops[i]),
+                              onDelete: () =>
+                                  callbacks.onDeleteStop(day.stops[i]),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                   _AddTravelRow(onTap: () => callbacks.onAddTravel(day)),
                 ],
               ),
@@ -1250,14 +1677,12 @@ class _StopCard extends StatelessWidget {
     required this.position,
     required this.onEdit,
     required this.onDelete,
-    required this.onReorder,
   });
 
   final Activity stop;
   final int position;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onReorder;
 
   @override
   Widget build(BuildContext context) {
@@ -1272,9 +1697,11 @@ class _StopCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Tooltip(
-            message: 'จัดเรียงสถานที่',
-            child: GestureDetector(
-              onTap: onReorder,
+            // Press and hold, not a plain drag: the page's own scroll view
+            // wins an immediate one, and the row never leaves the ground.
+            message: 'กดค้างแล้วลากเพื่อจัดเรียงสถานที่',
+            child: ReorderableDelayedDragStartListener(
+              index: position - 1,
               child: const Padding(
                 padding: EdgeInsets.only(top: 18, right: 6),
                 child:
@@ -1708,6 +2135,7 @@ class _PlanDay {
     required this.id,
     required this.number,
     required this.dateLabel,
+    this.date,
     this.stops = const <Activity>[],
     this.segments = const <TravelSegment>[],
   });
@@ -1721,6 +2149,10 @@ class _PlanDay {
   /// "Sat, 20 Aug", or empty on a trip whose dates are still open.
   final String dateLabel;
 
+  /// The day's own date, for filing an expense under it. Null on a trip
+  /// without fixed dates.
+  final DateTime? date;
+
   /// In itinerary order. Empty on a day nobody has filled in yet, which is
   /// the state the design shows for วันที่ 2 and 3.
   final List<Activity> stops;
@@ -1728,6 +2160,26 @@ class _PlanDay {
   /// The server's measured legs, used when the traveller did not describe one
   /// themselves.
   final List<TravelSegment> segments;
+
+  /// The same day with its stops in [ids], for showing a drag before the
+  /// server has confirmed it. Ids it does not know are ignored, and stops the
+  /// list leaves out keep their place at the end — a stale order must never
+  /// drop a stop off the page.
+  _PlanDay reordered(List<String> ids) {
+    final byId = {for (final stop in stops) stop.id: stop};
+    final ordered = <Activity>[
+      for (final id in ids)
+        if (byId.containsKey(id)) byId.remove(id)!,
+    ];
+    return _PlanDay(
+      id: id,
+      number: number,
+      dateLabel: dateLabel,
+      date: date,
+      stops: [...ordered, ...stops.where((stop) => byId.containsKey(stop.id))],
+      segments: segments,
+    );
+  }
 
   /// Matched by stop id, never by index — a leg that failed to calculate must
   /// not shift the rest onto the wrong gaps.
@@ -1743,6 +2195,7 @@ class _PlanDay {
 class _PlanView {
   const _PlanView({
     required this.title,
+    required this.destination,
     required this.coverImage,
     required this.dateLine,
     required this.durationLine,
@@ -1753,6 +2206,31 @@ class _PlanView {
     required this.days,
     this.anchor,
   });
+
+  /// The plan with any day the traveller has just dragged shown in that
+  /// order. Empty map — the usual case — returns this view untouched.
+  _PlanView withOrder(Map<String, List<String>> orders) {
+    if (orders.isEmpty) return this;
+    return _PlanView(
+      title: title,
+      destination: destination,
+      coverImage: coverImage,
+      dateLine: dateLine,
+      durationLine: durationLine,
+      chips: chips,
+      sightCount: sightCount,
+      restaurantCount: restaurantCount,
+      perDayBudgetLabel: perDayBudgetLabel,
+      anchor: anchor,
+      days: [
+        for (final day in days)
+          if (day.id.isNotEmpty && orders[day.id] != null)
+            day.reordered(orders[day.id]!)
+          else
+            day,
+      ],
+    );
+  }
 
   factory _PlanView.of(ApiTrip trip) {
     final schedule = trip.schedule;
@@ -1790,6 +2268,7 @@ class _PlanView {
 
     return _PlanView(
       title: trip.title.trim().isEmpty ? trip.destination : trip.title,
+      destination: trip.destination,
       coverImage: trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
       dateLine: start == null || end == null
           ? 'ยังไม่ระบุวันที่'
@@ -1805,6 +2284,10 @@ class _PlanView {
   }
 
   final String title;
+
+  /// The free text the trip was created with — what the anchor is resolved
+  /// from when the trip has no place attached.
+  final String destination;
   final String coverImage;
   final String dateLine;
   final String durationLine;
@@ -1869,6 +2352,7 @@ class _PlanView {
             dateLabel: weekdayDate(
               day.date ?? start?.add(Duration(days: day.dayNumber - 1)),
             ),
+            date: day.date ?? start?.add(Duration(days: day.dayNumber - 1)),
             stops: [...day.activities]
               ..sort((a, b) => a.order.compareTo(b.order)),
             segments: day.travelSegments,
@@ -1882,6 +2366,7 @@ class _PlanView {
           id: '',
           number: i + 1,
           dateLabel: weekdayDate(start?.add(Duration(days: i))),
+          date: start?.add(Duration(days: i)),
         ),
     ];
   }

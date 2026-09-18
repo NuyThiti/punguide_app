@@ -122,3 +122,39 @@ IconData styleIcon(TravelStyle style) => switch (style) {
       TravelStyle.shopping => Icons.shopping_bag_outlined,
       TravelStyle.adventure => Icons.hiking_outlined,
     };
+
+/// What each spending category is called in the สรุปงบ tab, and the colour it
+/// carries there — the proportion bar, its legend and the item rows all read
+/// this, so a category cannot be one colour in one place and another below.
+String expenseCategoryLabel(ExpenseCategory category) => switch (category) {
+      ExpenseCategory.hotel => 'ค่าที่พัก',
+      ExpenseCategory.activity => 'ค่ากิจกรรม',
+      ExpenseCategory.food => 'ค่าอาหาร / ของกิน',
+      ExpenseCategory.shopping => 'ช้อปปิ้ง',
+      ExpenseCategory.transport => 'ค่าเดินทาง',
+      ExpenseCategory.sightseeing => 'ค่าเข้าชมสถานที่',
+      ExpenseCategory.fuel => 'ค่าน้ำมัน',
+      ExpenseCategory.other => 'อื่นๆ',
+    };
+
+Color expenseCategoryColor(ExpenseCategory category) => switch (category) {
+      ExpenseCategory.hotel => const Color(0xFF7C5CFC),
+      ExpenseCategory.activity => const Color(0xFFF4553C),
+      ExpenseCategory.food => const Color(0xFFF7B44C),
+      ExpenseCategory.shopping => const Color(0xFF21A366),
+      ExpenseCategory.transport => const Color(0xFF4A90E2),
+      ExpenseCategory.sightseeing => const Color(0xFF12B5B0),
+      ExpenseCategory.fuel => const Color(0xFF8D6E63),
+      ExpenseCategory.other => const Color(0xFF9A9A95),
+    };
+
+IconData expenseCategoryIcon(ExpenseCategory category) => switch (category) {
+      ExpenseCategory.hotel => Icons.bed_outlined,
+      ExpenseCategory.activity => Icons.hiking_outlined,
+      ExpenseCategory.food => Icons.restaurant_outlined,
+      ExpenseCategory.shopping => Icons.shopping_bag_outlined,
+      ExpenseCategory.transport => Icons.directions_car_outlined,
+      ExpenseCategory.sightseeing => Icons.photo_camera_outlined,
+      ExpenseCategory.fuel => Icons.local_gas_station_outlined,
+      ExpenseCategory.other => Icons.more_horiz,
+    };

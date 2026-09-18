@@ -162,6 +162,33 @@ void main() {
     expect(find.text('1 Guest'), findsNothing);
   });
 
+  testWidgets('date and guest read as placeholders until they hold an answer',
+      (tester) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    Color inkOf(String label) =>
+        tester.widget<Text>(find.text(label)).style!.color!;
+
+    // Nothing chosen yet: both read grey, like the hint they are.
+    const placeholder = Color(0xFF8C8C8C);
+    const ink = Color(0xFF1E1E1E);
+    expect(inkOf('Date'), placeholder);
+    expect(inkOf('ผู้ใหญ่, 1 คน'), placeholder);
+
+    // A party the traveller actually picked reads in the page's own ink.
+    await tester.tap(find.text('ผู้ใหญ่, 1 คน'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.add).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ยืนยัน'));
+    await tester.pumpAndSettle();
+
+    expect(inkOf('ผู้ใหญ่, 2 คน'), ink);
+    // The date is still untouched, so it has not changed with it.
+    expect(inkOf('Date'), placeholder);
+  });
+
   testWidgets('the action bar and the guest sheet reach the bottom edge',
       (tester) async {
     const inset = 34.0;

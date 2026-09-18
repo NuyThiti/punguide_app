@@ -7,6 +7,8 @@ import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_trip/presentation/edit_trip_screen.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/suggest_places_sheet.dart';
 
+import 'package:pluno/features/create_trip/presentation/widgets/add_place_sheet.dart';
+
 import 'support/fake_api.dart';
 
 late FakeAdapter adapter;
@@ -108,10 +110,22 @@ Widget _harness() => ProviderScope(
     );
 
 /// Opens the sheet from วันที่ 1's "+ สถานที่".
+/// "+ สถานที่" opens the เพิ่มสถานที่ form now; แนะนำสถานที่ is the "สำรวจ"
+/// button inside it, which hands over rather than stacking a second sheet.
 Future<void> _openSheet(WidgetTester tester) async {
   await tester.pumpWidget(_harness());
   await tester.pumpAndSettle();
   await tester.tap(find.text('สถานที่').first);
+  await tester.pumpAndSettle();
+  await _tapExplore(tester);
+}
+
+Future<void> _tapExplore(WidgetTester tester) async {
+  // The plan behind the sheet has an explore banner of its own.
+  await tester.tap(find.descendant(
+    of: find.byType(AddPlaceSheet),
+    matching: find.text('สำรวจ'),
+  ));
   await tester.pumpAndSettle();
 }
 
@@ -151,7 +165,7 @@ void main() {
     });
   });
 
-  testWidgets('+ สถานที่ opens แนะนำสถานที่ with places around the trip',
+  testWidgets('สำรวจ opens แนะนำสถานที่ with places around the trip',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 1400 * 3);
     tester.view.devicePixelRatio = 3;
@@ -165,8 +179,8 @@ void main() {
     expect(find.text('ยังไม่ได้เลือกสถานที่'), findsOneWidget);
 
     // The anchor came off the stop, since this trip has no destinationPlace.
-    final suggest = adapter.requests
-        .firstWhere((r) => r.path == '/places/suggest');
+    final suggest =
+        adapter.requests.firstWhere((r) => r.path == '/places/suggest');
     expect(suggest.queryParameters['lat'], 19.8935);
     expect(suggest.queryParameters['lng'], 102.1357);
   });
@@ -261,8 +275,7 @@ void main() {
     await tester.tap(find.text('สถานที่เที่ยว'));
     await tester.pumpAndSettle();
 
-    final last =
-        adapter.requests.lastWhere((r) => r.path == '/places/suggest');
+    final last = adapter.requests.lastWhere((r) => r.path == '/places/suggest');
     expect(last.queryParameters['category'], 'activity');
   });
 
@@ -299,11 +312,63 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('สถานที่').first);
     await tester.pumpAndSettle();
+    // The form opens either way — it is the explorer that needs an anchor.
+    await _tapExplore(tester);
 
     expect(find.text('แนะนำสถานที่'), findsNothing);
     expect(
       find.textContaining('ยังไม่รู้พิกัดของทริปนี้'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a trip with only a destination name resolves its own anchor',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1400 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    // What a plan made from a trending row looks like: a name, no place, and
+    // no stops to borrow coordinates from.
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(withCoordinates: false))
+    ];
+    adapter.replies['GET /places/autocomplete'] = [
+      FakeReply(200, <dynamic>[
+        <String, dynamic>{
+          'description': 'หลวงพระบาง, ลาว',
+          'mainText': 'หลวงพระบาง',
+          'secondaryText': 'ลาว',
+          'externalRef': 'ChIJ-lpq',
+        },
+      ]),
+    ];
+    adapter.replies['GET /places/details'] = [
+      FakeReply(200, <String, dynamic>{
+        'name': 'หลวงพระบาง',
+        'externalRef': 'ChIJ-lpq',
+        'lat': 19.88,
+        'lng': 102.13,
+      }),
+    ];
+    adapter.replies['PATCH /trips/trip-1'] = [
+      FakeReply(200, _tripJson(withCoordinates: false)),
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('สถานที่').first);
+    await tester.pumpAndSettle();
+    await _tapExplore(tester);
+
+    // The explorer opened instead of refusing…
+    expect(find.text('แนะนำสถานที่'), findsOneWidget);
+    expect(find.textContaining('ยังไม่รู้พิกัดของทริปนี้'), findsNothing);
+    // …and the coordinates were written back, so the next tap is free.
+    final patched = adapter.bodyOf('PATCH /trips/trip-1');
+    expect(patched?['destinationPlace'], isNotNull);
+    // The brief is left out entirely — update rewrites it as a whole.
+    expect(patched!.containsKey('travelStyles'), isFalse);
+    expect(patched.containsKey('pace'), isFalse);
   });
 }

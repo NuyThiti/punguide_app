@@ -51,6 +51,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   int _nights = 0;
 
   int _travelers = 1;
+
+  /// The guest row starts on the default party, so it reads as a suggestion
+  /// until the sheet comes back with an answer.
+  bool _guestsChosen = false;
   int _children = 0;
   bool _aiShown = false;
   final String _draftCreationKey = uuidV4();
@@ -208,6 +212,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                           endDate: _endDate,
                           nights: _nights,
                           travelers: _travelers,
+                          guestsChosen: _guestsChosen,
                           children: _children,
                           onBack: _close,
                           onDestinationTap: _showDestinationSearch,
@@ -472,6 +477,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       setState(() {
         _travelers = result.$1;
         _children = result.$2;
+        _guestsChosen = true;
       });
     }
   }
@@ -1782,6 +1788,7 @@ class _CreateTripHeader extends StatelessWidget {
     required this.onDestinationTap,
     required this.onPickDate,
     required this.onGuestTap,
+    required this.guestsChosen,
   });
 
   final TextEditingController destinationController;
@@ -1795,8 +1802,13 @@ class _CreateTripHeader extends StatelessWidget {
   final VoidCallback onPickDate;
   final VoidCallback onGuestTap;
 
+  /// The traveller has been through the guest sheet. Until then the row shows
+  /// the default party, which is a suggestion rather than an answer.
+  final bool guestsChosen;
+
   @override
   Widget build(BuildContext context) {
+    final hasDate = (startDate != null && endDate != null) || nights > 0;
     final dateText = startDate != null && endDate != null
         ? '${_fmtDate(startDate)} - ${_fmtDate(endDate)}'
         : nights > 0
@@ -1883,6 +1895,7 @@ class _CreateTripHeader extends StatelessWidget {
                 _HeaderInput(
                   icon: Icons.calendar_month_outlined,
                   label: dateText,
+                  filled: hasDate,
                   onTap: onPickDate,
                 ),
                 const SizedBox(height: 10),
@@ -1891,6 +1904,7 @@ class _CreateTripHeader extends StatelessWidget {
                   label: children == 0
                       ? 'ผู้ใหญ่, $travelers คน'
                       : 'ผู้ใหญ่ $travelers, เด็ก $children คน',
+                  filled: guestsChosen,
                   onTap: onGuestTap,
                 ),
               ],
@@ -1908,12 +1922,17 @@ class _HeaderInput extends StatelessWidget {
     this.label,
     this.child,
     this.onTap,
+    this.filled = false,
   });
 
   final IconData icon;
   final String? label;
   final Widget? child;
   final VoidCallback? onTap;
+
+  /// The label is something the traveller chose, not a placeholder, so it
+  /// reads in the page's own ink — the same as the destination beside it.
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
@@ -1942,9 +1961,15 @@ class _HeaderInput extends StatelessWidget {
                 child: child ??
                     Text(
                       label!,
-                      style: const TextStyle(
-                        color: Color(0xFF8C8C8C),
+                      style: TextStyle(
+                        // The page writes its colours out in hex; this is
+                        // AppColors.foreground, the ink the destination above
+                        // already uses.
+                        color: filled
+                            ? const Color(0xFF1E1E1E)
+                            : const Color(0xFF8C8C8C),
                         fontSize: 14,
+                        fontWeight: filled ? FontWeight.w600 : FontWeight.w400,
                       ),
                     ),
               ),
