@@ -256,4 +256,144 @@ void main() {
     expect(tester.getTopLeft(find.text('first')).dy,
         lessThan(tester.getTopLeft(find.text('second')).dy));
   });
+
+  test('spot extras serialize only what was filled in', () {
+    expect(
+      const TripContentRequest(
+        content: 'ตลาดเช้า',
+        visitedAt: '06:00',
+        opensAt: '06:00',
+        closesAt: '14:30',
+        transportModes: ['MRT', 'เดิน'],
+        transportCost: 100,
+        transportCurrency: 'THB',
+        tripHack: 'ไปเช้าคนน้อยกว่า',
+      ).toJson(),
+      {
+        'content': 'ตลาดเช้า',
+        'visitedAt': '06:00',
+        'opensAt': '06:00',
+        'closesAt': '14:30',
+        'transportModes': ['MRT', 'เดิน'],
+        'transportCost': 100,
+        'transportCurrency': 'THB',
+        'tripHack': 'ไปเช้าคนน้อยกว่า',
+      },
+    );
+
+    // Nothing filled in means none of the keys travel.
+    expect(const TripContentRequest(content: 'เปล่า').toJson(),
+        {'content': 'เปล่า'});
+  });
+
+  test('closing before opening is allowed, malformed times are not', () {
+    // A bar that opens 18:00 and closes 02:00 crosses midnight.
+    expect(
+      const TripContentRequest(
+              content: 'บาร์', opensAt: '18:00', closesAt: '02:00')
+          .toJson()['closesAt'],
+      '02:00',
+    );
+
+    for (final bad in ['6:00', '24:00', '06:60', '0600', 'เช้า']) {
+      expect(
+        () => TripContentRequest(content: 'x', visitedAt: bad).toJson(),
+        throwsA(isA<FormatException>()),
+        reason: bad,
+      );
+    }
+  });
+
+  test('transport limits follow the contract', () {
+    expect(
+      () => TripContentRequest(
+        content: 'x',
+        transportModes: List.generate(11, (i) => 'mode$i'),
+      ).toJson(),
+      throwsA(isA<FormatException>()),
+    );
+    expect(
+      () => TripContentRequest(content: 'x', transportModes: ['x' * 51])
+          .toJson(),
+      throwsA(isA<FormatException>()),
+    );
+    expect(
+      () => const TripContentRequest(content: 'x', transportCost: -1).toJson(),
+      throwsA(isA<FormatException>()),
+    );
+    expect(
+      () => const TripContentRequest(content: 'x', transportCost: 1.005)
+          .toJson(),
+      throwsA(isA<FormatException>()),
+    );
+    expect(
+      () => const TripContentRequest(content: 'x', transportCurrency: 'thb')
+          .toJson(),
+      throwsA(isA<FormatException>()),
+    );
+    expect(
+      () => TripContentRequest(content: 'x', tripHack: 'ก' * 2001).toJson(),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('a section read back keeps its extras through toRequest', () {
+    final section = TripContent.fromJson({
+      'content': 'ตลาดเช้า',
+      'visitedAt': '06:00',
+      'closesAt': '14:30',
+      'transportModes': ['MRT'],
+      'transportCost': 100,
+      'transportCurrency': 'THB',
+      'tripHack': 'ไปเช้า',
+    });
+
+    expect(section.visitedAt, '06:00');
+    expect(section.transportModes, ['MRT']);
+    expect(section.toRequest().toJson()['tripHack'], 'ไปเช้า');
+  });
+
+  test('a trip response reads the owner-only fields', () {
+    final trip = ApiTrip.fromJson({
+      'id': 't1',
+      'ownerId': 'u1',
+      'title': 'ทริป',
+      'destination': 'กรุงเทพ',
+      'status': 'draft',
+      'schedule': <String, dynamic>{},
+      'totalBudget': 0,
+      'isSaved': false,
+      'isLiked': false,
+      'likeCount': 0,
+      'remixCount': 0,
+      'createdAt': '2026-09-20T00:00:00.000Z',
+      'updatedAt': '2026-09-20T00:00:00.000Z',
+      'specialNotes': 'ส่วนตัว',
+      'guestCount': 2,
+      'budgetCurrency': 'USD',
+    });
+    expect(trip.specialNotes, 'ส่วนตัว');
+    expect(trip.guestCount, 2);
+    expect(trip.budgetCurrency, 'USD');
+
+    // A viewer gets no key at all, which reads as null rather than blank.
+    final asViewer = ApiTrip.fromJson({
+      'id': 't1',
+      'ownerId': 'u1',
+      'title': 'ทริป',
+      'destination': 'กรุงเทพ',
+      'status': 'draft',
+      'schedule': <String, dynamic>{},
+      'totalBudget': 0,
+      'isSaved': false,
+      'isLiked': false,
+      'likeCount': 0,
+      'remixCount': 0,
+      'createdAt': '2026-09-20T00:00:00.000Z',
+      'updatedAt': '2026-09-20T00:00:00.000Z',
+    });
+    expect(asViewer.specialNotes, isNull);
+    // No currency on the wire means baht, not "unknown".
+    expect(asViewer.budgetCurrency, isNull);
+  });
 }

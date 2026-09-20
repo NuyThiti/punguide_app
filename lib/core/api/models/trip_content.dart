@@ -55,6 +55,16 @@ void _coordinates(double? latitude, double? longitude) {
     throw const FormatException('พิกัดต้องครบคู่และอยู่ในช่วงที่กำหนด');
 }
 
+/// `HH:mm` on a 24-hour clock, or null.
+///
+/// Wall-clock on purpose: a post says "we went at six", which is the same
+/// sentence wherever the reader is, and the form never asks for a zone.
+void _wallClock(String? value, String field) {
+  if (value == null) return;
+  if (!RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(value))
+    throw FormatException('$field ต้องเป็นเวลาแบบ HH:mm');
+}
+
 class PhotoMetadata {
   const PhotoMetadata(
       {required this.mediaId, this.takenAt, this.latitude, this.longitude});
@@ -105,7 +115,14 @@ class TripContent {
       this.imageUrls = const [],
       this.mapId,
       this.location,
-      this.photoMetadata = const []});
+      this.photoMetadata = const [],
+      this.visitedAt,
+      this.opensAt,
+      this.closesAt,
+      this.transportModes = const [],
+      this.transportCost,
+      this.transportCurrency,
+      this.tripHack});
   final String title, content;
   final List<String>? mediaIds;
   final List<ContentImage> images;
@@ -113,6 +130,16 @@ class TripContent {
   final String? mapId;
   final ContentLocation? location;
   final List<PhotoMetadata> photoMetadata;
+
+  /// Wall-clock `HH:mm`. [closesAt] may be earlier than [opensAt] — a bar that
+  /// opens 18:00 and closes 02:00 is not an error.
+  final String? visitedAt, opensAt, closesAt;
+  final List<String> transportModes;
+  final double? transportCost;
+
+  /// ISO 4217. Absent means THB, the same rule the trip's budget uses.
+  final String? transportCurrency;
+  final String? tripHack;
   factory TripContent.fromJson(Map<String, dynamic> json) => TripContent(
       title: Json.string(json, 'title') ?? '',
       content: Json.string(json, 'content') ?? '',
@@ -127,7 +154,14 @@ class TripContent {
           : null,
       photoMetadata: Json.asMapList(json['photoMetadata'])
           .map(PhotoMetadata.fromJson)
-          .toList());
+          .toList(),
+      visitedAt: Json.string(json, 'visitedAt'),
+      opensAt: Json.string(json, 'opensAt'),
+      closesAt: Json.string(json, 'closesAt'),
+      transportModes: Json.stringList(json, 'transportModes'),
+      transportCost: Json.number(json, 'transportCost'),
+      transportCurrency: Json.string(json, 'transportCurrency'),
+      tripHack: Json.string(json, 'tripHack'));
   static List<TripContent> listFrom(Object? value) =>
       Json.asMapList(value).map(TripContent.fromJson).toList();
   TripContentRequest toRequest() => TripContentRequest(
@@ -137,7 +171,14 @@ class TripContent {
       imageUrls: mediaIds == null ? imageUrls : const [],
       mapId: location == null ? mapId : null,
       location: location,
-      photoMetadata: photoMetadata);
+      photoMetadata: photoMetadata,
+      visitedAt: visitedAt,
+      opensAt: opensAt,
+      closesAt: closesAt,
+      transportModes: transportModes,
+      transportCost: transportCost,
+      transportCurrency: transportCurrency,
+      tripHack: tripHack);
   Map<String, dynamic> toJson() => toRequest().toJson();
 }
 
@@ -150,13 +191,25 @@ class TripContentRequest {
       this.imageUrls = const [],
       this.mapId,
       this.location,
-      this.photoMetadata = const []});
+      this.photoMetadata = const [],
+      this.visitedAt,
+      this.opensAt,
+      this.closesAt,
+      this.transportModes = const [],
+      this.transportCost,
+      this.transportCurrency,
+      this.tripHack});
   final String title, content;
   final List<String>? mediaIds;
   final List<String> imageUrls;
   final String? mapId;
   final ContentLocation? location;
   final List<PhotoMetadata> photoMetadata;
+  final String? visitedAt, opensAt, closesAt;
+  final List<String> transportModes;
+  final double? transportCost;
+  final String? transportCurrency;
+  final String? tripHack;
   Map<String, dynamic> toJson() {
     final ids = mediaIds ?? const <String>[];
     if (title.length > 200 ||
@@ -179,6 +232,27 @@ class TripContentRequest {
             photoMetadata.length ||
         photoMetadata.any((p) => !ids.contains(p.mediaId)))
       throw const FormatException('metadata ต้องอ้างรูปในส่วนเดียวกัน');
+    _wallClock(visitedAt, 'เวลาที่ไป');
+    _wallClock(opensAt, 'เวลาเปิด');
+    _wallClock(closesAt, 'เวลาปิด');
+    // No open/close pair check on purpose: a place that opens 18:00 and closes
+    // 02:00 crosses midnight, and the contract says not to reject it.
+    if (transportModes.length > 10 ||
+        transportModes.any((mode) => mode.length > 50))
+      throw const FormatException(
+          'การเดินทางได้สูงสุด 10 แบบ แบบละ 50 ตัวอักษร');
+    if (transportCost != null &&
+        (transportCost! < 0 ||
+            !transportCost!.isFinite ||
+            (transportCost! * 100).round() / 100 != transportCost))
+      throw const FormatException(
+          'ค่าเดินทางต้องไม่ติดลบ และมีทศนิยมไม่เกิน 2 ตำแหน่ง');
+    if (transportCurrency != null &&
+        !RegExp(r'^[A-Z]{3}$').hasMatch(transportCurrency!))
+      throw const FormatException(
+          'สกุลเงินต้องเป็นรหัส ISO 4217 3 ตัวพิมพ์ใหญ่');
+    if ((tripHack?.length ?? 0) > 2000)
+      throw const FormatException('Trip Hack ยาวได้ไม่เกิน 2000 ตัวอักษร');
     for (final url in imageUrls) {
       final uri = Uri.tryParse(url);
       if (url.length > 4096 ||
@@ -195,7 +269,14 @@ class TripContentRequest {
       if (mapId != null) 'mapId': mapId,
       if (location != null) 'location': location!.toJson(),
       if (photoMetadata.isNotEmpty)
-        'photoMetadata': photoMetadata.map((p) => p.toJson()).toList()
+        'photoMetadata': photoMetadata.map((p) => p.toJson()).toList(),
+      if (visitedAt != null) 'visitedAt': visitedAt,
+      if (opensAt != null) 'opensAt': opensAt,
+      if (closesAt != null) 'closesAt': closesAt,
+      if (transportModes.isNotEmpty) 'transportModes': transportModes,
+      if (transportCost != null) 'transportCost': transportCost,
+      if (transportCurrency != null) 'transportCurrency': transportCurrency,
+      if (tripHack != null && tripHack!.isNotEmpty) 'tripHack': tripHack
     };
   }
 

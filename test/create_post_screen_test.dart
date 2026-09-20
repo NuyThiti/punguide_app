@@ -80,14 +80,20 @@ Future<void> _pumpComposer(WidgetTester tester,
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
 
-  if (adapter?.replies.containsKey('POST /trips') ?? false) {
-    adapter!.replies['GET /places/search'] = [
+  // The เชื่อมกับแผนของฉัน step reads the traveller's plans. Without an answer
+  // its spinner never stops, and pumpAndSettle would time out on every publish.
+  final client = adapter ?? FakeAdapter(<String, List<FakeReply>>{});
+  client.replies
+      .putIfAbsent('GET /trips/mine', () => [const FakeReply(200, [])]);
+
+  if (client.replies.containsKey('POST /trips')) {
+    client.replies['GET /places/search'] = [
       const FakeReply(200, [
         {'id': 'place-1', 'mapId': 'map-1', 'name': 'เชียงใหม่'}
       ])
     ];
   }
-  await tester.pumpWidget(_harness(adapter: adapter, initialTrip: initialTrip));
+  await tester.pumpWidget(_harness(adapter: client, initialTrip: initialTrip));
   await tester.pumpAndSettle();
 }
 
@@ -135,6 +141,28 @@ Map<String, dynamic> _image(String id, String path) => {
       'mediaId': id,
       'urls': {'large': path, 'thumbnail': path}
     };
+/// The bar's Next now leads through เชื่อมกับแผนของฉัน before anything is
+/// published, so every publish in these tests confirms that step.
+Future<void> _tapNext(WidgetTester tester) async {
+  await tester.tap(find.text('Next'));
+  // The sheet reads the plan list over the fake transport, which needs real
+  // async turns — its spinner alone would never let pumpAndSettle finish.
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+  }
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+  // Publishing starts here and paints its own progress bar, so settle would
+  // never return — turn the wheel a bounded number of times instead.
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+  }
+}
+
 Future<void> _finishPublish(WidgetTester tester) async {
   for (var i = 0; i < 100 && find.text('home').evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -199,7 +227,7 @@ void main() {
     expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'),
         hasLength(2));
     expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     for (var i = 0;
         i < 10 && find.text('ตรวจรูปที่อัปโหลดไม่ทราบผล').evaluate().isEmpty;
         i++) {
@@ -478,7 +506,7 @@ void main() {
     await tester.tap(find.text('วัดเจดีย์หลวง').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     await _finishPublish(tester);
 
     // Confirmed only because a person tapped it, and it carries the id and
@@ -504,10 +532,9 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     await tester.enterText(find.byType(TextField).first, 'แก้ข้อความ');
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     await _finishPublish(tester);
     final creates = adapter.requests
         .where((r) => r.method == 'POST' && r.path == '/trips')
@@ -536,8 +563,7 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await tester.tap(find.text('Create from Photos'));
     await _settleImport(tester);
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     await tester.enterText(
         find.widgetWithText(TextFormField, 'ชื่อโพสต์'), 'วันหยุด');
     await tester.enterText(
@@ -602,9 +628,10 @@ void main() {
     tester.widget<PostBlock>(find.byType(PostBlock)).onDropBeforeImage!(
         (0, 1), 0);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     await _finishPublish(tester);
-    expect(adapter.paths, ['PATCH /trips/trip-new']);
+    expect(adapter.paths.where((p) => p != 'GET /trips/mine'),
+        ['PATCH /trips/trip-new']);
     final section =
         (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single;
     expect(section['mediaIds'], [_b, _a]);
@@ -640,15 +667,17 @@ void main() {
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
     tester.widget<PostBlock>(find.byType(PostBlock)).onRemoveImage!(0);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     await _finishPublish(tester);
-    expect(adapter.paths, [
+    expect(adapter.paths.where((p) => p != 'GET /trips/mine'), [
       'PATCH /trips/trip-new',
       'DELETE /trips/trip-new/media/$_a',
       'PATCH /trips/trip-new'
     ]);
-    expect(adapter.requests.first.data['contents'][0]['mediaIds'], [_b]);
-    expect(adapter.requests.first.data.containsKey('visibility'), isFalse);
+    final firstWrite = adapter.requests
+        .firstWhere((r) => r.path == '/trips/trip-new' && r.method == 'PATCH');
+    expect(firstWrite.data['contents'][0]['mediaIds'], [_b]);
+    expect(firstWrite.data.containsKey('visibility'), isFalse);
   });
 
   testWidgets('unavailable reference blocks publish until explicitly removed',
@@ -668,10 +697,10 @@ void main() {
       ]
     });
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     expect(find.textContaining('มีรูปที่ไม่พร้อมใช้งาน'), findsOneWidget);
-    expect(adapter.paths, isEmpty);
+    // Nothing was written: the link step only reads the plan list.
+    expect(adapter.paths.where((p) => p != 'GET /trips/mine'), isEmpty);
   });
 
   testWidgets(
@@ -761,8 +790,7 @@ void main() {
     await _settleImport(tester);
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
         hasLength(1));
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     expect(find.byType(AlertDialog), findsOneWidget);
     await tester.tap(find.text('กลับไปแก้ไข'));
     await tester.pumpAndSettle();
@@ -845,7 +873,7 @@ void main() {
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
         'assets/images/puntok_london.jpg');
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     for (var i = 0;
         i < 100 && !adapter.paths.contains('PATCH /trips/trip-new');
         i++) {
@@ -899,8 +927,7 @@ void main() {
         'เรื่องราว');
     await tester.pumpAndSettle();
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     expect(find.byType(AlertDialog), findsNothing);
     expect(adapter.bodyOf('POST /trips'), {
       'type': 'content',
@@ -925,8 +952,7 @@ void main() {
         'เดินเล่น');
     await tester.pumpAndSettle();
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
     expect(adapter.bodyOf('POST /trips'), {
       'type': 'content',
@@ -942,8 +968,7 @@ void main() {
     ]);
     expect(adapter.bodyOf('PATCH /trips/trip-new')!['visibility'], 'public');
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
-    await tester.tap(find.text('Share'));
-    await tester.pumpAndSettle();
+    await _tapNext(tester);
     expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
     expect(adapter.paths.where((path) => path == 'PATCH /trips/trip-new'),
         hasLength(2));
@@ -989,7 +1014,7 @@ void main() {
 
     // The bar is pinned, so it is there before any scrolling.
     expect(find.text('Save Draft'), findsOneWidget);
-    expect(find.text('Share'), findsOneWidget);
+    expect(find.text('Next'), findsOneWidget);
 
     await tester.drag(find.byType(ListView), const Offset(0, -700));
     await tester.pumpAndSettle();
@@ -1128,7 +1153,7 @@ void main() {
     await tester.tap(find.text('เชียงใหม่').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Share'));
+    await _tapNext(tester);
     await _finishPublish(tester);
 
     expect(find.text('home'), findsOneWidget);
@@ -1153,7 +1178,7 @@ void main() {
 
     final publish = tester.widget<FilledButton>(
       find.ancestor(
-        of: find.text('Share'),
+        of: find.text('Next'),
         matching: find.byType(FilledButton),
       ),
     );
@@ -1170,7 +1195,7 @@ void main() {
 
     final enabled = tester.widget<FilledButton>(
       find.ancestor(
-        of: find.text('Share'),
+        of: find.text('Next'),
         matching: find.byType(FilledButton),
       ),
     );
@@ -1313,5 +1338,417 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Trip Detail heads the spots, below the About trip row',
+      (tester) async {
+    await _pumpComposer(tester);
+
+    expect(find.text('Trip Detail'), findsOneWidget);
+    expect(find.text('About trip (Overview & Budget)'), findsOneWidget);
+
+    final about = tester.getTopLeft(find.text('About trip (Overview & Budget)'));
+    final heading = tester.getTopLeft(find.text('Trip Detail'));
+    expect(heading.dy, greaterThan(about.dy),
+        reason: 'the heading introduces the spots, so it sits below the row');
+  });
+
+  testWidgets('About trip keeps the overview and the budget on the row',
+      (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.text('About trip (Overview & Budget)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('About trip'), findsOneWidget);
+    expect(find.text('Trip Overview'), findsOneWidget);
+    expect(find.text('Budget'), findsOneWidget);
+    expect(find.text('ต่อคน'), findsOneWidget);
+    expect(find.text('THB'), findsOneWidget);
+
+    await tester.enterText(
+        find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'เดินเที่ยวย่านพระนคร');
+    await tester.enterText(find.widgetWithText(TextField, '0.00'), '2000');
+    await tester.tap(find.text('ตกลง'));
+    await tester.pumpAndSettle();
+
+    // The row reads back what was written, budget on its own side.
+    expect(find.text('เดินเที่ยวย่านพระนคร'), findsOneWidget);
+    expect(find.text('฿2,000'), findsOneWidget);
+    expect(find.text('About trip (Overview & Budget)'), findsNothing);
+  });
+
+  testWidgets('ยกเลิก on About trip leaves the row untouched', (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.text('About trip (Overview & Budget)'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'พิมพ์ไปแล้วเปลี่ยนใจ');
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('พิมพ์ไปแล้วเปลี่ยนใจ'), findsNothing);
+    expect(find.text('About trip (Overview & Budget)'), findsOneWidget);
+  });
+
+  testWidgets('About trip goes up as specialNotes and budgetLimit',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.tap(find.text('About trip (Overview & Budget)'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'ทริปเดินกินย่านเมืองเก่า');
+    await tester.enterText(find.widgetWithText(TextField, '0.00'), '2000');
+    await tester.tap(find.text('ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
+    expect(patched['specialNotes'], 'ทริปเดินกินย่านเมืองเก่า');
+    expect(patched['budgetLimit'], 2000);
+  });
+
+  testWidgets('an empty About trip sends neither field', (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
+    expect(patched.containsKey('specialNotes'), isFalse);
+    expect(patched.containsKey('budgetLimit'), isFalse);
+  });
+
+  testWidgets('Next opens เชื่อมกับแผนของฉัน before anything is written',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'GET /trips/mine': [
+        FakeReply(200, [
+          {
+            'id': 'plan-1',
+            'title': 'เดินเล่นพระนคร',
+            'destination': 'กรุงเทพมหานคร',
+            'status': 'draft',
+            'schedule': {
+              'startDate': '2026-09-20',
+              'endDate': '2026-09-20',
+              'durationDays': 1,
+            },
+            'totalBudget': 0,
+            'tags': <String>[],
+            'isSaved': false,
+            'isLiked': false,
+            'likeCount': 0,
+            'remixCount': 0,
+            'createdAt': '2026-09-09T00:00:00.000Z',
+            'updatedAt': '2026-09-09T00:00:00.000Z',
+          }
+        ])
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+
+    await tester.tap(find.text('Next'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.text('เชื่อมกับแผนของฉัน'), findsOneWidget);
+    expect(find.text('เดินเล่นพระนคร'), findsOneWidget);
+    expect(find.text('20 Sep 2026 • 1 วัน'), findsOneWidget);
+    // The step comes before the write, so nothing has been published yet.
+    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
+  });
+
+  testWidgets('ยกเลิก on the plan step cancels the publish', (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+
+    await tester.tap(find.text('Next'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'ยกเลิก'));
+    await tester.pumpAndSettle();
+
+    // Back on the composer with nothing written.
+    expect(find.text('Next'), findsOneWidget);
+    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
+  });
+
+  testWidgets('Trip Hack fills a row under the story', (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.text('Trip Hack'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ทริคในการเที่ยวที่อยากแบ่งปันให้นักเดินทางคนอื่น'),
+        findsOneWidget);
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
+        'ไปเช้าคนน้อยกว่า');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ไปเช้าคนน้อยกว่า'), findsOneWidget);
+  });
+
+  testWidgets('การเดินทาง keeps the chosen modes and the fare', (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.byTooltip('การเดินทาง'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('รูปแบบการเดินทาง'), findsOneWidget);
+    await tester.tap(find.text('MRT'));
+    await tester.tap(find.text('เดิน'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '0'), '100');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    // The row reads them back in the order they were picked, fare underneath.
+    expect(find.text('MRT · เดิน'), findsOneWidget);
+    expect(find.text('ค่ารถ · ฿100'), findsOneWidget);
+  });
+
+  testWidgets('Recommend Time writes the visit hour, then the opening hours',
+      (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.byTooltip('เวลาที่แนะนำ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recommend Time'), findsOneWidget);
+    expect(find.text('เวลาที่ฉันไป'), findsOneWidget);
+    // The wheel starts on 06:00, which is what the design shows.
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+
+    // Opening hours go on the same row as its second line.
+    await tester.tap(find.text('เวลาที่ไป 6:00 AM'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เวลาเปิด - ปิด'));
+    await tester.pumpAndSettle();
+    expect(find.text('เปิด'), findsOneWidget);
+    expect(find.text('ปิด'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsOneWidget);
+    // And the visit time still heads the row, so the label is not repeated.
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+  });
+
+  testWidgets('opening hours alone do not repeat their own label',
+      (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.byTooltip('เวลาที่แนะนำ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เวลาเปิด - ปิด'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    // The row is the hours; the second line must not say the same thing again.
+    expect(find.text('เวลาเปิด / ปิด'), findsOneWidget);
+    expect(find.text('06.00 - 14.30 น.'), findsOneWidget);
+    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsNothing);
+  });
+
+  testWidgets('ยกเลิก on an extra leaves the spot as it was', (tester) async {
+    await _pumpComposer(tester);
+
+    await tester.tap(find.text('Trip Hack'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
+        'เปลี่ยนใจ');
+    await tester.tap(find.widgetWithText(OutlinedButton, 'ยกเลิก'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เปลี่ยนใจ'), findsNothing);
+  });
+
+  testWidgets('the spot extras go up with their section', (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.tap(find.text('Trip Hack'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
+        'ไปเช้าคนน้อยกว่า');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final section =
+        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+            as Map;
+    expect(section['tripHack'], 'ไปเช้าคนน้อยกว่า');
+  });
+
+  testWidgets('time and transport ride along on the same section',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.tap(find.byTooltip('เวลาที่แนะนำ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('การเดินทาง'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MRT'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '0'), '100');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final section =
+        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+            as Map;
+    // Wall clock, not a timestamp — the post says "we went at six".
+    expect(section['visitedAt'], '06:00');
+    expect(section['transportModes'], ['MRT']);
+    expect(section['transportCost'], 100);
+    // A currency only travels with an amount.
+    expect(section['transportCurrency'], 'THB');
+  });
+
+  testWidgets('a spot with no extras sends none of their keys',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final section =
+        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+            as Map;
+    for (final key in [
+      'visitedAt',
+      'opensAt',
+      'closesAt',
+      'transportModes',
+      'transportCost',
+      'transportCurrency',
+      'tripHack'
+    ]) {
+      expect(section.containsKey(key), isFalse, reason: key);
+    }
+  });
+
+  testWidgets('a trip reopened from the server restores About trip and extras',
+      (tester) async {
+    final trip = ApiTrip.fromJson({
+      ...createdTripJson(),
+      'specialNotes': 'ทริปเดินกินย่านเมืองเก่า',
+      'budgetLimit': 2000,
+      'budgetCurrency': 'THB',
+      'contents': [
+        {
+          'content': 'ตลาดเช้า',
+          'visitedAt': '06:00',
+          'opensAt': '06:00',
+          'closesAt': '14:30',
+          'transportModes': ['MRT', 'เดิน'],
+          'transportCost': 100,
+          'transportCurrency': 'THB',
+          'tripHack': 'ไปเช้าคนน้อยกว่า',
+        }
+      ],
+    });
+    await _pumpComposer(tester, initialTrip: trip);
+
+    expect(find.text('ทริปเดินกินย่านเมืองเก่า'), findsOneWidget);
+    expect(find.text('฿2,000'), findsOneWidget);
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+    expect(find.text('MRT · เดิน'), findsOneWidget);
+    expect(find.text('ไปเช้าคนน้อยกว่า'), findsOneWidget);
+  });
+
+  testWidgets('a custom Trip Activity goes up as customStyles',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.tap(find.text('Title'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เพิ่ม'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'เช่น ดำน้ำ'), 'ดำน้ำ');
+    await tester.tap(find.widgetWithText(TextButton, 'เพิ่ม'));
+    await tester.pumpAndSettle();
+
+    // The new activity joins the built-in ten as a removable chip.
+    expect(find.text('ดำน้ำ'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['customStyles'], ['ดำน้ำ']);
   });
 }

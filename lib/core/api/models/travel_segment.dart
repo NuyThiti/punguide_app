@@ -43,9 +43,8 @@ class TravelSegment {
         calculatedAt: Json.timestamp(json, 'calculatedAt'),
       );
 
-  static List<TravelSegment> listFrom(Object? value) => Json.asMapList(value)
-      .map(TravelSegment.fromJson)
-      .toList(growable: false);
+  static List<TravelSegment> listFrom(Object? value) =>
+      Json.asMapList(value).map(TravelSegment.fromJson).toList(growable: false);
 
   static TravelSegment? maybeFromJson(Object? value) =>
       value is Map ? TravelSegment.fromJson(Json.asMap(value)) : null;

@@ -115,8 +115,8 @@ class Activity {
         // Empty string means "no time set"; [Json.time] normalises it to null.
         time: Json.time(json, 'time'),
         title: Json.requiredString(json, 'title'),
-        category: ActivityCategory.from(json['category']) ??
-            ActivityCategory.other,
+        category:
+            ActivityCategory.from(json['category']) ?? ActivityCategory.other,
         order: Json.integer(json, 'order') ?? 0,
         location: ActivityLocation.maybeFromJson(json['location']),
         notes: Json.string(json, 'notes'),

@@ -78,8 +78,8 @@ class BudgetItem {
         dayNumber: Json.integer(json, 'dayNumber'),
         paidBy: Json.string(json, 'paidBy'),
         splitLabel: Json.string(json, 'splitLabel'),
-        source: BudgetItemSource.from(json['source']) ??
-            BudgetItemSource.expense,
+        source:
+            BudgetItemSource.from(json['source']) ?? BudgetItemSource.expense,
       );
 
   /// **Not unique on its own**: a stop's own cost and the leg leading to it

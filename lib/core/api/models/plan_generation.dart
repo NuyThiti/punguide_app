@@ -271,8 +271,7 @@ class PlanGenerationRequest {
   Map<String, dynamic> toJson() => Json.compact(<String, dynamic>{
         'trip': trip.toJson(),
         'preferences': preferences?.toJson(),
-        'selectedPlaceIds':
-            selectedPlaceIds.isEmpty ? null : selectedPlaceIds,
+        'selectedPlaceIds': selectedPlaceIds.isEmpty ? null : selectedPlaceIds,
         'locale': locale,
         'currency': currency,
       });
@@ -311,8 +310,7 @@ class ResolvedBrief {
         itemsPerDay: json['itemsPerDay'] is Map
             ? ItemsPerDay.fromJson(Json.asMap(json['itemsPerDay']))
             : null,
-        budgetPerPersonPerDayCap:
-            Json.number(json, 'budgetPerPersonPerDayCap'),
+        budgetPerPersonPerDayCap: Json.number(json, 'budgetPerPersonPerDayCap'),
         budgetCapTotal: Json.number(json, 'budgetCapTotal'),
         defaultsApplied: Json.stringList(json, 'defaultsApplied'),
         warnings: Json.stringList(json, 'warnings'),
@@ -394,8 +392,9 @@ class GenerationReport {
   final List<String> modelWarnings;
   final List<PlanViolation> violations;
 
-  List<PlanViolation> get errors =>
-      violations.where((violation) => violation.isError).toList(growable: false);
+  List<PlanViolation> get errors => violations
+      .where((violation) => violation.isError)
+      .toList(growable: false);
 }
 
 /// The result of `POST /trips/plan/generate`.
@@ -415,8 +414,7 @@ class PlanGenerationResult {
         draft: TripDraft.fromJson(Json.asMap(json['draft'])),
         resolvedBrief:
             ResolvedBrief.fromJson(Json.asMap(json['resolvedBrief'])),
-        generation:
-            GenerationReport.fromJson(Json.asMap(json['generation'])),
+        generation: GenerationReport.fromJson(Json.asMap(json['generation'])),
       );
 
   final TripDraft draft;

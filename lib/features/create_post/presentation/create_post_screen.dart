@@ -20,7 +20,9 @@ import 'widgets/create_post_header.dart';
 import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
 import 'widgets/post_audience_chip.dart';
+import 'widgets/post_about_trip.dart';
 import 'widgets/post_action_bar.dart';
+import 'widgets/post_spot_details.dart';
 import 'widgets/post_plan_link_card.dart';
 import 'widgets/post_title_field.dart';
 import 'widgets/post_warnings.dart';
@@ -44,6 +46,8 @@ class _PublishResume {
   final Map<String, Media> uploaded;
   String? sourceId, creationTitle, creationDestination;
   String key = '', title = '', postDestination = '';
+  PostAboutTrip about = const PostAboutTrip();
+  List<PostSpotDetails> spotDetails = const [];
   bool coverWasInContents = false;
   Set<String> uncertain = {}, legacy = {}, unavailable = {};
   Map<String, TripPhoto> metadata = {};
@@ -81,6 +85,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// them — `travelStyles` on the trip — so they go up with the post.
   List<TravelStyle> _styles = const [];
 
+  /// Activities the traveller typed themselves, sent as `customStyles`.
+  List<String> _customStyles = const [];
+
   /// One key per draft attempt: replaying it inside five minutes returns the
   /// same draft without paying for the model again. "ร่างใหม่" mints a new one.
   String _assistKey = uuidV4();
@@ -102,6 +109,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   String _createKey = uuidV4();
   String? _creationTitle, _creationDestination;
   final _postTitle = TextEditingController();
+
+  /// What the whole trip was about, and what it cost per head. Both optional.
+  PostAboutTrip _about = const PostAboutTrip();
   final _postDestination = TextEditingController();
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
@@ -151,6 +161,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         _creationTitle = resume.creationTitle;
         _creationDestination = resume.creationDestination;
         _postTitle.text = resume.title;
+        _about = resume.about;
+        for (var i = 0;
+            i < resume.spotDetails.length && i < _blocks.length;
+            i++) {
+          _blocks[i].details = resume.spotDetails[i];
+        }
         _postDestination.text = resume.postDestination;
         _uncertainUploads.addAll(resume.uncertain);
         _legacyUrls.addAll(resume.legacy);
@@ -163,6 +179,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _draftId = trip.id;
       _postTitle.text = trip.title;
       _postDestination.text = trip.destination;
+      // specialNotes is owner-only; a null here means the response withheld it
+      // rather than that the writer left About trip blank.
+      _about = PostAboutTrip(
+        overview: trip.specialNotes ?? '',
+        budget: trip.budgetLimit,
+        // Absent on the wire means THB — nothing was backfilled.
+        currency: trip.budgetCurrency ?? 'THB',
+      );
       _audience = trip.visibility == TripVisibility.public
           ? PostAudience.public
           : PostAudience.onlyMe;
@@ -176,10 +200,16 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             _blocks.last.title.text == section.title;
         final block = canMerge
             ? _blocks.last
-            : (_BlockFields()
-              ..title.text = section.title
-);
+            : (_BlockFields()..title.text = section.title);
         final item = canMerge ? _BlockItemFields() : block.items.first;
+        block.details = PostSpotDetails(
+          visitedAt: _timeOfDay(section.visitedAt),
+          opensAt: _timeOfDay(section.opensAt),
+          closesAt: _timeOfDay(section.closesAt),
+          transportModes: section.transportModes,
+          transportCost: section.transportCost,
+          tripHack: section.tripHack ?? '',
+        );
         item
           ..body.text = section.content
           ..location = section.location
@@ -300,12 +330,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       context,
       title: _postTitle.text,
       styles: _styles,
-      onAddCustom: () => _message('เพิ่มกิจกรรมเองยังไม่มีที่เก็บใน API'),
+      customStyles: _customStyles,
     );
     if (result == null || !mounted) return;
     setState(() {
       _postTitle.text = result.title;
       _styles = List.unmodifiable(result.styles);
+      _customStyles = List.unmodifiable(result.customStyles);
     });
     _saveLocal();
   }
@@ -772,27 +803,60 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     });
   }
 
-  Future<void> _pickTrip() async {
-    final link = await showTripLinkPicker(context);
-    if (link == null || !mounted) return;
+  Future<void> _pickTrip() => _chooseTrip();
+
+  /// The เชื่อมกับแผนของฉัน step. Answers false when the traveller backed out,
+  /// so the caller knows not to carry on to whatever came after it.
+  Future<bool> _chooseTrip() async {
+    final link = await showTripLinkPicker(context, selectedId: _trip?.id);
+    if (link == null || !mounted) return false;
     if (link == noTripLink) {
       setState(() {
         _trip = null;
         _tripDestination = null;
       });
-      return;
+      return true;
     }
     try {
       final api = await ref.read(plunoApiProvider.future);
       final trip = await api.trips.byId(link.id);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _trip = link;
         _tripDestination = trip.destination;
       });
+      return true;
     } catch (_) {
       if (mounted) _message('โหลดข้อมูลทริปไม่สำเร็จ กรุณาลองอีกครั้ง');
+      return false;
     }
+  }
+
+  /// The bar's Next: the link step first, then publishing. Backing out of the
+  /// sheet cancels the whole thing rather than posting without it.
+  Future<void> _next() async {
+    if (!await _chooseTrip()) return;
+    if (!mounted) return;
+    await _publish();
+  }
+
+  /// "06:00" for the wire, or null when the traveller never set one.
+  static String? _hhmm(TimeOfDay? time) => time == null
+      ? null
+      : '${time.hour.toString().padLeft(2, '0')}:'
+          '${time.minute.toString().padLeft(2, '0')}';
+
+  /// The reverse, for a section coming back from the server. Anything that is
+  /// not `HH:mm` is dropped rather than guessed at.
+  static TimeOfDay? _timeOfDay(String? value) {
+    if (value == null) return null;
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return TimeOfDay(hour: hour, minute: minute);
   }
 
   String _trimForTripField(String value) {
@@ -858,6 +922,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ..creationTitle = _creationTitle
           ..creationDestination = _creationDestination
           ..title = _postTitle.text
+          ..about = _about
+          ..spotDetails =
+              _blocks.map((block) => block.details).toList(growable: false)
           ..postDestination = _postDestination.text
           ..uncertain = Set.of(_uncertainUploads)
           ..legacy = Set.of(_legacyUrls)
@@ -984,7 +1051,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   : location ??
                       const ContentLocation(status: ContentLocationStatus.none),
               mapId: location == null ? item.legacyMapId : null,
-              photoMetadata: metadata));
+              photoMetadata: metadata,
+              visitedAt: _hhmm(topic.details.visitedAt),
+              opensAt: _hhmm(topic.details.opensAt),
+              closesAt: _hhmm(topic.details.closesAt),
+              transportModes: topic.details.transportModes,
+              transportCost: topic.details.transportCost,
+              // Only alongside an amount: a currency on its own says nothing.
+              transportCurrency:
+                  topic.details.transportCost == null ? null : 'THB',
+              tripHack: topic.details.hasHack
+                  ? topic.details.tripHack.trim()
+                  : null));
         }
       }
       TripContentRequest.serializeAll(contents);
@@ -1005,6 +1083,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         _savedCoverId = null;
         _savedCoverWasInContents = false;
       }
+      final overview = _about.overview.trim();
       await api.trips.update(_draftId!,
           type: TripType.content,
           title: title,
@@ -1012,6 +1091,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           // Only when something was chosen: an empty list would clear whatever
           // the trip already carries.
           travelStyles: _styles.isEmpty ? null : _styles,
+          // The brief merges per key, so an empty list would clear whatever the
+          // trip already carries rather than leaving it alone.
+          customStyles: _customStyles.isEmpty ? null : _customStyles,
+          // About trip. `specialNotes` is write-only on this API — it goes up
+          // and never comes back on the trip — so the overview survives the
+          // publish but not a reopen; the local draft is what restores it.
+          specialNotes: overview.isEmpty ? null : overview,
+          // Stored exactly as typed: the server does no per-head arithmetic,
+          // so "ต่อคน" stays the app's reading of the same number.
+          budgetLimit: _about.budget,
+          budgetCurrency: _about.budget == null ? null : _about.currency,
           contents: contents,
           visibility: draft.audience == PostAudience.public
               ? TripVisibility.public
@@ -1112,8 +1202,34 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// `POST /trips` runs `forbidNonWhitelisted`, so an invented key fails the
   /// whole request — these stay unsent until the API grows a home for them
   /// rather than being smuggled into `content`.
-  void _onExtra(PostSpotExtra extra) =>
-      _message('${extra.label} ยังไม่มีที่เก็บใน API จึงยังบันทึกไม่ได้');
+  /// Opens the About trip sheet. Backing out leaves what was there — only
+  /// ตกลง writes, including writing a field back to empty on purpose.
+  Future<void> _editAbout() async {
+    final result = await showAboutTripSheet(context, current: _about);
+    if (result == null || !mounted) return;
+    setState(() => _about = result);
+    _saveLocal();
+  }
+
+  /// Opens the sheet behind one of the three chips and keeps what it answers.
+  ///
+  /// These are drawn and drafted but never published: a content section holds
+  /// a title, a body, media, a location and photo metadata, and `/trips`
+  /// rejects any key it does not know. The warning before publishing says so.
+  Future<void> _editExtra(int index, PostSpotExtra extra) async {
+    final current = _blocks[index].details;
+    final updated = switch (extra) {
+      PostSpotExtra.recommendTime =>
+        await showRecommendTimeSheet(context, current: current),
+      PostSpotExtra.howToGetHere =>
+        await showTransportSheet(context, current: current),
+      PostSpotExtra.tripHack =>
+        await showTripHackSheet(context, current: current),
+    };
+    if (updated == null || !mounted) return;
+    setState(() => _blocks[index].details = updated);
+    _saveLocal();
+  }
 
   /// Keeps what has been written and leaves. The draft lives in this app run,
   /// not on the server: a post only becomes a trip when it is shared.
@@ -1166,6 +1282,22 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       onChangeAudience: _pickAudience,
                     ),
                     const SizedBox(height: 6),
+                    PostAboutTripRow(about: _about, onTap: _editAbout),
+                    const SizedBox(height: 10),
+                    // The spots are one section of the page now, not the whole
+                    // of it, so they get a heading of their own.
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Trip Detail',
+                        style: TextStyle(
+                          color: AppColors.foreground,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     PostWarnings(
                       warnings: _warnings,
                       onDismiss: () => setState(() => _warnings = const []),
@@ -1173,139 +1305,146 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                     for (var index = 0; index < _blocks.length; index++) ...[
                       if (index > 0) const SizedBox(height: 18),
                       if (_blocks.length > 1)
-                        Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                          Text('จุด ${index + 1}',
-                              style: const TextStyle(
-                                  color: AppColors.muted,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700)),
-                          IconButton(
-                              tooltip: 'เลื่อนขึ้น',
-                              icon: const Icon(Icons.arrow_upward, size: 18),
-                              onPressed: index == 0
-                                  ? null
-                                  : () => setState(() {
-                                        final block = _blocks.removeAt(index);
-                                        _blocks.insert(index - 1, block);
-                                      })),
-                          IconButton(
-                              tooltip: 'เลื่อนลง',
-                              icon: const Icon(Icons.arrow_downward, size: 18),
-                              onPressed: index == _blocks.length - 1
-                                  ? null
-                                  : () => setState(() {
-                                        final block = _blocks.removeAt(index);
-                                        _blocks.insert(index + 1, block);
-                                      })),
-                        ]),
-                    PostBlock(
-                      key: ValueKey(_blocks[index]),
-                      titleController: _blocks[index].title,
-                      titleFocus: _blocks[index].titleFocus,
-                      bodyController: _blocks[index].body,
-                      imagePath: null,
-                      items: _blocks[index]
-                          .items
-                          .map((item) => PostBlockItem(
-                              bodyController: item.body,
-                              imagePaths: item.imagePaths,
-                              place: item.place,
-                              location: item.location,
-                              legacyMapId: item.legacyMapId))
-                          .toList(growable: false),
-                      imagePaths: _blocks[index].imagePaths,
-                      unavailableImages: _unavailablePaths,
-                      coverPath: _coverPath,
-                      onMoveImage: (photoIndex) =>
-                          _movePhoto(index, photoIndex),
-                      onDropImage: (move) =>
-                          _transferPhoto(move.$1, move.$2, index),
-                      onDropBeforeImage: (move, position) =>
-                          _transferPhoto(move.$1, move.$2, index, position),
-                      onAddItem: () => _addItem(index),
-                      onRemoveItem: (itemIndex) =>
-                          _removeItem(index, itemIndex),
-                      onPickImageInItem: (itemIndex) =>
-                          _pickPhoto(index, itemIndex),
-                      onClearImagesInItem: (itemIndex) => setState(() {
-                        _blocks[index].items[itemIndex].imagePaths.clear();
-                        _syncCover();
-                      }),
-                      onRemoveImageInItem: (itemIndex, photoIndex) =>
-                          setState(() {
-                        _blocks[index]
-                            .items[itemIndex]
-                            .imagePaths
-                            .removeAt(photoIndex);
-                        _syncCover();
-                      }),
-                      onMoveImageInItem: (itemIndex, photoIndex) =>
-                          _movePhotoFrom((
-                        block: index,
-                        item: itemIndex,
-                        photo: photoIndex
-                      )),
-                      onDropImageInItem: (move, itemIndex) =>
-                          _transferPhotoFrom(move, index, itemIndex),
-                      blockIndex: index,
-                      onDropBeforeImageInItem:
-                          (move, itemIndex, position) => _transferPhotoFrom(
-                              move, index, itemIndex, position),
-                      onPickPlaceInItem: (itemIndex) =>
-                          _pickPlace(index, itemIndex),
-                      onClearPlaceInItem: (itemIndex) => setState(() {
-                        final item = _blocks[index].items[itemIndex];
-                        item.place = null;
-                        item.location = const ContentLocation(
-                            status: ContentLocationStatus.none);
-                        item.legacyMapId = null;
-                      }),
-                      onConfirmLocationInItem: (itemIndex) => setState(() {
-                        final item = _blocks[index].items[itemIndex];
-                        final location = item.location;
-                        if (location == null) return;
-                        item.location = ContentLocation(
-                            status: ContentLocationStatus.confirmed,
-                            name: location.name,
-                            placeId: location.placeId,
-                            latitude: location.latitude,
-                            longitude: location.longitude);
-                      }),
-                      onSelectCover: (path) {
-                        if (_legacyUrls.contains(path)) {
-                          _message(
-                              'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
-                          return;
-                        }
-                        setState(() => _coverPath = path);
-                      },
-                      onRemoveImage: (photoIndex) => setState(() {
-                        _blocks[index]
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text('จุด ${index + 1}',
+                                  style: const TextStyle(
+                                      color: AppColors.muted,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700)),
+                              IconButton(
+                                  tooltip: 'เลื่อนขึ้น',
+                                  icon:
+                                      const Icon(Icons.arrow_upward, size: 18),
+                                  onPressed: index == 0
+                                      ? null
+                                      : () => setState(() {
+                                            final block =
+                                                _blocks.removeAt(index);
+                                            _blocks.insert(index - 1, block);
+                                          })),
+                              IconButton(
+                                  tooltip: 'เลื่อนลง',
+                                  icon: const Icon(Icons.arrow_downward,
+                                      size: 18),
+                                  onPressed: index == _blocks.length - 1
+                                      ? null
+                                      : () => setState(() {
+                                            final block =
+                                                _blocks.removeAt(index);
+                                            _blocks.insert(index + 1, block);
+                                          })),
+                            ]),
+                      PostBlock(
+                        key: ValueKey(_blocks[index]),
+                        titleController: _blocks[index].title,
+                        titleFocus: _blocks[index].titleFocus,
+                        bodyController: _blocks[index].body,
+                        imagePath: null,
+                        items: _blocks[index]
                             .items
-                            .first
-                            .imagePaths
-                            .removeAt(photoIndex);
-                        _syncCover();
-                      }),
-                      place: _blocks[index].items.first.place,
-                      onPickImage: () => _pickPhoto(index),
-                      onExtra: _onExtra,
-                      onClearImage: () => setState(() {
-                        _blocks[index].items.first.imagePaths.clear();
-                        _syncCover();
-                      }),
-                      onPickPlace: () => _pickPlace(index),
-                      onClearPlace: () => setState(() {
-                        final item = _blocks[index].items.first;
-                        item.place = null;
-                        item.location = const ContentLocation(
-                            status: ContentLocationStatus.none);
-                        item.legacyMapId = null;
-                      }),
-                      onRemove: _blocks.length == 1
-                          ? null
-                          : () => _removeBlock(index),
-                    ),
+                            .map((item) => PostBlockItem(
+                                bodyController: item.body,
+                                imagePaths: item.imagePaths,
+                                place: item.place,
+                                location: item.location,
+                                legacyMapId: item.legacyMapId))
+                            .toList(growable: false),
+                        imagePaths: _blocks[index].imagePaths,
+                        unavailableImages: _unavailablePaths,
+                        coverPath: _coverPath,
+                        onMoveImage: (photoIndex) =>
+                            _movePhoto(index, photoIndex),
+                        onDropImage: (move) =>
+                            _transferPhoto(move.$1, move.$2, index),
+                        onDropBeforeImage: (move, position) =>
+                            _transferPhoto(move.$1, move.$2, index, position),
+                        onAddItem: () => _addItem(index),
+                        onRemoveItem: (itemIndex) =>
+                            _removeItem(index, itemIndex),
+                        onPickImageInItem: (itemIndex) =>
+                            _pickPhoto(index, itemIndex),
+                        onClearImagesInItem: (itemIndex) => setState(() {
+                          _blocks[index].items[itemIndex].imagePaths.clear();
+                          _syncCover();
+                        }),
+                        onRemoveImageInItem: (itemIndex, photoIndex) =>
+                            setState(() {
+                          _blocks[index]
+                              .items[itemIndex]
+                              .imagePaths
+                              .removeAt(photoIndex);
+                          _syncCover();
+                        }),
+                        onMoveImageInItem: (itemIndex, photoIndex) =>
+                            _movePhotoFrom((
+                          block: index,
+                          item: itemIndex,
+                          photo: photoIndex
+                        )),
+                        onDropImageInItem: (move, itemIndex) =>
+                            _transferPhotoFrom(move, index, itemIndex),
+                        blockIndex: index,
+                        onDropBeforeImageInItem: (move, itemIndex, position) =>
+                            _transferPhotoFrom(
+                                move, index, itemIndex, position),
+                        onPickPlaceInItem: (itemIndex) =>
+                            _pickPlace(index, itemIndex),
+                        onClearPlaceInItem: (itemIndex) => setState(() {
+                          final item = _blocks[index].items[itemIndex];
+                          item.place = null;
+                          item.location = const ContentLocation(
+                              status: ContentLocationStatus.none);
+                          item.legacyMapId = null;
+                        }),
+                        onConfirmLocationInItem: (itemIndex) => setState(() {
+                          final item = _blocks[index].items[itemIndex];
+                          final location = item.location;
+                          if (location == null) return;
+                          item.location = ContentLocation(
+                              status: ContentLocationStatus.confirmed,
+                              name: location.name,
+                              placeId: location.placeId,
+                              latitude: location.latitude,
+                              longitude: location.longitude);
+                        }),
+                        onSelectCover: (path) {
+                          if (_legacyUrls.contains(path)) {
+                            _message(
+                                'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
+                            return;
+                          }
+                          setState(() => _coverPath = path);
+                        },
+                        onRemoveImage: (photoIndex) => setState(() {
+                          _blocks[index]
+                              .items
+                              .first
+                              .imagePaths
+                              .removeAt(photoIndex);
+                          _syncCover();
+                        }),
+                        place: _blocks[index].items.first.place,
+                        onPickImage: () => _pickPhoto(index),
+                        details: _blocks[index].details,
+                        onExtra: (extra) => _editExtra(index, extra),
+                        onClearImage: () => setState(() {
+                          _blocks[index].items.first.imagePaths.clear();
+                          _syncCover();
+                        }),
+                        onPickPlace: () => _pickPlace(index),
+                        onClearPlace: () => setState(() {
+                          final item = _blocks[index].items.first;
+                          item.place = null;
+                          item.location = const ContentLocation(
+                              status: ContentLocationStatus.none);
+                          item.legacyMapId = null;
+                        }),
+                        onRemove: _blocks.length == 1
+                            ? null
+                            : () => _removeBlock(index),
+                      ),
                     ],
                     const SizedBox(height: 16),
                     AddSpotButton(onTap: _addBlock),
@@ -1314,7 +1453,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               ),
               PostActionBar(
                 onSaveDraft: _saveDraftAndClose,
-                onShare: _publish,
+                onShare: _next,
                 canShare: !_publishing && !_arranging && _draft.isPublishable,
                 busy: _publishing || _arranging,
               ),
@@ -1333,12 +1472,17 @@ class _BlockFields {
   final FocusNode titleFocus = FocusNode();
   final List<_BlockItemFields> items = [_BlockItemFields()];
 
+  /// The three extras. They never leave the app — no content field holds
+  /// them — so they live here and in the local draft only.
+  PostSpotDetails details = const PostSpotDetails();
+
   TextEditingController get body => items.first.body;
   List<String> get imagePaths => items.length == 1
       ? items.first.imagePaths
       : items.expand((item) => item.imagePaths).toList(growable: false);
 
   PostTopic toTopic() => PostTopic(
+        details: details,
         title: title.text,
         body: body.text,
         imagePaths: List.of(items.first.imagePaths),

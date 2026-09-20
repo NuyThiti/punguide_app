@@ -6,7 +6,8 @@ import 'json.dart';
 /// The three renditions of an image, derived from the storage key.
 @immutable
 class MediaUrls {
-  const MediaUrls({required this.large, required this.thumbnail, this.original});
+  const MediaUrls(
+      {required this.large, required this.thumbnail, this.original});
 
   factory MediaUrls.fromJson(Map<String, dynamic> json) => MediaUrls(
         original: Json.string(json, 'original'),

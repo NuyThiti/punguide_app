@@ -21,8 +21,8 @@ class AddSpotButton extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: CustomPaint(
-            painter: const PostDashedBorder(
-                color: AppColors.postDashed, radius: 16),
+            painter:
+                const PostDashedBorder(color: AppColors.postDashed, radius: 16),
             child: const Center(
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -118,7 +118,7 @@ class PostActionBar extends StatelessWidget {
                       borderRadius: BorderRadius.circular(26)),
                 ),
                 child: const Text(
-                  'Share',
+                  'Next',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                 ),
               ),

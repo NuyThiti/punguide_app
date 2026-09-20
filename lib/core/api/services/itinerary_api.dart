@@ -268,8 +268,7 @@ class ItineraryApi {
   }) {
     final headers = <String, String>{
       if (!calculateTravelSegments) ...PlunoHeaders.skipTravelSegments(),
-      if (idempotencyKey != null)
-        ...PlunoHeaders.idempotent(idempotencyKey),
+      if (idempotencyKey != null) ...PlunoHeaders.idempotent(idempotencyKey),
     };
     return headers.isEmpty ? null : headers;
   }

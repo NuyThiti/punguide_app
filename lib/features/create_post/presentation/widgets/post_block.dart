@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/api/models/trip_content.dart';
 import '../../../../core/theme/app_colors.dart';
+import 'post_spot_details.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../domain/models/post_draft.dart';
 
@@ -55,6 +56,7 @@ class PostBlock extends StatelessWidget {
     required this.onPickPlace,
     required this.onClearPlace,
     required this.onExtra,
+    this.details = const PostSpotDetails(),
     this.blockIndex = 0,
     this.items,
     this.unavailableImages = const {},
@@ -113,6 +115,9 @@ class PostBlock extends StatelessWidget {
 
   /// Answers for the rows the API cannot store yet.
   final ValueChanged<PostSpotExtra> onExtra;
+
+  /// When to go, how to get there, and the tip — drawn above the chips.
+  final PostSpotDetails details;
 
   /// Null on the only spot — a post always keeps one.
   final VoidCallback? onRemove;
@@ -201,10 +206,21 @@ class PostBlock extends StatelessWidget {
                     onPressed: () => onRemoveItem!(item),
                     icon: const Icon(Icons.delete_outline, size: 18),
                     label: const Text('ลบชุดข้อมูลนี้'),
-                    style: TextButton.styleFrom(
-                        foregroundColor: AppColors.muted),
+                    style:
+                        TextButton.styleFrom(foregroundColor: AppColors.muted),
                   ),
                 ),
+            ],
+            if (!details.isEmpty) ...[
+              const SizedBox(height: 4),
+              PostSpotDetailRows(
+                details: details,
+                onEdit: (detail) => onExtra(switch (detail) {
+                  PostSpotDetail.time => PostSpotExtra.recommendTime,
+                  PostSpotDetail.transport => PostSpotExtra.howToGetHere,
+                  PostSpotDetail.hack => PostSpotExtra.tripHack,
+                }),
+              ),
             ],
             const SizedBox(height: 16),
             _AttachmentRow(onPickImage: onPickImage, onExtra: onExtra),
@@ -377,8 +393,8 @@ class _PostBlockContentItem extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: TextButton(
                   onPressed: onConfirmLocation,
-                  style:
-                      TextButton.styleFrom(foregroundColor: AppColors.postPurple),
+                  style: TextButton.styleFrom(
+                      foregroundColor: AppColors.postPurple),
                   child: const Text('ยืนยันสถานที่'),
                 ),
               ),
@@ -449,8 +465,7 @@ class _PostBlockContentItem extends StatelessWidget {
                   onPressed: () => onMoveImage(index),
                   icon: const Icon(Icons.drive_file_move_outline, size: 18),
                   label: const Text('ย้ายรูป'),
-                  style:
-                      TextButton.styleFrom(foregroundColor: AppColors.muted),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.muted),
                 ),
               ),
             ],
@@ -752,8 +767,8 @@ class PostDashedBorder extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final outline = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-          Offset.zero & size, Radius.circular(radius)));
+      ..addRRect(
+          RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)));
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
@@ -774,4 +789,3 @@ class PostDashedBorder extends CustomPainter {
   bool shouldRepaint(PostDashedBorder old) =>
       old.color != color || old.radius != radius;
 }
-

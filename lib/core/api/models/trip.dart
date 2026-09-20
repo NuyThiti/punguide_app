@@ -127,6 +127,7 @@ class TripListItem {
     required this.schedule,
     required this.totalBudget,
     required this.tags,
+    this.budgetCurrency,
     required this.isSaved,
     required this.isLiked,
     required this.likeCount,
@@ -155,6 +156,7 @@ class TripListItem {
         budgetTier: BudgetTier.from(json['budgetTier']),
         tags: Json.stringList(json, 'tags'),
         coverImage: Media.maybeFromJson(json['coverImage']),
+        budgetCurrency: Json.string(json, 'budgetCurrency'),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
         likeCount: Json.integer(json, 'likeCount') ?? 0,
@@ -181,6 +183,11 @@ class TripListItem {
   /// The cap the planner set, in THB. Absent means no budget was set — which
   /// is different from a budget of zero.
   final double? budgetLimit;
+
+  /// ISO 4217. **Absent means THB** — the server never backfilled a currency
+  /// onto trips whose owner did not choose one, and the stored amounts were
+  /// always baht.
+  final String? budgetCurrency;
 
   /// What the plan actually adds up to.
   final double totalBudget;
@@ -270,6 +277,9 @@ class ApiTrip {
     this.sourceTripId,
     this.publishedAt,
     this.coverImage,
+    this.specialNotes,
+    this.guestCount,
+    this.budgetCurrency,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -295,6 +305,11 @@ class ApiTrip {
         sourceTripId: Json.string(json, 'sourceTripId'),
         publishedAt: Json.timestamp(json, 'publishedAt'),
         coverImage: Media.maybeFromJson(json['coverImage']),
+        // Owner-only: someone opening a public trip gets no key at all, so
+        // null here means "not mine to read", not "the writer left it blank".
+        specialNotes: Json.string(json, 'specialNotes'),
+        guestCount: Json.integer(json, 'guestCount'),
+        budgetCurrency: Json.string(json, 'budgetCurrency'),
         mediaSummary: MediaSummary.fromJson(Json.asMap(json['mediaSummary'])),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
@@ -312,6 +327,20 @@ class ApiTrip {
   final TripStatus status;
   final Schedule schedule;
   final double? budgetLimit;
+
+  /// ISO 4217. **Absent means THB** — trips whose owner never chose a currency
+  /// were not backfilled, and their amounts were always baht.
+  final String? budgetCurrency;
+
+  /// The head count the plan was built for, echoed back at the top level so a
+  /// `type: content` post — which has no `customer` — can read it too.
+  final int? guestCount;
+
+  /// The trip's own prose. **Owner only**: the public response leaves it out
+  /// on purpose, since it often carries personal notes (allergies, mobility,
+  /// small children).
+  final String? specialNotes;
+
   final double totalBudget;
   final BudgetTier? budgetTier;
 

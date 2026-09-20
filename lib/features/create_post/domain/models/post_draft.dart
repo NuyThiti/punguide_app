@@ -87,8 +87,8 @@ class PostPlace {
       other.placeId == placeId;
 
   @override
-  int get hashCode => Object.hash(id, name, area, mapId, address, distanceKm,
-      latitude, longitude, placeId);
+  int get hashCode => Object.hash(
+      id, name, area, mapId, address, distanceKm, latitude, longitude, placeId);
 }
 
 /// The trip a post hangs off, kept as its own type so the composer does not
@@ -151,6 +151,77 @@ class PostTopicItem {
 /// rows underneath it. Without a heading, the first item is the same single
 /// body/photo group the composer has always shown.
 @immutable
+
+/// Everything a spot says beyond its story: when to go, how to get there, and
+/// the one tip worth passing on.
+///
+/// **None of this reaches the server.** A content section carries a title, a
+/// body, media, a location and photo metadata — nothing else — and `/trips`
+/// rejects keys it does not know, so an invented field would fail the whole
+/// publish. The composer keeps these with the draft and says so before a post
+/// goes out.
+@immutable
+class PostSpotDetails {
+  const PostSpotDetails({
+    this.visitedAt,
+    this.opensAt,
+    this.closesAt,
+    this.transportModes = const <String>[],
+    this.transportCost,
+    this.tripHack = '',
+  });
+
+  /// "เวลาที่ฉันไป" — the one time the writer was there.
+  final TimeOfDay? visitedAt;
+
+  /// "เวลาเปิด - ปิด" — the place's own hours, both or neither.
+  final TimeOfDay? opensAt;
+  final TimeOfDay? closesAt;
+
+  final List<String> transportModes;
+  final double? transportCost;
+  final String tripHack;
+
+  bool get hasTime => visitedAt != null || opensAt != null || closesAt != null;
+  bool get hasTransport => transportModes.isNotEmpty || transportCost != null;
+  bool get hasHack => tripHack.trim().isNotEmpty;
+  bool get isEmpty => !hasTime && !hasTransport && !hasHack;
+
+  PostSpotDetails copyWith({
+    TimeOfDay? visitedAt,
+    TimeOfDay? opensAt,
+    TimeOfDay? closesAt,
+    List<String>? transportModes,
+    double? transportCost,
+    String? tripHack,
+    bool clearTime = false,
+    bool clearTransportCost = false,
+  }) =>
+      PostSpotDetails(
+        visitedAt: clearTime ? null : (visitedAt ?? this.visitedAt),
+        opensAt: clearTime ? null : (opensAt ?? this.opensAt),
+        closesAt: clearTime ? null : (closesAt ?? this.closesAt),
+        transportModes: transportModes ?? this.transportModes,
+        transportCost:
+            clearTransportCost ? null : (transportCost ?? this.transportCost),
+        tripHack: tripHack ?? this.tripHack,
+      );
+}
+
+/// The ways of getting somewhere the sheet offers, in the design's order.
+const spotTransportModes = <String>[
+  'เดิน',
+  'จักรยาน',
+  'ตุ๊กตุ๊ก',
+  'MRT',
+  'มอเตอร์ไซค์',
+  'รถตู้ / รถเหมา',
+  'รถเช่า',
+  'เรือ',
+  'รถไฟ',
+  'เครื่องบิน',
+];
+
 class PostTopic {
   const PostTopic({
     required this.title,
@@ -161,7 +232,11 @@ class PostTopic {
     this.place,
     this.location,
     this.legacyMapId,
+    this.details = const PostSpotDetails(),
   });
+
+  /// When to go, how to get there, and the tip — one set per spot.
+  final PostSpotDetails details;
 
   /// Empty when the writer never added a heading.
   final String title;

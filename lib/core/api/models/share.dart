@@ -67,8 +67,8 @@ class SharedActivity {
         order: Json.integer(json, 'order') ?? 0,
         time: Json.time(json, 'time'),
         title: Json.requiredString(json, 'title'),
-        category: ActivityCategory.from(json['category']) ??
-            ActivityCategory.other,
+        category:
+            ActivityCategory.from(json['category']) ?? ActivityCategory.other,
         place: ActivityLocation.maybeFromJson(json['place']),
         travelNote: Json.string(json, 'travelNote'),
         travelFromPrevious:
