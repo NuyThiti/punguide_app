@@ -43,6 +43,7 @@ class TripsApi {
     List<String>? customStyles,
     List<String>? customTransport,
     List<String>? customConstraints,
+    Patch<String>? linkedTripId,
     String? specialNotes,
     List<TripContentRequest>? contents,
   }) async {
@@ -74,6 +75,10 @@ class TripsApi {
         'customStyles': customStyles,
         'customTransport': customTransport,
         'customConstraints': customConstraints,
+        // Three states, not two: a uuid links, `Patch.clear()` unlinks, and
+        // leaving it out keeps whatever the trip already points at — which is
+        // what an autosave that only touched the title must do.
+        'linkedTripId': linkedTripId,
         'budgetTier': budgetTier?.wire,
         'specialNotes': specialNotes,
         'contents': TripContentRequest.serializeAll(contents),
@@ -229,6 +234,7 @@ class TripsApi {
     List<String>? customStyles,
     List<String>? customTransport,
     List<String>? customConstraints,
+    Patch<String>? linkedTripId,
     String? specialNotes,
     List<TripContentRequest>? contents,
     TripStatus? status,
@@ -257,6 +263,10 @@ class TripsApi {
         'customStyles': customStyles,
         'customTransport': customTransport,
         'customConstraints': customConstraints,
+        // Three states, not two: a uuid links, `Patch.clear()` unlinks, and
+        // leaving it out keeps whatever the trip already points at — which is
+        // what an autosave that only touched the title must do.
+        'linkedTripId': linkedTripId,
         'budgetTier': budgetTier?.wire,
         'specialNotes': specialNotes,
         'contents': TripContentRequest.serializeAll(contents),

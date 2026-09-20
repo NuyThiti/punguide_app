@@ -111,6 +111,44 @@ class TripCustomer {
   final int groupSize;
 }
 
+/// The plan a post hangs off, trimmed to what the row under the post needs.
+///
+/// Absent from a response means "no plan to show", and deliberately covers
+/// three cases at once: nothing was linked, the plan was deleted, or the
+/// reader is not the owner and the plan is still private. Linking is not
+/// publishing — a public post can point at a draft only its author can open.
+@immutable
+class LinkedTrip {
+  const LinkedTrip({
+    required this.id,
+    required this.title,
+    required this.schedule,
+    required this.placeCount,
+    this.coverImage,
+  });
+
+  factory LinkedTrip.fromJson(Map<String, dynamic> json) => LinkedTrip(
+        id: Json.requiredString(json, 'id'),
+        title: Json.requiredString(json, 'title'),
+        schedule: Schedule.fromJson(Json.asMap(json['schedule'])),
+        placeCount: Json.integer(json, 'placeCount') ?? 0,
+        coverImage: Media.maybeFromJson(json['coverImage']),
+      );
+
+  static LinkedTrip? maybeFromJson(Object? value) {
+    if (value is! Map) return null;
+    final json = Json.asMap(value);
+    if (json.isEmpty) return null;
+    return LinkedTrip.fromJson(json);
+  }
+
+  final String id;
+  final String title;
+  final Schedule schedule;
+  final int placeCount;
+  final Media? coverImage;
+}
+
 /// A trip as it appears in a list: the feed, "my trips", and saved trips.
 ///
 /// Deliberately light — no days, no gallery. Open the card, then fetch the
@@ -128,6 +166,7 @@ class TripListItem {
     required this.totalBudget,
     required this.tags,
     this.budgetCurrency,
+    this.placeCount = 0,
     required this.isSaved,
     required this.isLiked,
     required this.likeCount,
@@ -157,6 +196,7 @@ class TripListItem {
         tags: Json.stringList(json, 'tags'),
         coverImage: Media.maybeFromJson(json['coverImage']),
         budgetCurrency: Json.string(json, 'budgetCurrency'),
+        placeCount: Json.integer(json, 'placeCount') ?? 0,
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
         likeCount: Json.integer(json, 'likeCount') ?? 0,
@@ -192,6 +232,12 @@ class TripListItem {
   /// What the plan actually adds up to.
   final double totalBudget;
   final BudgetTier? budgetTier;
+
+  /// Stops filed under a day on a plan, or located sections on a post. A trip
+  /// with nothing in it answers 0, so a card can print it without a fallback.
+  ///
+  /// A plan's staging shelf — stops not yet on a day — is **not** counted.
+  final int placeCount;
 
   /// `styles` and `customStyles`, already merged for display.
   final List<String> tags;
@@ -280,6 +326,8 @@ class ApiTrip {
     this.specialNotes,
     this.guestCount,
     this.budgetCurrency,
+    this.placeCount = 0,
+    this.linkedTrip,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -310,6 +358,8 @@ class ApiTrip {
         specialNotes: Json.string(json, 'specialNotes'),
         guestCount: Json.integer(json, 'guestCount'),
         budgetCurrency: Json.string(json, 'budgetCurrency'),
+        placeCount: Json.integer(json, 'placeCount') ?? 0,
+        linkedTrip: LinkedTrip.maybeFromJson(json['linkedTrip']),
         mediaSummary: MediaSummary.fromJson(Json.asMap(json['mediaSummary'])),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
@@ -335,6 +385,13 @@ class ApiTrip {
   /// The head count the plan was built for, echoed back at the top level so a
   /// `type: content` post — which has no `customer` — can read it too.
   final int? guestCount;
+
+  /// Stops on a day, or located sections on a post. Never absent — 0 means
+  /// empty. A plan's unscheduled staging shelf is not counted.
+  final int placeCount;
+
+  /// The plan this post points at, when there is one the reader may see.
+  final LinkedTrip? linkedTrip;
 
   /// The trip's own prose. **Owner only**: the public response leaves it out
   /// on purpose, since it often carries personal notes (allergies, mobility,

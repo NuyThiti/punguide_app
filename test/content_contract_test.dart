@@ -353,6 +353,55 @@ void main() {
     expect(section.toRequest().toJson()['tripHack'], 'ไปเช้า');
   });
 
+  test('placeCount and linkedTrip read off a trip response', () {
+    final trip = ApiTrip.fromJson({
+      'id': 'post-1',
+      'ownerId': 'u1',
+      'title': 'โพสต์',
+      'destination': 'กรุงเทพ',
+      'status': 'draft',
+      'schedule': <String, dynamic>{},
+      'totalBudget': 0,
+      'isSaved': false,
+      'isLiked': false,
+      'likeCount': 0,
+      'remixCount': 0,
+      'createdAt': '2026-09-20T00:00:00.000Z',
+      'updatedAt': '2026-09-20T00:00:00.000Z',
+      'placeCount': 3,
+      'linkedTrip': {
+        'id': 'plan-1',
+        'title': 'เดินเล่นพระนคร',
+        'schedule': {'startDate': '2026-12-28', 'durationDays': 1},
+        'placeCount': 11,
+      },
+    });
+    expect(trip.placeCount, 3);
+    expect(trip.linkedTrip?.title, 'เดินเล่นพระนคร');
+    expect(trip.linkedTrip?.placeCount, 11);
+
+    // No linkedTrip key covers three cases at once — nothing linked, the plan
+    // was deleted, or it is private and the reader is not its owner.
+    final unlinked = ApiTrip.fromJson({
+      'id': 'post-1',
+      'ownerId': 'u1',
+      'title': 'โพสต์',
+      'destination': 'กรุงเทพ',
+      'status': 'draft',
+      'schedule': <String, dynamic>{},
+      'totalBudget': 0,
+      'isSaved': false,
+      'isLiked': false,
+      'likeCount': 0,
+      'remixCount': 0,
+      'createdAt': '2026-09-20T00:00:00.000Z',
+      'updatedAt': '2026-09-20T00:00:00.000Z',
+    });
+    expect(unlinked.linkedTrip, isNull);
+    // Never absent: an empty trip answers 0 so a card needs no fallback.
+    expect(unlinked.placeCount, 0);
+  });
+
   test('a trip response reads the owner-only fields', () {
     final trip = ApiTrip.fromJson({
       'id': 't1',

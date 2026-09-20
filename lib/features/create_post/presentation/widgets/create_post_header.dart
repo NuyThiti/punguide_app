@@ -15,12 +15,16 @@ class CreatePostHeader extends StatelessWidget {
   const CreatePostHeader({
     super.key,
     required this.onClose,
+    required this.onPickCover,
     required this.onImportPhotos,
     required this.importing,
     required this.onCancelImport,
   });
 
   final VoidCallback onClose;
+
+  /// The round action opposite the back button: the post's cover photo.
+  final VoidCallback onPickCover;
 
   /// "Creates post from Photos" — reads the picked photos' EXIF and groups
   /// them into sections.
@@ -66,8 +70,11 @@ class CreatePostHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Balances the back button so the title sits centred.
-                const SizedBox(width: 40),
+                _RoundAction(
+                  icon: Icons.add_photo_alternate_outlined,
+                  tooltip: 'รูปหน้าปก',
+                  onTap: onPickCover,
+                ),
               ],
             ),
           ),
@@ -106,6 +113,39 @@ class _RoundBackButton extends StatelessWidget {
               size: 26,
               color: AppColors.foreground,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The dark round action on the right of the bar, mirroring the back button.
+class _RoundAction extends StatelessWidget {
+  const _RoundAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white24,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(icon, size: 21, color: Colors.white),
           ),
         ),
       ),

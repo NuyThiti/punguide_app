@@ -2,54 +2,227 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../shared/widgets/cover_image.dart';
+import '../../../auth/domain/auth_session.dart';
 import '../../../create_trip/domain/plan_labels.dart';
+import '../../domain/models/post_draft.dart';
+import 'post_audience_chip.dart';
+import 'post_block.dart';
 
-/// The post's own name, at the top of the composer. Tapping it — or the
-/// pencil — opens the Title sheet, where the trip's activities are set too.
-class PostTitleField extends StatelessWidget {
-  const PostTitleField({super.key, required this.title, required this.onTap});
+/// The card at the top of the composer: who is posting, what the post is
+/// called, and what kind of trip it was.
+///
+/// One card rather than three stacked rows — the design groups them because
+/// they all describe the post itself, while everything below describes a spot.
+class PostIdentityCard extends StatelessWidget {
+  const PostIdentityCard({
+    super.key,
+    required this.session,
+    required this.audience,
+    required this.onChangeAudience,
+    required this.title,
+    required this.styles,
+    required this.customStyles,
+    required this.onEditTitle,
+  });
 
+  /// Null while signed out — the guest path still reaches the composer.
+  final AuthSession? session;
+  final PostAudience audience;
+  final VoidCallback onChangeAudience;
   final String title;
-  final VoidCallback onTap;
+  final List<TravelStyle> styles;
+  final List<String> customStyles;
+  final VoidCallback onEditTitle;
 
   @override
   Widget build(BuildContext context) {
     final written = title.trim().isNotEmpty;
+    final avatar = session?.avatarImage;
+    final chosen = [
+      for (final style in styles)
+        (styleLabel(style) ?? style.name, styleIcon(style)),
+      for (final label in customStyles) (label, Icons.local_activity_outlined),
+    ];
 
-    return Material(
-      color: AppColors.screen,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: AppColors.screen,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 15, 12, 15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.chipBorder),
-          ),
-          child: Row(
+        border: Border.all(color: AppColors.chipBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: const BoxDecoration(
+                  color: AppColors.postField,
+                  shape: BoxShape.circle,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: avatar == null || avatar.isEmpty
+                    ? const Icon(Icons.person, size: 18, color: AppColors.muted)
+                    : CoverImage(source: avatar),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  written ? title.trim() : 'Title',
+                  session?.displayName ?? 'ผู้ใช้ PunGuide',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: written
-                        ? AppColors.foreground
-                        : AppColors.postFieldHint,
-                    fontSize: 15,
-                    fontWeight: written ? FontWeight.w700 : FontWeight.w500,
+                  style: const TextStyle(
+                    color: AppColors.foreground,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.edit_outlined,
-                  size: 20, color: AppColors.postPurple),
+              PostAudienceChip(audience: audience, onTap: onChangeAudience),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: AppColors.chipBorder),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: onEditTitle,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    written ? title.trim() : 'Title..',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: written
+                          ? AppColors.foreground
+                          : AppColors.postFieldHint,
+                      fontSize: 16,
+                      fontWeight: written ? FontWeight.w800 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.edit_outlined,
+                    size: 20, color: AppColors.postPurple),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Nothing chosen yet reads as one dashed invitation; once there are
+          // activities the invitation shrinks to a round + beside them.
+          if (chosen.isEmpty)
+            _TripActivityChip(onTap: onEditTitle)
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _AddActivityButton(onTap: onEditTitle),
+                for (final (label, icon) in chosen)
+                  _ChosenActivityChip(label: label, icon: icon),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "+ Trip activity", the empty state of the activity row.
+class _TripActivityChip extends StatelessWidget {
+  const _TripActivityChip({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(99),
+      child: CustomPaint(
+        painter:
+            const PostDashedBorder(radius: 99, color: AppColors.postPurple),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add, size: 14, color: AppColors.postPurple),
+              SizedBox(width: 5),
+              Text(
+                'Trip activity',
+                style: TextStyle(
+                  color: AppColors.postPurple,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AddActivityButton extends StatelessWidget {
+  const _AddActivityButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: CustomPaint(
+        painter:
+            const PostDashedBorder(radius: 99, color: AppColors.postPurple),
+        child: const SizedBox(
+          width: 30,
+          height: 30,
+          child: Icon(Icons.add, size: 16, color: AppColors.postPurple),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChosenActivityChip extends StatelessWidget {
+  const _ChosenActivityChip({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.postPurpleSoft,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: AppColors.postPurple),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.postPurple,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

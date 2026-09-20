@@ -25,14 +25,14 @@ final myPlansProvider = FutureProvider<List<TripListItem>>((ref) async {
 /// one, which is a deliberate "post it with no plan".
 Future<PostTripLink?> showTripLinkPicker(
   BuildContext context, {
-  String? selectedId,
+  PostTripLink? current,
 }) {
   return showModalBottomSheet<PostTripLink>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.42),
-    builder: (_) => _TripLinkPicker(selectedId: selectedId),
+    builder: (_) => _TripLinkPicker(current: current),
   );
 }
 
@@ -40,16 +40,19 @@ Future<PostTripLink?> showTripLinkPicker(
 const noTripLink = PostTripLink(id: '', title: '');
 
 class _TripLinkPicker extends ConsumerStatefulWidget {
-  const _TripLinkPicker({this.selectedId});
+  const _TripLinkPicker({this.current});
 
-  final String? selectedId;
+  /// The plan already linked, if any. Kept whole rather than as an id: the
+  /// list may not contain it — it can be paged out, or the read can fail —
+  /// and confirming must not silently unlink a plan nobody touched.
+  final PostTripLink? current;
 
   @override
   ConsumerState<_TripLinkPicker> createState() => _TripLinkPickerState();
 }
 
 class _TripLinkPickerState extends ConsumerState<_TripLinkPicker> {
-  late String? _selected = widget.selectedId;
+  late String? _selected = widget.current?.id;
 
   @override
   Widget build(BuildContext context) {
@@ -153,6 +156,9 @@ class _TripLinkPickerState extends ConsumerState<_TripLinkPicker> {
         return PostTripLink(id: trip.id, title: trip.title);
       }
     }
+    // Still the plan we came in with, even though no row showed it.
+    final current = widget.current;
+    if (current != null && current.id == _selected) return current;
     return noTripLink;
   }
 }
@@ -205,8 +211,8 @@ class _PlanRow extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       // The design stacks every traveller on the plan here.
-                      // The list endpoint carries only its creator, so one
-                      // avatar is all there is to draw.
+                      // There is no member table in the system yet, so the
+                      // creator is the only person there is to draw.
                       _CreatorAvatar(creator: trip.creator),
                       const SizedBox(height: 6),
                       Text(
@@ -260,16 +266,15 @@ class _PlanRow extends StatelessWidget {
     );
   }
 
-  /// "28-30 Dec 2026 • 7 วัน", dropping whichever half the plan has not got.
-  ///
-  /// The design also counts the plan's stops, which the trip list does not
-  /// carry — that number would cost one request per row.
+  /// "28-30 Dec 2026 • 7 วัน • 20 สถานที่", dropping whichever part the plan
+  /// has not got. The count is only the stops already filed under a day.
   static String _summary(TripListItem trip) {
     final parts = <String>[];
     final range = _dateRange(trip.schedule);
     if (range.isNotEmpty) parts.add(range);
     final days = trip.schedule.durationDays;
     if (days != null && days > 0) parts.add('$days วัน');
+    if (trip.placeCount > 0) parts.add('${trip.placeCount} สถานที่');
     if (parts.isEmpty) return trip.destination;
     return parts.join(' • ');
   }

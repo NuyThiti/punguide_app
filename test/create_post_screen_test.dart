@@ -11,6 +11,7 @@ import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_post/domain/models/post_draft.dart';
 import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_block.dart';
+import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 
 import 'support/fake_api.dart';
 
@@ -978,16 +979,30 @@ void main() {
   testWidgets('the composer lays out every part of the design', (tester) async {
     await _pumpComposer(tester);
 
-    // The dark cap.
+    // The dark cap: back, title, and the cover action opposite it.
     expect(find.text('PunGuide'), findsOneWidget);
     expect(find.text('Create from Photos'), findsOneWidget);
+    expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
 
-    // What the post is, who it is by, and the plan it hangs off.
-    expect(find.text('Title'), findsOneWidget);
-    expect(find.text('เชื่อมแผนของฉัน'), findsOneWidget);
-    expect(find.text('เชื่อมแผนเที่ยวคุณ ให้คนอื่นดูและ Remix ได้'),
-        findsOneWidget);
+    // One card says what the post is and who it is by. The plan link is not
+    // on the page any more — it is the Next step's own screen.
+    expect(find.text('Title..'), findsOneWidget);
+    expect(find.text('Trip activity'), findsOneWidget);
     expect(find.text('Public'), findsOneWidget);
+    expect(find.text('เชื่อมแผนของฉัน'), findsNothing);
+    expect(find.byType(PostIdentityCard), findsOneWidget);
+
+    // Author, title and activities read top to bottom inside that one card.
+    final card = find.byType(PostIdentityCard);
+    for (final part in ['Public', 'Title..', 'Trip activity']) {
+      expect(find.descendant(of: card, matching: find.text(part)),
+          findsOneWidget,
+          reason: part);
+    }
+    expect(tester.getTopLeft(find.text('Public')).dy,
+        lessThan(tester.getTopLeft(find.text('Title..')).dy));
+    expect(tester.getTopLeft(find.text('Title..')).dy,
+        lessThan(tester.getTopLeft(find.text('Trip activity')).dy));
 
     // The spot: a heading, where it is, then the story.
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
@@ -1025,7 +1040,7 @@ void main() {
       (tester) async {
     await _pumpComposer(tester);
 
-    await tester.tap(find.text('Title'));
+    await tester.tap(find.text('Title..'));
     await tester.pumpAndSettle();
 
     // The sheet offers the same activities the plan wizard does.
@@ -1731,7 +1746,7 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
 
-    await tester.tap(find.text('Title'));
+    await tester.tap(find.text('Title..'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เพิ่ม'));
     await tester.pumpAndSettle();
@@ -1750,5 +1765,114 @@ void main() {
     await _finishPublish(tester);
 
     expect(adapter.bodyOf('PATCH /trips/trip-new')!['customStyles'], ['ดำน้ำ']);
+  });
+
+  testWidgets('the chosen plan is what goes up as linkedTripId',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'GET /trips/plan-1': [
+        FakeReply(200, {...createdTripJson(id: 'plan-1'), 'type': 'plan_trip'})
+      ],
+      'GET /trips/mine': [
+        FakeReply(200, [
+          {
+            'id': 'plan-1',
+            'title': 'เดินเล่นพระนคร',
+            'destination': 'กรุงเทพมหานคร',
+            'status': 'draft',
+            'schedule': {'durationDays': 1},
+            'totalBudget': 0,
+            'placeCount': 11,
+            'tags': <String>[],
+            'isSaved': false,
+            'isLiked': false,
+            'likeCount': 0,
+            'remixCount': 0,
+            'createdAt': '2026-09-09T00:00:00.000Z',
+            'updatedAt': '2026-09-09T00:00:00.000Z',
+          }
+        ])
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+
+    await tester.tap(find.text('Next'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    // The count comes from the list now, no request per row.
+    expect(find.text('1 วัน • 11 สถานที่'), findsOneWidget);
+
+    await tester.tap(find.text('เดินเล่นพระนคร'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await _finishPublish(tester);
+
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['linkedTripId'], 'plan-1');
+  });
+
+  testWidgets('confirming with no plan chosen unlinks rather than staying put',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final body = adapter.bodyOf('PATCH /trips/trip-new')!;
+    // Explicitly null, not absent: the traveller answered "no plan".
+    expect(body.containsKey('linkedTripId'), isTrue);
+    expect(body['linkedTripId'], isNull);
+  });
+
+  testWidgets('a post reopened with a linked plan remembers it', (tester) async {
+    final trip = ApiTrip.fromJson({
+      ...createdTripJson(),
+      'contents': [
+        {
+          'content': 'เรื่องแรก',
+          'location': {'status': 'confirmed', 'name': 'เชียงใหม่'}
+        }
+      ],
+      'linkedTrip': {
+        'id': 'plan-1',
+        'title': 'เดินเล่นพระนคร',
+        'schedule': {'durationDays': 1},
+        'placeCount': 11,
+      },
+    });
+    final adapter = FakeAdapter({
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      // The plan is not in this page of the list, and confirming must still
+      // keep it rather than quietly unlinking.
+      'GET /trips/mine': [const FakeReply(200, [])],
+      'GET /trips/plan-1': [
+        FakeReply(200, createdTripJson(id: 'plan-1')),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
+
+    // The Next step opens on the plan already chosen, so confirming keeps it.
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['linkedTripId'], 'plan-1');
   });
 }

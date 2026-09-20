@@ -23,7 +23,6 @@ import 'widgets/post_audience_chip.dart';
 import 'widgets/post_about_trip.dart';
 import 'widgets/post_action_bar.dart';
 import 'widgets/post_spot_details.dart';
-import 'widgets/post_plan_link_card.dart';
 import 'widgets/post_title_field.dart';
 import 'widgets/post_warnings.dart';
 import 'widgets/post_block.dart';
@@ -181,6 +180,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _postDestination.text = trip.destination;
       // specialNotes is owner-only; a null here means the response withheld it
       // rather than that the writer left About trip blank.
+      final linked = trip.linkedTrip;
+      if (linked != null) {
+        _trip = PostTripLink(id: linked.id, title: linked.title);
+      }
       _about = PostAboutTrip(
         overview: trip.specialNotes ?? '',
         budget: trip.budgetLimit,
@@ -392,6 +395,22 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // A denied permission, or no camera on the device.
       _message('เลือกรูปไม่สำเร็จ ลองอีกครั้ง');
     }
+  }
+
+  /// The header's round action: choose the photo the post leads with.
+  ///
+  /// A cover has to be a photo the post actually carries — publishing marks
+  /// one of the uploaded media as the cover — so this adds it to the first
+  /// spot and then points the cover at it.
+  Future<void> _pickCover() async {
+    final before = _blocks.first.items.first.imagePaths.length;
+    await _pickPhoto(0);
+    if (!mounted) return;
+    final paths = _blocks.first.items.first.imagePaths;
+    if (paths.length <= before) return;
+    setState(() => _coverPath = paths.last);
+    _saveLocal();
+    _message('ตั้งเป็นรูปหน้าปกแล้ว');
   }
 
   void _cancelArrangement() {
@@ -803,12 +822,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     });
   }
 
-  Future<void> _pickTrip() => _chooseTrip();
-
   /// The เชื่อมกับแผนของฉัน step. Answers false when the traveller backed out,
   /// so the caller knows not to carry on to whatever came after it.
   Future<bool> _chooseTrip() async {
-    final link = await showTripLinkPicker(context, selectedId: _trip?.id);
+    final link = await showTripLinkPicker(context, current: _trip);
     if (link == null || !mounted) return false;
     if (link == noTripLink) {
       setState(() {
@@ -827,8 +844,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       });
       return true;
     } catch (_) {
-      if (mounted) _message('โหลดข้อมูลทริปไม่สำเร็จ กรุณาลองอีกครั้ง');
-      return false;
+      if (!mounted) return false;
+      // The link itself is settled — the sheet already answered with an id and
+      // a title. Only the plan's destination, which merely fills the post's
+      // own when it is blank, failed to load; that must not cancel publishing.
+      setState(() => _trip = link);
+      _message('เชื่อมแผนแล้ว แต่โหลดจุดหมายของแผนไม่สำเร็จ');
+      return true;
     }
   }
 
@@ -1094,6 +1116,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           // The brief merges per key, so an empty list would clear whatever the
           // trip already carries rather than leaving it alone.
           customStyles: _customStyles.isEmpty ? null : _customStyles,
+          // The เชื่อมกับแผนของฉัน step: a plan links, confirming with none
+          // unlinks, and both are deliberate answers the traveller just gave.
+          linkedTripId: _trip == null
+              ? const Patch<String>.clear()
+              : Patch<String>.value(_trip!.id),
           // About trip. `specialNotes` is write-only on this API — it goes up
           // and never comes back on the trip — so the overview survives the
           // publish but not a reopen; the local draft is what restores it.
@@ -1259,6 +1286,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               // inset itself instead of sitting inside a SafeArea.
               CreatePostHeader(
                 onClose: _close,
+                onPickCover: _pickCover,
                 onImportPhotos: _createFromPhotos,
                 importing: _arranging,
                 onCancelImport: _cancelArrangement,
@@ -1269,19 +1297,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
                   children: [
-                    PostTitleField(
-                      title: _postTitle.text,
-                      onTap: _editTitle,
-                    ),
-                    const SizedBox(height: 14),
-                    PostPlanLinkCard(trip: _trip?.title, onTap: _pickTrip),
-                    const SizedBox(height: 16),
-                    PostAuthorRow(
+                    // Author, title and activities are one card: they all
+                    // describe the post, while everything under Trip Detail
+                    // describes a spot. The plan link is not here any more —
+                    // it is the Next step's own screen.
+                    PostIdentityCard(
                       session: session,
                       audience: _audience,
                       onChangeAudience: _pickAudience,
+                      title: _postTitle.text,
+                      styles: _styles,
+                      customStyles: _customStyles,
+                      onEditTitle: _editTitle,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 10),
                     PostAboutTripRow(about: _about, onTap: _editAbout),
                     const SizedBox(height: 10),
                     // The spots are one section of the page now, not the whole
