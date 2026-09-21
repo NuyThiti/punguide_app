@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -6,6 +7,7 @@ import '../../../../shared/widgets/cover_image.dart';
 import '../../../auth/domain/auth_session.dart';
 import '../../../create_trip/domain/plan_labels.dart';
 import '../../domain/models/post_draft.dart';
+import 'post_about_trip.dart';
 import 'post_audience_chip.dart';
 import 'post_block.dart';
 
@@ -24,6 +26,8 @@ class PostIdentityCard extends StatelessWidget {
     required this.styles,
     required this.customStyles,
     required this.onEditTitle,
+    required this.about,
+    required this.onEditAbout,
   });
 
   /// Null while signed out — the guest path still reaches the composer.
@@ -34,6 +38,10 @@ class PostIdentityCard extends StatelessWidget {
   final List<TravelStyle> styles;
   final List<String> customStyles;
   final VoidCallback onEditTitle;
+
+  /// About trip is set in the Title sheet now, so the card only reads it back.
+  final PostAboutTrip about;
+  final VoidCallback onEditAbout;
 
   @override
   Widget build(BuildContext context) {
@@ -116,19 +124,24 @@ class PostIdentityCard extends StatelessWidget {
           const SizedBox(height: 10),
           // Nothing chosen yet reads as one dashed invitation; once there are
           // activities the invitation shrinks to a round + beside them.
-          if (chosen.isEmpty)
-            _TripActivityChip(onTap: onEditTitle)
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (chosen.isEmpty)
+                _TripActivityChip(onTap: onEditTitle)
+              else ...[
                 _AddActivityButton(onTap: onEditTitle),
                 for (final (label, icon) in chosen)
                   _ChosenActivityChip(label: label, icon: icon),
               ],
-            ),
+            ],
+          ),
+          // Once it says something, About trip needs the width to say it, so
+          // it drops out of the chip row onto a line of its own.
+          if (!about.isEmpty)
+            PostAboutTripRow(about: about, onTap: onEditAbout),
         ],
       ),
     );
@@ -234,6 +247,7 @@ class PostTitleResult {
     required this.title,
     required this.styles,
     this.customStyles = const [],
+    this.about = const PostAboutTrip(),
   });
 
   final String title;
@@ -245,6 +259,10 @@ class PostTitleResult {
   /// Anything the traveller typed under "+ เพิ่ม", which goes up as
   /// `customStyles` on the same two calls.
   final List<String> customStyles;
+
+  /// The overview and the budget, set in the same sheet — they describe the
+  /// post just as its name and its activities do.
+  final PostAboutTrip about;
 }
 
 /// Names the post and says what kind of trip it was.
@@ -256,6 +274,7 @@ Future<PostTitleResult?> showPostTitleSheet(
   required String title,
   required List<TravelStyle> styles,
   List<String> customStyles = const [],
+  PostAboutTrip about = const PostAboutTrip(),
 }) {
   return showModalBottomSheet<PostTitleResult>(
     context: context,
@@ -266,6 +285,7 @@ Future<PostTitleResult?> showPostTitleSheet(
       title: title,
       styles: styles,
       customStyles: customStyles,
+      about: about,
     ),
   );
 }
@@ -275,11 +295,13 @@ class _PostTitleSheet extends StatefulWidget {
     required this.title,
     required this.styles,
     required this.customStyles,
+    required this.about,
   });
 
   final String title;
   final List<TravelStyle> styles;
   final List<String> customStyles;
+  final PostAboutTrip about;
 
   @override
   State<_PostTitleSheet> createState() => _PostTitleSheetState();
@@ -290,6 +312,21 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
       TextEditingController(text: widget.title);
   late final Set<TravelStyle> _picked = {...widget.styles};
   late final List<String> _custom = [...widget.customStyles];
+
+  late final TextEditingController _overview =
+      TextEditingController(text: widget.about.overview);
+  late final TextEditingController _budget = TextEditingController(
+    text: widget.about.budget == null ? '' : _plainAmount(widget.about.budget!),
+  );
+  late String _currency = widget.about.currency;
+
+  static String _plainAmount(double value) =>
+      value == value.roundToDouble() ? value.round().toString() : '$value';
+
+  double? get _typedBudget {
+    final parsed = double.tryParse(_budget.text.trim().replaceAll(',', ''));
+    return parsed != null && parsed > 0 ? parsed : null;
+  }
 
   Future<void> _addCustom() async {
     final added = await showDialog<String>(
@@ -304,6 +341,8 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
   @override
   void dispose() {
     _controller.dispose();
+    _overview.dispose();
+    _budget.dispose();
     super.dispose();
   }
 
@@ -320,156 +359,271 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD9D6D1),
-                    borderRadius: BorderRadius.circular(99),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD9D6D1),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const SizedBox(width: 34),
-                    const Expanded(
-                      child: Text(
-                        'Title',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.foreground,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const SizedBox(width: 34),
+                      const Expanded(
+                        child: Text(
+                          'Title',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.foreground,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                    Material(
-                      color: AppColors.postDraftBg,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        onTap: () => Navigator.of(context).pop(),
-                        customBorder: const CircleBorder(),
-                        child: const SizedBox(
-                          width: 34,
-                          height: 34,
-                          child: Icon(Icons.close,
-                              size: 19, color: AppColors.foreground),
+                      Material(
+                        color: AppColors.postDraftBg,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          onTap: () => Navigator.of(context).pop(),
+                          customBorder: const CircleBorder(),
+                          child: const SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: Icon(Icons.close,
+                                size: 19, color: AppColors.foreground),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _controller,
-                  maxLength: 200,
-                  autofocus: widget.title.trim().isEmpty,
-                  textInputAction: TextInputAction.done,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
-                  decoration: InputDecoration(
-                    counterText: '',
-                    hintText: 'Title',
-                    hintStyle: const TextStyle(
-                      color: AppColors.postFieldHint,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    suffixIcon: const Icon(Icons.edit_outlined,
-                        size: 20, color: AppColors.postPurple),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 15),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppColors.chipBorder),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppColors.chipBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(
-                          color: AppColors.postPurple, width: 1.3),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Trip Activity',
-                    style: TextStyle(
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _controller,
+                    maxLength: 200,
+                    autofocus: widget.title.trim().isEmpty,
+                    textInputAction: TextInputAction.done,
+                    style: const TextStyle(
                       color: AppColors.foreground,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: 'Title',
+                      hintStyle: const TextStyle(
+                        color: AppColors.postFieldHint,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      suffixIcon: const Icon(Icons.edit_outlined,
+                          size: 20, color: AppColors.postPurple),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 15),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide:
+                            const BorderSide(color: AppColors.chipBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide:
+                            const BorderSide(color: AppColors.chipBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(
+                            color: AppColors.postPurple, width: 1.3),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final entry in styleByLabel.entries)
-                      _ActivityChip(
-                        label: entry.key,
-                        icon: styleIcon(entry.value),
-                        selected: _picked.contains(entry.value),
-                        onTap: () => setState(() =>
-                            _picked.contains(entry.value)
-                                ? _picked.remove(entry.value)
-                                : _picked.add(entry.value)),
+                  const SizedBox(height: 18),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Trip Activity',
+                      style: TextStyle(
+                        color: AppColors.foreground,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
-                    for (final label in _custom)
-                      _ActivityChip(
-                        label: label,
-                        icon: Icons.close,
-                        selected: true,
-                        onTap: () => setState(() => _custom.remove(label)),
-                      ),
-                    _ActivityChip(
-                      label: 'เพิ่ม',
-                      icon: Icons.add,
-                      outlined: true,
-                      selected: false,
-                      onTap: _addCustom,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(PostTitleResult(
-                      title: _controller.text.trim(),
-                      styles: _picked.toList(growable: false),
-                      customStyles: List<String>.unmodifiable(_custom),
-                    )),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.postShare,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(27)),
-                    ),
-                    child: const Text(
-                      'ตกลง',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final entry in styleByLabel.entries)
+                        _ActivityChip(
+                          label: entry.key,
+                          icon: styleIcon(entry.value),
+                          selected: _picked.contains(entry.value),
+                          onTap: () => setState(() =>
+                              _picked.contains(entry.value)
+                                  ? _picked.remove(entry.value)
+                                  : _picked.add(entry.value)),
+                        ),
+                      for (final label in _custom)
+                        _ActivityChip(
+                          label: label,
+                          icon: Icons.close,
+                          selected: true,
+                          onTap: () => setState(() => _custom.remove(label)),
+                        ),
+                      _ActivityChip(
+                        label: 'เพิ่ม',
+                        icon: Icons.add,
+                        outlined: true,
+                        selected: false,
+                        onTap: _addCustom,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  const _SheetSection('About trip'),
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 96,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 13, vertical: 11),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.chipBorder),
+                    ),
+                    child: TextField(
+                      controller: _overview,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: InputBorder.none,
+                        hintText: 'ภาพรวมของทริป',
+                        hintStyle: TextStyle(color: AppColors.postFieldHint),
+                      ),
+                      style: const TextStyle(fontSize: 14, height: 1.45),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(horizontal: 13),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.chipBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _budget,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9.,]')),
+                            ],
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              hintText: '0.00',
+                              hintStyle:
+                                  TextStyle(color: AppColors.postFieldHint),
+                            ),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const Text(
+                          'ต่อคน',
+                          style: TextStyle(
+                              color: AppColors.postFieldHint, fontSize: 12),
+                        ),
+                        const SizedBox(width: 10),
+                        PopupMenuButton<String>(
+                          tooltip: 'สกุลเงิน',
+                          initialValue: _currency,
+                          position: PopupMenuPosition.under,
+                          onSelected: (value) =>
+                              setState(() => _currency = value),
+                          itemBuilder: (context) => [
+                            for (final code in aboutTripCurrencies)
+                              PopupMenuItem<String>(
+                                  value: code, child: Text(code)),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.chipBorder),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _currency,
+                                  style: const TextStyle(
+                                    color: AppColors.foreground,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Icon(Icons.keyboard_arrow_down,
+                                    size: 16, color: AppColors.muted),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: FilledButton(
+                      onPressed: () =>
+                          Navigator.of(context).pop(PostTitleResult(
+                        title: _controller.text.trim(),
+                        styles: _picked.toList(growable: false),
+                        customStyles: List<String>.unmodifiable(_custom),
+                        about: PostAboutTrip(
+                          overview: _overview.text.trim(),
+                          budget: _typedBudget,
+                          currency: _currency,
+                        ),
+                      )),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.postShare,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(27)),
+                      ),
+                      child: const Text(
+                        'ตกลง',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -537,6 +691,28 @@ class _ActivityChip extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A heading inside the Title sheet, the same weight as "Trip Activity".
+class _SheetSection extends StatelessWidget {
+  const _SheetSection(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.foreground,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

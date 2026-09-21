@@ -17,8 +17,11 @@ String _clock12(TimeOfDay time) {
   return '$hour:$minute ${time.period == DayPeriod.am ? 'AM' : 'PM'}';
 }
 
-/// The filled rows under a spot's story: one per detail that has something in
-/// it. Tapping a row opens its sheet again.
+/// The filled details under a spot's story, on one line.
+///
+/// Compact on purpose: these are notes beside the story, not the story — three
+/// stacked two-line rows pushed the spot's own words off the screen. Tapping
+/// one reopens its sheet.
 class PostSpotDetailRows extends StatelessWidget {
   const PostSpotDetailRows({
     super.key,
@@ -33,51 +36,63 @@ class PostSpotDetailRows extends StatelessWidget {
   Widget build(BuildContext context) {
     if (details.isEmpty) return const SizedBox.shrink();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (details.hasTime)
-          _DetailRow(
-            icon: Icons.schedule,
-            // With a visit time the hours are the second line; without one
-            // they are the row itself, and repeating the label would say the
-            // same thing twice.
-            title: details.visitedAt == null
-                ? 'เวลาเปิด / ปิด'
-                : 'เวลาที่ไป ${_clock12(details.visitedAt!)}',
-            subtitle: details.visitedAt == null
-                ? _hoursRange(details)
-                : _hoursLine(details),
-            onTap: () => onEdit(PostSpotDetail.time),
-          ),
-        if (details.hasTransport)
-          _DetailRow(
-            icon: Icons.directions_bus_filled_outlined,
-            title: details.transportModes.isEmpty
-                ? 'การเดินทาง'
-                : details.transportModes.join(' · '),
-            subtitle: details.transportCost == null
-                ? null
-                : 'ค่ารถ · ${details.transportCost!.asBaht}',
-            onTap: () => onEdit(PostSpotDetail.transport),
-          ),
-        if (details.hasHack)
-          _DetailRow(
-            icon: Icons.info_outline,
-            title: details.tripHack.trim(),
-            onTap: () => onEdit(PostSpotDetail.hack),
-          ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        // Every chip yields rather than only the last one: any of the three can
+        // be long, and a chip that cannot shrink pushes the others off the
+        // line instead of ellipsising its own text.
+        children: [
+          if (details.hasTime) ...[
+            Flexible(
+              child: _DetailChip(
+                icon: Icons.schedule,
+                text: _timeText(details),
+                onTap: () => onEdit(PostSpotDetail.time),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (details.hasTransport) ...[
+            Flexible(
+              child: _DetailChip(
+                icon: Icons.directions_bus_filled_outlined,
+                text: _transportText(details),
+                onTap: () => onEdit(PostSpotDetail.transport),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (details.hasHack)
+            Flexible(
+              child: _DetailChip(
+                icon: Icons.info_outline,
+                text: details.tripHack.trim(),
+                onTap: () => onEdit(PostSpotDetail.hack),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
-  /// "เวลาเปิด / ปิด · 06.00 - 14.30 น.", or nothing when no hours were given.
-  static String? _hoursLine(PostSpotDetails details) {
-    final range = _hoursRange(details);
-    return range == null ? null : 'เวลาเปิด / ปิด · $range';
+  /// "6:00 AM", or the opening hours when that is all there is.
+  static String _timeText(PostSpotDetails details) {
+    final visited = details.visitedAt;
+    if (visited != null) return _clock12(visited);
+    return _hoursRange(details) ?? '';
   }
 
-  /// Just "06.00 - 14.30 น.".
+  /// "MRT · เดิน ฿100", dropping whichever half is missing.
+  static String _transportText(PostSpotDetails details) {
+    final modes = details.transportModes.join(' · ');
+    final cost = details.transportCost;
+    if (cost == null) return modes;
+    if (modes.isEmpty) return cost.asBaht;
+    return '$modes ${cost.asBaht}';
+  }
+
+  /// "06.00 - 14.30 น.", or null when no hours were given.
   static String? _hoursRange(PostSpotDetails details) {
     final opens = details.opensAt;
     final closes = details.closesAt;
@@ -91,56 +106,43 @@ class PostSpotDetailRows extends StatelessWidget {
 /// Which of the three a row or chip stands for.
 enum PostSpotDetail { time, transport, hack }
 
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
+class _DetailChip extends StatelessWidget {
+  const _DetailChip({
     required this.icon,
-    required this.title,
+    required this.text,
     required this.onTap,
-    this.subtitle,
   });
 
   final IconData icon;
-  final String title;
-  final String? subtitle;
+  final String text;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final sub = subtitle;
-
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 11),
+      borderRadius: BorderRadius.circular(99),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppColors.postPurpleSoft,
+          borderRadius: BorderRadius.circular(99),
+        ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 19, color: AppColors.postPurple),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: AppColors.foreground,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (sub != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      sub,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ],
+            Icon(icon, size: 13, color: AppColors.postPurple),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.postPurple,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],

@@ -132,7 +132,8 @@ void main() {
     expect(find.textContaining('฿ ~200 /คน'), findsWidgets);
   });
 
-  testWidgets('each wall asks the server for its own sort, measured from the '
+  testWidgets(
+      'each wall asks the server for its own sort, measured from the '
       'traveller', (tester) async {
     _phone(tester);
 

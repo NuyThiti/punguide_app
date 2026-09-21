@@ -116,7 +116,8 @@ void main() {
       expect(find.text('ข้ามไปก่อน'), findsOneWidget);
     });
 
-    testWidgets('reads each answer back in the action bar and applies them to '
+    testWidgets(
+        'reads each answer back in the action bar and applies them to '
         'the board', (tester) async {
       tester.view.physicalSize = const Size(393 * 3, 852 * 3);
       tester.view.devicePixelRatio = 3;
@@ -262,10 +263,9 @@ void main() {
   });
 
   group('TripFilter.toFeedQuery', () {
-    Map<String, dynamic> queryOf(TripFilter filter) => filter
-        .toFeedQuery(sort: FeedSort.nearest)
-        .toQuery()
-      ..removeWhere((_, value) => value == null);
+    Map<String, dynamic> queryOf(TripFilter filter) =>
+        filter.toFeedQuery(sort: FeedSort.nearest).toQuery()
+          ..removeWhere((_, value) => value == null);
 
     test('a chip with an enum goes up as a wire value, one without as text',
         () {

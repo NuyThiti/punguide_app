@@ -142,6 +142,7 @@ Map<String, dynamic> _image(String id, String path) => {
       'mediaId': id,
       'urls': {'large': path, 'thumbnail': path}
     };
+
 /// The bar's Next now leads through เชื่อมกับแผนของฉัน before anything is
 /// published, so every publish in these tests confirms that step.
 Future<void> _tapNext(WidgetTester tester) async {
@@ -162,6 +163,34 @@ Future<void> _tapNext(WidgetTester tester) async {
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
   }
+}
+
+/// Writes About trip through the Title sheet and confirms it.
+Future<void> _fillAboutTrip(
+  WidgetTester tester, {
+  String overview = '',
+  String budget = '',
+}) async {
+  await tester.tap(find.text('Title..'));
+  await tester.pumpAndSettle();
+  if (overview.isNotEmpty) {
+    await tester.enterText(
+        find.widgetWithText(TextField, 'ภาพรวมของทริป'), overview);
+  }
+  if (budget.isNotEmpty) {
+    await tester.enterText(find.widgetWithText(TextField, '0.00'), budget);
+  }
+  await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+  await tester.pumpAndSettle();
+}
+
+/// Taps one of a spot's options. The row scrolls sideways now, so a chip past
+/// the fold has to be brought on screen before it can be hit.
+Future<void> _tapSpotOption(WidgetTester tester, Finder chip) async {
+  await tester.ensureVisible(chip.first);
+  await tester.pumpAndSettle();
+  await tester.tap(chip.first);
+  await tester.pumpAndSettle();
 }
 
 Future<void> _finishPublish(WidgetTester tester) async {
@@ -309,7 +338,8 @@ void main() {
     await _settleImport(tester);
 
     // A spot per section, each holding the photo it was written about.
-    final blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
+    final blocks =
+        tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
     expect(blocks, hasLength(2));
     expect(blocks.first.items!.first.bodyController.text,
         'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
@@ -368,7 +398,9 @@ void main() {
     await tester.tap(find.text('Create from Photos'));
     await _settleImport(tester);
 
-    expect(adapter.bodyOf('POST /trips/trip-new/contents/generate')!['locationName'],
+    expect(
+        adapter
+            .bodyOf('POST /trips/trip-new/contents/generate')!['locationName'],
         'เชียงใหม่');
   });
 
@@ -414,7 +446,8 @@ void main() {
 
     // One card per photo, in the order they were sent, the wordless one kept
     // for the traveller to fill in rather than folded into its neighbour.
-    final blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
+    final blocks =
+        tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
     expect(blocks, hasLength(2));
     expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
     expect(blocks.last.imagePaths, ['assets/images/puntok_london.jpg']);
@@ -450,8 +483,8 @@ void main() {
     expect(find.byType(PostBlock), findsOneWidget);
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
         hasLength(2));
-    expect(
-        find.textContaining('ผู้ช่วยเขียนโพสต์ยังไม่เปิดใช้งาน'), findsOneWidget);
+    expect(find.textContaining('ผู้ช่วยเขียนโพสต์ยังไม่เปิดใช้งาน'),
+        findsOneWidget);
   });
 
   testWidgets('only a tap turns the assistant\'s place into a confirmed one',
@@ -512,7 +545,8 @@ void main() {
 
     // Confirmed only because a person tapped it, and it carries the id and
     // coordinates the suggestion came with.
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['location'], {
+    expect(
+        adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['location'], {
       'status': 'confirmed',
       'name': 'วัดเจดีย์หลวง',
       'placeId': 'ChIJ-wat',
@@ -575,8 +609,11 @@ void main() {
     expect(find.text('home'), findsOneWidget);
     // The import created the draft before there was anything to name it with,
     // so the trip carries provisional fields until publish sends the real ones.
-    expect(adapter.bodyOf('POST /trips'),
-        {'type': 'content', 'title': 'ร่างจากรูป', 'destination': 'ยังไม่ระบุ'});
+    expect(adapter.bodyOf('POST /trips'), {
+      'type': 'content',
+      'title': 'ร่างจากรูป',
+      'destination': 'ยังไม่ระบุ'
+    });
     final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
     expect(patched['title'], 'วันหยุด');
     expect(patched['destination'], 'ระหว่างทาง');
@@ -858,8 +895,10 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
     for (var i = 0; i < 2; i++) {
-      await tester.ensureVisible(find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-      await tester.tap(find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
+      await tester.ensureVisible(
+          find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
+      await tester.tap(
+          find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
       await tester.pumpAndSettle();
       await tester.tap(find.text('เลือกจากคลังภาพ'));
       await tester.pumpAndSettle();
@@ -898,8 +937,10 @@ void main() {
     addTearDown(() => ImagePickerPlatform.instance = previousPicker);
     await _pumpComposer(tester);
     for (var i = 0; i < 2; i++) {
-      await tester.ensureVisible(find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-      await tester.tap(find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
+      await tester.ensureVisible(
+          find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
+      await tester.tap(
+          find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
       await tester.pumpAndSettle();
       await tester.tap(find.text('เลือกจากคลังภาพ'));
       await tester.pumpAndSettle();
@@ -923,9 +964,7 @@ void main() {
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.enterText(
-        _bodyField().first,
-        'เรื่องราว');
+    await tester.enterText(_bodyField().first, 'เรื่องราว');
     await tester.pumpAndSettle();
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
     await _tapNext(tester);
@@ -948,9 +987,7 @@ void main() {
       ],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.enterText(
-        _bodyField().first,
-        'เดินเล่น');
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
     await tester.pumpAndSettle();
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
     await _tapNext(tester);
@@ -995,8 +1032,8 @@ void main() {
     // Author, title and activities read top to bottom inside that one card.
     final card = find.byType(PostIdentityCard);
     for (final part in ['Public', 'Title..', 'Trip activity']) {
-      expect(find.descendant(of: card, matching: find.text(part)),
-          findsOneWidget,
+      expect(
+          find.descendant(of: card, matching: find.text(part)), findsOneWidget,
           reason: part);
     }
     expect(tester.getTopLeft(find.text('Public')).dy,
@@ -1005,10 +1042,30 @@ void main() {
         lessThan(tester.getTopLeft(find.text('Trip activity')).dy));
 
     // The spot: a heading, where it is, then the story.
+    // Optional parts offer themselves from the spot's options row rather than
+    // sit open as blank fields.
+    expect(find.text('ชื่อหัวข้อ'), findsOneWidget);
+    expect(find.text('Location'), findsOneWidget);
+    // About trip is written in the Title sheet, so it is not on the page.
+    expect(find.text('About trip'), findsNothing);
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
-        findsOneWidget);
-    expect(find.text('Add Location'), findsOneWidget);
+        findsNothing);
+    expect(find.text('Add Location'), findsNothing);
     expect(find.text('Tell us about your trip..'), findsOneWidget);
+
+    // Every option is on one line that scrolls, rather than wrapping onto a
+    // second row and taking more height than the story itself.
+    final options = find.descendant(
+      of: find.byType(PostBlock),
+      matching: find.byWidgetPredicate((w) =>
+          w is SingleChildScrollView && w.scrollDirection == Axis.horizontal),
+    );
+    expect(options, findsOneWidget);
+    for (final chip in ['ชื่อหัวข้อ', 'Location', 'Trip Hack']) {
+      expect(find.descendant(of: options, matching: find.text(chip)),
+          findsOneWidget,
+          reason: chip);
+    }
 
     // Attachments: a photo, the time, how you got there, and the hack.
     for (final icon in const [
@@ -1086,15 +1143,11 @@ void main() {
       'moving a section keeps its text and deleting removes only that section',
       (tester) async {
     await _pumpComposer(tester);
-    await tester.enterText(
-        _bodyField().first,
-        'ส่วนแรก');
+    await tester.enterText(_bodyField().first, 'ส่วนแรก');
     await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
     await tester.tap(find.text('เพิ่มจุดต่อไป'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-        _bodyField().last,
-        'ส่วนที่สอง');
+    await tester.enterText(_bodyField().last, 'ส่วนที่สอง');
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('เลื่อนขึ้น').last);
     await tester.pumpAndSettle();
@@ -1107,23 +1160,42 @@ void main() {
     expect(find.text('ส่วนที่สอง'), findsOneWidget);
   });
 
-  testWidgets('the spot heading is always on screen and its + focuses it',
+  testWidgets('the spot heading is an add option until it is asked for',
       (tester) async {
     await _pumpComposer(tester);
 
+    // Nothing to fill in yet — just the offer.
+    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+        findsNothing);
+    expect(find.text('ชื่อหัวข้อ'), findsOneWidget);
+
+    await _tapSpotOption(tester, find.text('ชื่อหัวข้อ'));
+
+    // Now the field is there, focused, ready to type into.
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
         findsOneWidget);
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).titleFocus.hasFocus,
+        isTrue);
 
     await tester.enterText(find.byType(TextField).first, 'ร้านอาหารที่ต้องแวะ');
     await tester.pumpAndSettle();
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text,
         'ร้านอาหารที่ต้องแวะ');
+  });
 
-    await tester.tap(find.byTooltip('ตั้งชื่อหัวข้อ'));
+  testWidgets('a heading that has text stays put when focus moves on',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _tapSpotOption(tester, find.text('ชื่อหัวข้อ'));
+    await tester.enterText(find.byType(TextField).first, 'ร้านอาหารที่ต้องแวะ');
     await tester.pumpAndSettle();
-    expect(tester.widget<PostBlock>(find.byType(PostBlock)).titleFocus.hasFocus,
-        isTrue);
+
+    // Tapping the story takes focus away; the heading must not vanish under
+    // the writer's hands.
+    await tester.tap(find.text('Tell us about your trip..'));
+    await tester.pumpAndSettle();
+    expect(find.text('ร้านอาหารที่ต้องแวะ'), findsOneWidget);
   });
 
   testWidgets('a titled section can publish multiple photo description sets',
@@ -1247,9 +1319,7 @@ void main() {
 
     await _pumpComposer(tester, adapter: adapter);
 
-    await tester
-        .tap(find.text('Add Location').first);
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.text('Location'));
 
     // The sheet opens on its own header, and with no location answered yet it
     // offers to turn location services on instead of guessing a point.
@@ -1286,7 +1356,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Akha Ama Coffee'), findsNothing);
-    expect(find.text('Add Location'), findsOneWidget);
+    // With the pin gone the row goes with it; the options row offers it again.
+    expect(find.text('Add Location'), findsNothing);
+    expect(find.text('Location'), findsOneWidget);
   });
 
   testWidgets('a chosen photo fills the width above its place row',
@@ -1355,58 +1427,56 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Trip Detail heads the spots, below the About trip row',
-      (tester) async {
+  testWidgets('About trip is written in the Title sheet', (tester) async {
     await _pumpComposer(tester);
 
-    expect(find.text('Trip Detail'), findsOneWidget);
-    expect(find.text('About trip (Overview & Budget)'), findsOneWidget);
+    // Nothing of its own on the page — it rides along with the title and the
+    // activities, which describe the post just as it does.
+    expect(find.widgetWithText(PostAddOption, 'About trip'), findsNothing);
 
-    final about = tester.getTopLeft(find.text('About trip (Overview & Budget)'));
-    final heading = tester.getTopLeft(find.text('Trip Detail'));
-    expect(heading.dy, greaterThan(about.dy),
-        reason: 'the heading introduces the spots, so it sits below the row');
-  });
-
-  testWidgets('About trip keeps the overview and the budget on the row',
-      (tester) async {
-    await _pumpComposer(tester);
-
-    await tester.tap(find.text('About trip (Overview & Budget)'));
+    await tester.tap(find.text('Title..'));
     await tester.pumpAndSettle();
-
     expect(find.text('About trip'), findsOneWidget);
-    expect(find.text('Trip Overview'), findsOneWidget);
-    expect(find.text('Budget'), findsOneWidget);
+    expect(find.text('ภาพรวมของทริป'), findsOneWidget);
     expect(find.text('ต่อคน'), findsOneWidget);
     expect(find.text('THB'), findsOneWidget);
+  });
+  testWidgets('a filled About trip reads back inside the card',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _fillAboutTrip(tester, overview: 'เดินเที่ยวย่านพระนคร');
 
-    await tester.enterText(
-        find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'เดินเที่ยวย่านพระนคร');
-    await tester.enterText(find.widgetWithText(TextField, '0.00'), '2000');
-    await tester.tap(find.text('ตกลง'));
-    await tester.pumpAndSettle();
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('เดินเที่ยวย่านพระนคร')),
+        findsOneWidget);
+  });
+  testWidgets('About trip reads back the overview and the budget',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _fillAboutTrip(tester,
+        overview: 'เดินเที่ยวย่านพระนคร', budget: '2000');
 
-    // The row reads back what was written, budget on its own side.
     expect(find.text('เดินเที่ยวย่านพระนคร'), findsOneWidget);
     expect(find.text('฿2,000'), findsOneWidget);
-    expect(find.text('About trip (Overview & Budget)'), findsNothing);
   });
-
-  testWidgets('ยกเลิก on About trip leaves the row untouched', (tester) async {
+  testWidgets('dismissing the Title sheet keeps About trip as it was',
+      (tester) async {
     await _pumpComposer(tester);
+    await _fillAboutTrip(tester, overview: 'ที่เขียนไว้ก่อน');
 
-    await tester.tap(find.text('About trip (Overview & Budget)'));
+    await tester.tap(find.text('ที่เขียนไว้ก่อน'));
     await tester.pumpAndSettle();
     await tester.enterText(
         find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'พิมพ์ไปแล้วเปลี่ยนใจ');
-    await tester.tap(find.text('ยกเลิก'));
+    // Out through the scrim rather than ตกลง.
+    await tester.tapAt(const Offset(200, 30));
     await tester.pumpAndSettle();
 
     expect(find.text('พิมพ์ไปแล้วเปลี่ยนใจ'), findsNothing);
-    expect(find.text('About trip (Overview & Budget)'), findsOneWidget);
+    expect(find.text('ที่เขียนไว้ก่อน'), findsOneWidget);
   });
-
   testWidgets('About trip goes up as specialNotes and budgetLimit',
       (tester) async {
     final adapter = FakeAdapter({
@@ -1415,13 +1485,8 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
 
-    await tester.tap(find.text('About trip (Overview & Budget)'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-        find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'ทริปเดินกินย่านเมืองเก่า');
-    await tester.enterText(find.widgetWithText(TextField, '0.00'), '2000');
-    await tester.tap(find.text('ตกลง'));
-    await tester.pumpAndSettle();
+    await _fillAboutTrip(tester,
+        overview: 'ทริปเดินกินย่านเมืองเก่า', budget: '2000');
 
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
@@ -1525,8 +1590,7 @@ void main() {
   testWidgets('Trip Hack fills a row under the story', (tester) async {
     await _pumpComposer(tester);
 
-    await tester.tap(find.text('Trip Hack'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.text('Trip Hack'));
 
     expect(find.text('ทริคในการเที่ยวที่อยากแบ่งปันให้นักเดินทางคนอื่น'),
         findsOneWidget);
@@ -1542,8 +1606,7 @@ void main() {
   testWidgets('การเดินทาง keeps the chosen modes and the fare', (tester) async {
     await _pumpComposer(tester);
 
-    await tester.tap(find.byTooltip('การเดินทาง'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.byTooltip('การเดินทาง'));
 
     expect(find.text('รูปแบบการเดินทาง'), findsOneWidget);
     await tester.tap(find.text('MRT'));
@@ -1553,27 +1616,25 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    // The row reads them back in the order they were picked, fare underneath.
-    expect(find.text('MRT · เดิน'), findsOneWidget);
-    expect(find.text('ค่ารถ · ฿100'), findsOneWidget);
+    // One chip carries both, in the order the modes were picked.
+    expect(find.text('MRT · เดิน ฿100'), findsOneWidget);
   });
 
   testWidgets('Recommend Time writes the visit hour, then the opening hours',
       (tester) async {
     await _pumpComposer(tester);
 
-    await tester.tap(find.byTooltip('เวลาที่แนะนำ'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.byTooltip('เวลาที่แนะนำ'));
 
     expect(find.text('Recommend Time'), findsOneWidget);
     expect(find.text('เวลาที่ฉันไป'), findsOneWidget);
     // The wheel starts on 06:00, which is what the design shows.
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
-    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+    expect(find.text('6:00 AM'), findsOneWidget);
 
-    // Opening hours go on the same row as its second line.
-    await tester.tap(find.text('เวลาที่ไป 6:00 AM'));
+    // Opening hours join the same chip once they are set.
+    await tester.tap(find.text('6:00 AM'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เวลาเปิด - ปิด'));
     await tester.pumpAndSettle();
@@ -1582,33 +1643,28 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsOneWidget);
-    // And the visit time still heads the row, so the label is not repeated.
-    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+    // The visit time is what the chip shows; the hours live in its sheet.
+    expect(find.text('6:00 AM'), findsOneWidget);
   });
 
   testWidgets('opening hours alone do not repeat their own label',
       (tester) async {
     await _pumpComposer(tester);
 
-    await tester.tap(find.byTooltip('เวลาที่แนะนำ'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.byTooltip('เวลาที่แนะนำ'));
     await tester.tap(find.text('เวลาเปิด - ปิด'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    // The row is the hours; the second line must not say the same thing again.
-    expect(find.text('เวลาเปิด / ปิด'), findsOneWidget);
+    // With no visit time the chip is the hours themselves.
     expect(find.text('06.00 - 14.30 น.'), findsOneWidget);
-    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsNothing);
   });
 
   testWidgets('ยกเลิก on an extra leaves the spot as it was', (tester) async {
     await _pumpComposer(tester);
 
-    await tester.tap(find.text('Trip Hack'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.text('Trip Hack'));
     await tester.enterText(
         find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
         'เปลี่ยนใจ');
@@ -1625,8 +1681,7 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
 
-    await tester.tap(find.text('Trip Hack'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.text('Trip Hack'));
     await tester.enterText(
         find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
         'ไปเช้าคนน้อยกว่า');
@@ -1652,13 +1707,11 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
 
-    await tester.tap(find.byTooltip('เวลาที่แนะนำ'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.byTooltip('เวลาที่แนะนำ'));
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('การเดินทาง'));
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.byTooltip('การเดินทาง'));
     await tester.tap(find.text('MRT'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, '0'), '100');
@@ -1681,8 +1734,7 @@ void main() {
     expect(section['transportCurrency'], 'THB');
   });
 
-  testWidgets('a spot with no extras sends none of their keys',
-      (tester) async {
+  testWidgets('a spot with no extras sends none of their keys', (tester) async {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
@@ -1733,13 +1785,12 @@ void main() {
 
     expect(find.text('ทริปเดินกินย่านเมืองเก่า'), findsOneWidget);
     expect(find.text('฿2,000'), findsOneWidget);
-    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
-    expect(find.text('MRT · เดิน'), findsOneWidget);
+    expect(find.text('6:00 AM'), findsOneWidget);
+    expect(find.text('MRT · เดิน ฿100'), findsOneWidget);
     expect(find.text('ไปเช้าคนน้อยกว่า'), findsOneWidget);
   });
 
-  testWidgets('a custom Trip Activity goes up as customStyles',
-      (tester) async {
+  testWidgets('a custom Trip Activity goes up as customStyles', (tester) async {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
@@ -1750,7 +1801,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('เพิ่ม'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'เช่น ดำน้ำ'), 'ดำน้ำ');
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ดำน้ำ'), 'ดำน้ำ');
     await tester.tap(find.widgetWithText(TextButton, 'เพิ่ม'));
     await tester.pumpAndSettle();
 
@@ -1842,7 +1894,8 @@ void main() {
     expect(body['linkedTripId'], isNull);
   });
 
-  testWidgets('a post reopened with a linked plan remembers it', (tester) async {
+  testWidgets('a post reopened with a linked plan remembers it',
+      (tester) async {
     final trip = ApiTrip.fromJson({
       ...createdTripJson(),
       'contents': [

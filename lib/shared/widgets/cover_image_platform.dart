@@ -10,6 +10,8 @@ Widget buildCoverImage(String source, BoxFit fit, Alignment alignment) {
       );
 
   return source.startsWith('assets/')
-      ? Image.asset(source, fit: fit, alignment: alignment, errorBuilder: builder)
-      : Image.network(source, fit: fit, alignment: alignment, errorBuilder: builder);
+      ? Image.asset(source,
+          fit: fit, alignment: alignment, errorBuilder: builder)
+      : Image.network(source,
+          fit: fit, alignment: alignment, errorBuilder: builder);
 }

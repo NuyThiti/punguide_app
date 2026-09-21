@@ -117,7 +117,8 @@ void main() {
   testWidgets('swiping up advances to the next clip', (tester) async {
     await _pumpPuntok(tester);
 
-    await tester.fling(find.text('TravelWithTawn'), const Offset(0, -600), 1200);
+    await tester.fling(
+        find.text('TravelWithTawn'), const Offset(0, -600), 1200);
     await tester.pumpAndSettle();
 
     expect(find.text('NamPloyWalks'), findsOneWidget);

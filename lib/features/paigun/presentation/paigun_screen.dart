@@ -90,8 +90,7 @@ class PaigunScreen extends ConsumerWidget {
                               : 'ไม่มีทริปที่ตรงกับตัวกรอง',
                           onOpen: (row) => _openTrip(context, row),
                           onSave: (row) => _toggleSaved(context, ref, row),
-                          onRetry: () =>
-                              refreshPaigunFeed(ref),
+                          onRetry: () => refreshPaigunFeed(ref),
                         ),
                       ],
                       if (showTop) ...[
@@ -106,8 +105,7 @@ class PaigunScreen extends ConsumerWidget {
                               : 'ไม่มีทริปที่ตรงกับตัวกรอง',
                           onOpen: (row) => _openTrip(context, row),
                           onSave: (row) => _toggleSaved(context, ref, row),
-                          onRetry: () =>
-                              refreshPaigunFeed(ref),
+                          onRetry: () => refreshPaigunFeed(ref),
                         ),
                       ],
                     ],

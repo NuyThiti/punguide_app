@@ -21,8 +21,8 @@ class TripSocialMeta {
   final int remixes;
 
   factory TripSocialMeta.fromTrip(Trip trip) {
-    final text = '${trip.title} ${trip.destination} ${trip.description}'
-        .toLowerCase();
+    final text =
+        '${trip.title} ${trip.destination} ${trip.description}'.toLowerCase();
 
     if (text.contains('maldives')) {
       return const TripSocialMeta(

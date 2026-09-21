@@ -78,9 +78,7 @@ final searchResultsProvider = Provider.autoDispose
           final folded = query.toLowerCase();
           matches.sort((a, b) {
             final byScore = _score(b, folded).compareTo(_score(a, folded));
-            return byScore != 0
-                ? byScore
-                : b.likeCount.compareTo(a.likeCount);
+            return byScore != 0 ? byScore : b.likeCount.compareTo(a.likeCount);
           });
         }
       case SearchSort.popular:

@@ -179,8 +179,8 @@ void main() {
     expect(draft.title, 'สองวันช้า ๆ');
     expect(draft.contents, hasLength(2));
     expect(draft.contents.last.content, isEmpty);
-    expect(draft.contents.first.location!.status,
-        ContentLocationStatus.suggested);
+    expect(
+        draft.contents.first.location!.status, ContentLocationStatus.suggested);
     expect(draft.optionsFor(0)!.options.single.name, 'วัดเจดีย์หลวง');
     expect(draft.optionsFor(1)!.confidence, PlaceConfidence.low);
     expect(draft.optionsFor(1)!.options, isEmpty);
@@ -203,7 +203,8 @@ void main() {
     expect(() => call(photos: const []), throwsA(isA<FormatException>()));
     expect(
         () => call(
-            photos: List.generate(21, (_) => const PostAssistantPhoto(mediaId: a))),
+            photos:
+                List.generate(21, (_) => const PostAssistantPhoto(mediaId: a))),
         throwsA(isA<FormatException>()));
     expect(
         () => call(photos: const [
@@ -214,7 +215,8 @@ void main() {
 
     // Context and the one place name it may write are both capped.
     expect(() => call(notes: 'x' * 501), throwsA(isA<FormatException>()));
-    expect(() => call(locationName: 'x' * 201), throwsA(isA<FormatException>()));
+    expect(
+        () => call(locationName: 'x' * 201), throwsA(isA<FormatException>()));
 
     // A time without a zone is a guess; coordinates come in pairs.
     expect(
@@ -313,8 +315,8 @@ void main() {
       throwsA(isA<FormatException>()),
     );
     expect(
-      () => TripContentRequest(content: 'x', transportModes: ['x' * 51])
-          .toJson(),
+      () =>
+          TripContentRequest(content: 'x', transportModes: ['x' * 51]).toJson(),
       throwsA(isA<FormatException>()),
     );
     expect(
@@ -322,8 +324,8 @@ void main() {
       throwsA(isA<FormatException>()),
     );
     expect(
-      () => const TripContentRequest(content: 'x', transportCost: 1.005)
-          .toJson(),
+      () =>
+          const TripContentRequest(content: 'x', transportCost: 1.005).toJson(),
       throwsA(isA<FormatException>()),
     );
     expect(

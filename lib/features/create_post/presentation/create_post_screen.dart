@@ -334,12 +334,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       title: _postTitle.text,
       styles: _styles,
       customStyles: _customStyles,
+      about: _about,
     );
     if (result == null || !mounted) return;
     setState(() {
       _postTitle.text = result.title;
       _styles = List.unmodifiable(result.styles);
       _customStyles = List.unmodifiable(result.customStyles);
+      _about = result.about;
     });
     _saveLocal();
   }
@@ -1231,12 +1233,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// rather than being smuggled into `content`.
   /// Opens the About trip sheet. Backing out leaves what was there — only
   /// ตกลง writes, including writing a field back to empty on purpose.
-  Future<void> _editAbout() async {
-    final result = await showAboutTripSheet(context, current: _about);
-    if (result == null || !mounted) return;
-    setState(() => _about = result);
-    _saveLocal();
-  }
+  /// The filled About trip row reopens the Title sheet, which is where both
+  /// halves of it are written now.
+  void _editAbout() => _editTitle();
 
   /// Opens the sheet behind one of the three chips and keeps what it answers.
   ///
@@ -1309,24 +1308,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       styles: _styles,
                       customStyles: _customStyles,
                       onEditTitle: _editTitle,
+                      about: _about,
+                      onEditAbout: _editAbout,
                     ),
                     const SizedBox(height: 10),
-                    PostAboutTripRow(about: _about, onTap: _editAbout),
-                    const SizedBox(height: 10),
-                    // The spots are one section of the page now, not the whole
-                    // of it, so they get a heading of their own.
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Trip Detail',
-                        style: TextStyle(
-                          color: AppColors.foreground,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
                     PostWarnings(
                       warnings: _warnings,
                       onDismiss: () => setState(() => _warnings = const []),

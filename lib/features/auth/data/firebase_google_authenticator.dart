@@ -41,8 +41,7 @@ class FirebaseGoogleAuthenticator implements GoogleAuthenticator {
   Future<void> _ensureInitialized() {
     return _initialization ??= _googleSignIn.initialize(
       clientId: _clientId,
-      serverClientId:
-          _serverClientId?.isEmpty ?? true ? null : _serverClientId,
+      serverClientId: _serverClientId?.isEmpty ?? true ? null : _serverClientId,
     );
   }
 

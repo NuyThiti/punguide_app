@@ -72,9 +72,7 @@ class TripCard extends StatelessWidget {
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
-                          trip.isSaved
-                              ? Icons.bookmark
-                              : Icons.bookmark_border,
+                          trip.isSaved ? Icons.bookmark : Icons.bookmark_border,
                           size: 18,
                           color: trip.isSaved
                               ? AppColors.primary
@@ -192,7 +190,8 @@ class TripCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Divider(height: 1, color: Colors.black.withValues(alpha: 0.05)),
+                  Divider(
+                      height: 1, color: Colors.black.withValues(alpha: 0.05)),
                   const SizedBox(height: 12),
                   Row(
                     children: [

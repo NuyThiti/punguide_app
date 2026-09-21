@@ -78,8 +78,7 @@ class CreateSheet extends StatelessWidget {
                     icon: 'assets/icons/create_punguide.svg',
                     title: 'PunGuide',
                     subtitle: 'แบ่งปันประสบการณ์ทริปของคุณ',
-                    onTap: () =>
-                         Navigator.of(context).pop(CreateAction.post),
+                    onTap: () => Navigator.of(context).pop(CreateAction.post),
                   ),
                   const SizedBox(height: 14),
                   _PlainOption(

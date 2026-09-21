@@ -98,8 +98,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Stack(
         children: [
           RefreshIndicator(
-            onRefresh: () =>
-                ref.read(homeFeedProvider.notifier).refresh(),
+            onRefresh: () => ref.read(homeFeedProvider.notifier).refresh(),
             child: ListView(
               controller: _scroll,
               padding:
@@ -241,7 +240,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // The same decoration the ไปกัน board puts on a card — distance and the
     // Top PunGuide badge — over Home's own unfiltered rows.
     final nearby = {
-      for (final row in ref.watch(homeBoardRowsProvider).valueOrNull ?? const [])
+      for (final row
+          in ref.watch(homeBoardRowsProvider).valueOrNull ?? const [])
         row.trip.id: row,
     };
 

@@ -212,7 +212,8 @@ class HomeActionCard extends StatelessWidget {
                 Container(
                   width: 30,
                   height: 25,
-                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  decoration:
+                      BoxDecoration(color: color, shape: BoxShape.circle),
                   child: const Icon(
                     Icons.arrow_outward,
                     color: Colors.white,

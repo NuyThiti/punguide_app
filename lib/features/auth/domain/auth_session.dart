@@ -53,8 +53,7 @@ class AuthSession {
       displayName: displayName,
       handle: handle,
       email: email,
-      avatarImage:
-          '$url${separator}t=${DateTime.now().millisecondsSinceEpoch}',
+      avatarImage: '$url${separator}t=${DateTime.now().millisecondsSinceEpoch}',
     );
   }
 

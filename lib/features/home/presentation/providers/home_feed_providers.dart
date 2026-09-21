@@ -60,7 +60,8 @@ class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
 
     final wasSaved = current[index].isSaved;
     state = AsyncData<List<TripListItem>>(
-      List<TripListItem>.of(current)..[index] = current[index].withSaved(!wasSaved),
+      List<TripListItem>.of(current)
+        ..[index] = current[index].withSaved(!wasSaved),
     );
 
     try {

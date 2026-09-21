@@ -1209,7 +1209,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('เลือกหมวดหมู่'), findsOneWidget);
 
-    await tester.tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.transport)));
+    await tester
+        .tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.transport)));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'ยืนยัน'));
     await tester.pumpAndSettle();
@@ -1254,7 +1255,8 @@ void main() {
     await tester.tap(find.text('วัดเชียงทอง').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.shopping)));
+    await tester
+        .tap(find.byKey(expenseCategoryTileKey(ExpenseCategory.shopping)));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'ยืนยัน'));
     await tester.pumpAndSettle();

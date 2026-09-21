@@ -66,7 +66,8 @@ class PuntokActionRail extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.post, required this.onTap, required this.onFollow});
+  const _Avatar(
+      {required this.post, required this.onTap, required this.onFollow});
 
   final PuntokPost post;
   final VoidCallback onTap;

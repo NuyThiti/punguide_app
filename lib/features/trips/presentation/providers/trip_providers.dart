@@ -15,7 +15,8 @@ import '../../domain/repositories/trip_repository.dart';
 
 final isarProvider = FutureProvider<Isar>((ref) => IsarService.open());
 
-final tripLocalDataSourceProvider = FutureProvider<TripLocalDataSource>((ref) async {
+final tripLocalDataSourceProvider =
+    FutureProvider<TripLocalDataSource>((ref) async {
   final isar = await ref.watch(isarProvider.future);
   final dataSource = IsarTripLocalDataSource(isar);
 
@@ -84,8 +85,7 @@ Trip _tripFromApi(api.ApiTrip trip) => Trip(
       id: trip.id,
       title: trip.title,
       destination: trip.destination,
-      coverImage:
-          trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
+      coverImage: trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
       budget: trip.totalBudget,
       duration: trip.schedule.durationDays ?? 0,
       description: _briefLine(trip.brief),

@@ -42,7 +42,7 @@ enum PostSpotExtra {
 /// and the extras underneath.
 ///
 /// The composer repeats this whole unit — "เพิ่มจุดต่อไป" adds the next one.
-class PostBlock extends StatelessWidget {
+class PostBlock extends StatefulWidget {
   const PostBlock({
     super.key,
     required this.titleController,
@@ -123,18 +123,58 @@ class PostBlock extends StatelessWidget {
   final VoidCallback? onRemove;
 
   @override
+  State<PostBlock> createState() => _PostBlockState();
+}
+
+class _PostBlockState extends State<PostBlock> {
+  /// The heading is opened from the options row and then stays: a heading
+  /// being typed must not vanish under the writer's hands.
+  bool _headingOpen = false;
+
+  bool get _headingVisible =>
+      _headingOpen ||
+      widget.titleController.text.trim().isNotEmpty ||
+      widget.titleFocus.hasFocus;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.titleController.addListener(_refresh);
+    widget.titleFocus.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.titleController.removeListener(_refresh);
+    widget.titleFocus.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  void _openHeading() {
+    setState(() => _headingOpen = true);
+    widget.titleFocus.requestFocus();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final blockItems = items ??
+    final blockItems = widget.items ??
         [
           PostBlockItem(
-              bodyController: bodyController,
-              imagePaths: [...imagePaths, if (imagePath != null) imagePath!],
-              place: place)
+              bodyController: widget.bodyController,
+              imagePaths: [
+                ...widget.imagePaths,
+                if (widget.imagePath != null) widget.imagePath!
+              ],
+              place: widget.place)
         ];
 
     return DragTarget<PostPhotoMove>(
-      onAcceptWithDetails: (details) =>
-          (onDropImageInItem ?? _legacyDropImage)(details.data, 0),
+      onAcceptWithDetails: (drop) =>
+          (widget.onDropImageInItem ?? _legacyDropImage)(drop.data, 0),
       builder: (context, candidates, rejected) => Container(
         decoration: BoxDecoration(
           border: candidates.isEmpty
@@ -144,11 +184,11 @@ class PostBlock extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (onRemove != null)
+            if (widget.onRemove != null)
               Align(
                 alignment: Alignment.centerRight,
                 child: InkWell(
-                  onTap: onRemove,
+                  onTap: widget.onRemove,
                   borderRadius: BorderRadius.circular(8),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -163,47 +203,53 @@ class PostBlock extends StatelessWidget {
                   ),
                 ),
               ),
-            _TitleRow(controller: titleController, focusNode: titleFocus),
-            const _Hairline(),
+            if (_headingVisible) ...[
+              _TitleRow(
+                controller: widget.titleController,
+                focusNode: widget.titleFocus,
+              ),
+              const _Hairline(),
+            ],
             for (var item = 0; item < blockItems.length; item++) ...[
               if (item > 0) const _Hairline(),
               _PostBlockContentItem(
-                blockIndex: blockIndex,
+                hideEmptyLocation: blockItems.length == 1,
+                blockIndex: widget.blockIndex,
                 itemIndex: item,
                 item: blockItems[item],
-                unavailableImages: unavailableImages,
-                coverPath: coverPath,
-                onSelectCover: onSelectCover,
+                unavailableImages: widget.unavailableImages,
+                coverPath: widget.coverPath,
+                onSelectCover: widget.onSelectCover,
                 onPickImage: () {
-                  final handler = onPickImageInItem;
+                  final handler = widget.onPickImageInItem;
                   if (handler == null) {
-                    onPickImage();
+                    widget.onPickImage();
                   } else {
                     handler(item);
                   }
                 },
-                onRemoveImage: (photo) =>
-                    (onRemoveImageInItem ?? _legacyRemoveImage)(item, photo),
+                onRemoveImage: (photo) => (widget.onRemoveImageInItem ??
+                    _legacyRemoveImage)(item, photo),
                 onMoveImage: (photo) =>
-                    (onMoveImageInItem ?? _legacyMoveImage)(item, photo),
+                    (widget.onMoveImageInItem ?? _legacyMoveImage)(item, photo),
                 onDropImage: (move) =>
-                    (onDropImageInItem ?? _legacyDropImage)(move, item),
+                    (widget.onDropImageInItem ?? _legacyDropImage)(move, item),
                 onDropBeforeImage: (move, position) =>
-                    (onDropBeforeImageInItem ?? _legacyDropBeforeImage)(
+                    (widget.onDropBeforeImageInItem ?? _legacyDropBeforeImage)(
                         move, item, position),
                 onPickPlace: () =>
-                    (onPickPlaceInItem ?? _legacyPickPlace)(item),
+                    (widget.onPickPlaceInItem ?? _legacyPickPlace)(item),
                 onClearPlace: () =>
-                    (onClearPlaceInItem ?? _legacyClearPlace)(item),
-                onConfirmLocation: onConfirmLocationInItem == null
+                    (widget.onClearPlaceInItem ?? _legacyClearPlace)(item),
+                onConfirmLocation: widget.onConfirmLocationInItem == null
                     ? null
-                    : () => onConfirmLocationInItem!(item),
+                    : () => widget.onConfirmLocationInItem!(item),
               ),
-              if (blockItems.length > 1 && onRemoveItem != null)
+              if (blockItems.length > 1 && widget.onRemoveItem != null)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
-                    onPressed: () => onRemoveItem!(item),
+                    onPressed: () => widget.onRemoveItem!(item),
                     icon: const Icon(Icons.delete_outline, size: 18),
                     label: const Text('ลบชุดข้อมูลนี้'),
                     style:
@@ -211,11 +257,11 @@ class PostBlock extends StatelessWidget {
                   ),
                 ),
             ],
-            if (!details.isEmpty) ...[
+            if (!widget.details.isEmpty) ...[
               const SizedBox(height: 4),
               PostSpotDetailRows(
-                details: details,
-                onEdit: (detail) => onExtra(switch (detail) {
+                details: widget.details,
+                onEdit: (detail) => widget.onExtra(switch (detail) {
                   PostSpotDetail.time => PostSpotExtra.recommendTime,
                   PostSpotDetail.transport => PostSpotExtra.howToGetHere,
                   PostSpotDetail.hack => PostSpotExtra.tripHack,
@@ -223,7 +269,17 @@ class PostBlock extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 16),
-            _AttachmentRow(onPickImage: onPickImage, onExtra: onExtra),
+            _AttachmentRow(
+              onPickImage: widget.onPickImage,
+              onExtra: widget.onExtra,
+              onAddHeading: _headingVisible ? null : _openHeading,
+              // One entry point per spot. A block split into several items
+              // keeps a row on each of them instead — see the flag below.
+              onAddLocation:
+                  blockItems.length == 1 && blockItems.first.place == null
+                      ? widget.onPickPlace
+                      : null,
+            ),
             const SizedBox(height: 16),
             const _Hairline(),
           ],
@@ -233,46 +289,52 @@ class PostBlock extends StatelessWidget {
   }
 
   void _legacyMoveImage(int item, int photo) {
-    if (item == 0) onMoveImage?.call(photo);
+    if (item == 0) widget.onMoveImage?.call(photo);
   }
 
   void _legacyRemoveImage(int item, int photo) {
-    if (item == 0) onRemoveImage?.call(photo);
+    if (item == 0) widget.onRemoveImage?.call(photo);
   }
 
   void _legacyDropImage(PostPhotoMove move, int item) {
-    if (item == 0) onDropImage?.call((move.block, move.photo));
+    if (item == 0) widget.onDropImage?.call((move.block, move.photo));
   }
 
   void _legacyDropBeforeImage(PostPhotoMove move, int item, int position) {
-    if (item == 0) onDropBeforeImage?.call((move.block, move.photo), position);
+    if (item == 0)
+      widget.onDropBeforeImage?.call((move.block, move.photo), position);
   }
 
   void _legacyPickPlace(int item) {
-    if (item == 0) onPickPlace();
+    if (item == 0) widget.onPickPlace();
   }
 
   void _legacyClearPlace(int item) {
-    if (item == 0) onClearPlace();
+    if (item == 0) widget.onClearPlace();
   }
 }
 
 /// The spot's heading: a purple + and the name beside it, which is how the
 /// design offers it — one line, no label.
-class _TitleRow extends StatelessWidget {
+/// The spot's heading, once the options row has asked for it.
+class _TitleRow extends StatefulWidget {
   const _TitleRow({required this.controller, required this.focusNode});
 
   final TextEditingController controller;
   final FocusNode focusNode;
 
   @override
+  State<_TitleRow> createState() => _TitleRowState();
+}
+
+class _TitleRowState extends State<_TitleRow> {
+  @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // The plus is the affordance, and it stays once the heading is
-        // written — the design keeps it on a filled row too.
+        // The plus stays on a filled row too, as the design draws it.
         IconButton(
-          onPressed: focusNode.requestFocus,
+          onPressed: widget.focusNode.requestFocus,
           icon: const Icon(Icons.add, size: 21),
           color: AppColors.postPurple,
           tooltip: 'ตั้งชื่อหัวข้อ',
@@ -282,9 +344,9 @@ class _TitleRow extends StatelessWidget {
         const SizedBox(width: 6),
         Expanded(
           child: TextField(
-            controller: controller,
+            controller: widget.controller,
             maxLength: 200,
-            focusNode: focusNode,
+            focusNode: widget.focusNode,
             textInputAction: TextInputAction.next,
             style: const TextStyle(
               color: AppColors.foreground,
@@ -311,8 +373,51 @@ class _TitleRow extends StatelessWidget {
   }
 }
 
+/// A small "+ something" pill for a part of the post that is optional.
+///
+/// The composer's default state should read as the shortest post worth
+/// publishing; anything beyond that announces itself as a choice rather than
+/// as a blank waiting to be filled.
+class PostAddOption extends StatelessWidget {
+  const PostAddOption({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(99),
+      child: CustomPaint(
+        painter:
+            const PostDashedBorder(radius: 99, color: AppColors.postDashed),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.add, size: 15, color: AppColors.postPurple),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.postPurple,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PostBlockContentItem extends StatelessWidget {
   const _PostBlockContentItem({
+    this.hideEmptyLocation = false,
     required this.blockIndex,
     required this.itemIndex,
     required this.item,
@@ -365,6 +470,10 @@ class _PostBlockContentItem extends StatelessWidget {
     return ('Add Location', null, false);
   }
 
+  /// True on a spot with a single item: its options row carries the location
+  /// chip, so an empty row here would say the same thing twice.
+  final bool hideEmptyLocation;
+
   @override
   Widget build(BuildContext context) {
     final (label, sublabel, pinned) = _locationLabel;
@@ -382,12 +491,13 @@ class _PostBlockContentItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _LocationRow(
-              label: label,
-              sublabel: sublabel,
-              pinned: pinned,
-              onTap: onPickPlace,
-            ),
+            if (pinned || !hideEmptyLocation)
+              _LocationRow(
+                label: label,
+                sublabel: sublabel,
+                pinned: pinned,
+                onTap: onPickPlace,
+              ),
             if (suggested && onConfirmLocation != null)
               Align(
                 alignment: Alignment.centerLeft,
@@ -639,39 +749,70 @@ class _BlockPhoto extends StatelessWidget {
 
 /// The dashed row under the story: camera, gallery, video, and Trip Hack.
 class _AttachmentRow extends StatelessWidget {
-  const _AttachmentRow({required this.onPickImage, required this.onExtra});
+  const _AttachmentRow({
+    required this.onPickImage,
+    required this.onExtra,
+    this.onAddHeading,
+    this.onAddLocation,
+  });
 
   final VoidCallback onPickImage;
   final ValueChanged<PostSpotExtra> onExtra;
 
+  /// Null once the heading is on screen, or once a place is pinned — the
+  /// offer disappears when there is nothing left to offer.
+  final VoidCallback? onAddHeading;
+  final VoidCallback? onAddLocation;
+
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
+    // One line that scrolls: six options wrapped onto two rows and took more
+    // height than the story they belong to.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.none,
+      child: Row(children: [
+        if (onAddHeading != null)
+          PostAddChip(
+            icon: Icons.title,
+            label: 'ชื่อหัวข้อ',
+            tooltip: 'ตั้งชื่อหัวข้อ',
+            onTap: onAddHeading!,
+          ),
+        if (onAddHeading != null) const SizedBox(width: 8),
+        if (onAddLocation != null)
+          PostAddChip(
+            icon: Icons.location_on_outlined,
+            label: 'Location',
+            tooltip: 'Add Location',
+            onTap: onAddLocation!,
+          ),
+        if (onAddLocation != null) const SizedBox(width: 8),
         PostAddChip(
           icon: Icons.add_photo_alternate_outlined,
           tooltip: 'รูปภาพ',
           onTap: onPickImage,
         ),
+        const SizedBox(width: 8),
         PostAddChip(
           icon: Icons.schedule,
           tooltip: PostSpotExtra.recommendTime.label,
           onTap: () => onExtra(PostSpotExtra.recommendTime),
         ),
+        const SizedBox(width: 8),
         PostAddChip(
           icon: Icons.directions_car_outlined,
           tooltip: PostSpotExtra.howToGetHere.label,
           onTap: () => onExtra(PostSpotExtra.howToGetHere),
         ),
+        const SizedBox(width: 8),
         PostAddChip(
           icon: Icons.info_outline,
           label: PostSpotExtra.tripHack.label,
           tooltip: PostSpotExtra.tripHack.label,
           onTap: () => onExtra(PostSpotExtra.tripHack),
         ),
-      ],
+      ]),
     );
   }
 }
@@ -703,34 +844,32 @@ class PostAddChip extends StatelessWidget {
         label: tooltip,
         child: Material(
           color: AppColors.screen,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(11),
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(11),
             child: CustomPaint(
               painter: const PostDashedBorder(
                 color: AppColors.postDashed,
-                radius: 14,
+                radius: 11,
               ),
-              // No `alignment` here: under a Wrap's loose constraints it would
-              // stretch every chip to the full width and stack them.
               child: Container(
-                height: 48,
-                constraints: const BoxConstraints(minWidth: 64),
+                height: 36,
+                constraints: const BoxConstraints(minWidth: 46),
                 padding:
-                    EdgeInsets.symmetric(horizontal: text == null ? 8 : 16),
+                    EdgeInsets.symmetric(horizontal: text == null ? 6 : 11),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(icon, size: 20, color: AppColors.postPurple),
+                    Icon(icon, size: 16, color: AppColors.postPurple),
                     if (text != null) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 5),
                       Text(
                         text,
                         style: const TextStyle(
                           color: AppColors.postPurple,
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

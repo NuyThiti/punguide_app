@@ -63,7 +63,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // widget update rather than a fresh State. Deferred a frame: recording a
     // recent search mid-build would rebuild widgets that are already laid out.
     final next = widget.initialQuery?.trim();
-    if (next == null || next.isEmpty || next == oldWidget.initialQuery?.trim()) {
+    if (next == null ||
+        next.isEmpty ||
+        next == oldWidget.initialQuery?.trim()) {
       return;
     }
 
@@ -99,7 +101,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
               // Pinned under the field: scrolling the wall of results must
               // not take the sort control off screen with it.
-              if (query.isNotEmpty && (results.valueOrNull?.isNotEmpty ?? false))
+              if (query.isNotEmpty &&
+                  (results.valueOrNull?.isNotEmpty ?? false))
                 _SortRow(
                   selected: ref.watch(searchSortProvider),
                   onSelected: (option) =>
@@ -173,8 +176,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   _RecentChip(
                     label: recent,
                     onTap: () => _applyQuery(recent),
-                    onRemove: () =>
-                        ref.read(recentSearchesProvider.notifier).remove(recent),
+                    onRemove: () => ref
+                        .read(recentSearchesProvider.notifier)
+                        .remove(recent),
                   ),
               ],
             ),
@@ -600,7 +604,8 @@ class _SortChip extends StatelessWidget {
             color: selected ? AppColors.chipBorderActive : Colors.white,
             borderRadius: BorderRadius.circular(99),
             border: Border.all(
-              color: selected ? AppColors.chipBorderActive : AppColors.chipBorder,
+              color:
+                  selected ? AppColors.chipBorderActive : AppColors.chipBorder,
             ),
           ),
           child: Text(

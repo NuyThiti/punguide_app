@@ -38,9 +38,8 @@ class ApiConfig {
   /// reach — it needs `10.0.2.2` for the same machine. iOS simulators share
   /// the host network, so they are left alone.
   static String _resolveBaseUrl(String configured) {
-    final raw = configured.trim().isEmpty
-        ? 'http://localhost:4002'
-        : configured.trim();
+    final raw =
+        configured.trim().isEmpty ? 'http://localhost:4002' : configured.trim();
     final url = raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
     if (kIsWeb) return url;
     final isAndroid = !kIsWeb && Platform.isAndroid;

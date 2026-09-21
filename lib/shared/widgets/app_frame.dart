@@ -18,8 +18,9 @@ class AppFrame extends StatelessWidget {
             final framed = constraints.maxWidth > 430;
             return Container(
               width: constraints.maxWidth < 430 ? constraints.maxWidth : 430,
-              height:
-                  framed && constraints.maxHeight > 932 ? 932 : constraints.maxHeight,
+              height: framed && constraints.maxHeight > 932
+                  ? 932
+                  : constraints.maxHeight,
               color: background ?? AppColors.softScreen,
               child: child,
             );

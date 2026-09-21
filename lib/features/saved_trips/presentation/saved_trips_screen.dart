@@ -58,7 +58,8 @@ class SavedTripsScreen extends ConsumerWidget {
                   },
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (error, _) => _SavedErrorState(message: error.toString()),
+                  error: (error, _) =>
+                      _SavedErrorState(message: error.toString()),
                 ),
               ),
             ],

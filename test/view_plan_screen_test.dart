@@ -228,8 +228,7 @@ void main() {
     }
   });
 
-  testWidgets('Trip Overview carries the real counts, grouped',
-      (tester) async {
+  testWidgets('Trip Overview carries the real counts, grouped', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -442,8 +441,7 @@ void main() {
     expect(find.text('แก้ไข'), findsNothing);
   });
 
-  testWidgets('no bar at all until it is known who is looking',
-      (tester) async {
+  testWidgets('no bar at all until it is known who is looking', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 700 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -550,8 +548,10 @@ void main() {
     }
 
     expect(titleTop.keys, hasLength(3));
-    expect(titleTop[ScreenClass.medium], greaterThan(titleTop[ScreenClass.compact]!));
-    expect(titleTop[ScreenClass.expanded], greaterThan(titleTop[ScreenClass.medium]!));
+    expect(titleTop[ScreenClass.medium],
+        greaterThan(titleTop[ScreenClass.compact]!));
+    expect(titleTop[ScreenClass.expanded],
+        greaterThan(titleTop[ScreenClass.medium]!));
   });
 
   testWidgets('the page lays out from a small phone to a tablet',
