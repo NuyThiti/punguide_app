@@ -7,9 +7,9 @@ import '../../../../shared/widgets/cover_image.dart';
 import '../../../auth/domain/auth_session.dart';
 import '../../../create_trip/domain/plan_labels.dart';
 import '../../domain/models/post_draft.dart';
+import 'place_pin_picker.dart';
 import 'post_about_trip.dart';
 import 'post_audience_chip.dart';
-import 'post_block.dart';
 
 /// The card at the top of the composer: who is posting, what the post is
 /// called, and what kind of trip it was.
@@ -28,6 +28,7 @@ class PostIdentityCard extends StatelessWidget {
     required this.onEditTitle,
     required this.about,
     required this.onEditAbout,
+    this.place,
   });
 
   /// Null while signed out — the guest path still reaches the composer.
@@ -42,6 +43,9 @@ class PostIdentityCard extends StatelessWidget {
   /// About trip is set in the Title sheet now, so the card only reads it back.
   final PostAboutTrip about;
   final VoidCallback onEditAbout;
+
+  /// Where the post is about, when the Title sheet has been given one.
+  final PostPlace? place;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +63,15 @@ class PostIdentityCard extends StatelessWidget {
         color: AppColors.screen,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.chipBorder),
+        // The same lift the feed's cards use, so this reads as one object on
+        // the page's off-white rather than a box drawn on it.
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,88 +134,54 @@ class PostIdentityCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          // Nothing chosen yet reads as one dashed invitation; once there are
-          // activities the invitation shrinks to a round + beside them.
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (chosen.isEmpty)
-                _TripActivityChip(onTap: onEditTitle)
-              else ...[
-                _AddActivityButton(onTap: onEditTitle),
+          if (place != null) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: onEditTitle,
+              borderRadius: BorderRadius.circular(8),
+              child: Row(
+                children: [
+                  const Icon(Icons.location_on_outlined,
+                      size: 15, color: AppColors.postPurple),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      // The locality is what the trip stores; the place's own
+                      // name is what the traveller recognises, so both show.
+                      place!.area?.trim().isNotEmpty == true &&
+                              place!.area!.trim() != place!.name.trim()
+                          ? '${place!.name} · ${place!.area!.trim()}'
+                          : place!.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (chosen.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            // Only the chosen activities: the Title sheet opens from the title
+            // row itself, so an add chip would be a second door onto it.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
                 for (final (label, icon) in chosen)
                   _ChosenActivityChip(label: label, icon: icon),
               ],
-            ],
-          ),
-          // Once it says something, About trip needs the width to say it, so
-          // it drops out of the chip row onto a line of its own.
+            ),
+          ],
           if (!about.isEmpty)
             PostAboutTripRow(about: about, onTap: onEditAbout),
         ],
-      ),
-    );
-  }
-}
-
-/// "+ Trip activity", the empty state of the activity row.
-class _TripActivityChip extends StatelessWidget {
-  const _TripActivityChip({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(99),
-      child: CustomPaint(
-        painter:
-            const PostDashedBorder(radius: 99, color: AppColors.postPurple),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add, size: 14, color: AppColors.postPurple),
-              SizedBox(width: 5),
-              Text(
-                'Trip activity',
-                style: TextStyle(
-                  color: AppColors.postPurple,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AddActivityButton extends StatelessWidget {
-  const _AddActivityButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: CustomPaint(
-        painter:
-            const PostDashedBorder(radius: 99, color: AppColors.postPurple),
-        child: const SizedBox(
-          width: 30,
-          height: 30,
-          child: Icon(Icons.add, size: 16, color: AppColors.postPurple),
-        ),
       ),
     );
   }
@@ -241,6 +220,10 @@ class _ChosenActivityChip extends StatelessWidget {
   }
 }
 
+/// The Title sheet's ตกลง. Named so a test can reach it without depending on
+/// where the sheet's footer happens to land.
+const postTitleConfirmKey = Key('post-title-confirm');
+
 /// What the Title sheet came back with.
 class PostTitleResult {
   const PostTitleResult({
@@ -248,6 +231,8 @@ class PostTitleResult {
     required this.styles,
     this.customStyles = const [],
     this.about = const PostAboutTrip(),
+    this.place,
+    this.clearedPlace = false,
   });
 
   final String title;
@@ -263,6 +248,14 @@ class PostTitleResult {
   /// The overview and the budget, set in the same sheet — they describe the
   /// post just as its name and its activities do.
   final PostAboutTrip about;
+
+  /// Where the post is about as a whole. Null when none was set; publishing
+  /// then falls back to the linked plan, and then to the first pinned spot.
+  final PostPlace? place;
+
+  /// True when the traveller took the place off here, which is a different
+  /// answer from never having set one.
+  final bool clearedPlace;
 }
 
 /// Names the post and says what kind of trip it was.
@@ -275,6 +268,7 @@ Future<PostTitleResult?> showPostTitleSheet(
   required List<TravelStyle> styles,
   List<String> customStyles = const [],
   PostAboutTrip about = const PostAboutTrip(),
+  PostPlace? place,
 }) {
   return showModalBottomSheet<PostTitleResult>(
     context: context,
@@ -286,6 +280,7 @@ Future<PostTitleResult?> showPostTitleSheet(
       styles: styles,
       customStyles: customStyles,
       about: about,
+      place: place,
     ),
   );
 }
@@ -296,12 +291,14 @@ class _PostTitleSheet extends StatefulWidget {
     required this.styles,
     required this.customStyles,
     required this.about,
+    required this.place,
   });
 
   final String title;
   final List<TravelStyle> styles;
   final List<String> customStyles;
   final PostAboutTrip about;
+  final PostPlace? place;
 
   @override
   State<_PostTitleSheet> createState() => _PostTitleSheetState();
@@ -319,6 +316,21 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
     text: widget.about.budget == null ? '' : _plainAmount(widget.about.budget!),
   );
   late String _currency = widget.about.currency;
+
+  late PostPlace? _place = widget.place;
+  bool _clearedPlace = false;
+
+  Future<void> _pickPlace() async {
+    final picked = await showPlacePinPicker(context, hasPlace: _place != null);
+    if (picked == null || !mounted) return;
+    setState(() {
+      // The picker answers with a cleared pin rather than null when the
+      // traveller took it off, so the two stay apart.
+      final removed = picked == clearedPlacePin;
+      _place = removed ? null : picked;
+      _clearedPlace = removed;
+    });
+  }
 
   static String _plainAmount(double value) =>
       value == value.roundToDouble() ? value.round().toString() : '$value';
@@ -363,240 +375,299 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
             constraints: BoxConstraints(
               maxHeight: MediaQuery.sizeOf(context).height * 0.86,
             ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD9D6D1),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const SizedBox(width: 34),
-                      const Expanded(
-                        child: Text(
-                          'Title',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppColors.foreground,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      Material(
-                        color: AppColors.postDraftBg,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          onTap: () => Navigator.of(context).pop(),
-                          customBorder: const CircleBorder(),
-                          child: const SizedBox(
-                            width: 34,
-                            height: 34,
-                            child: Icon(Icons.close,
-                                size: 19, color: AppColors.foreground),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _controller,
-                    maxLength: 200,
-                    autofocus: widget.title.trim().isEmpty,
-                    textInputAction: TextInputAction.done,
-                    style: const TextStyle(
-                      color: AppColors.foreground,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    decoration: InputDecoration(
-                      counterText: '',
-                      hintText: 'Title',
-                      hintStyle: const TextStyle(
-                        color: AppColors.postFieldHint,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      suffixIcon: const Icon(Icons.edit_outlined,
-                          size: 20, color: AppColors.postPurple),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 15),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide:
-                            const BorderSide(color: AppColors.chipBorder),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide:
-                            const BorderSide(color: AppColors.chipBorder),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(
-                            color: AppColors.postPurple, width: 1.3),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Trip Activity',
-                      style: TextStyle(
-                        color: AppColors.foreground,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final entry in styleByLabel.entries)
-                        _ActivityChip(
-                          label: entry.key,
-                          icon: styleIcon(entry.value),
-                          selected: _picked.contains(entry.value),
-                          onTap: () => setState(() =>
-                              _picked.contains(entry.value)
-                                  ? _picked.remove(entry.value)
-                                  : _picked.add(entry.value)),
-                        ),
-                      for (final label in _custom)
-                        _ActivityChip(
-                          label: label,
-                          icon: Icons.close,
-                          selected: true,
-                          onTap: () => setState(() => _custom.remove(label)),
-                        ),
-                      _ActivityChip(
-                        label: 'เพิ่ม',
-                        icon: Icons.add,
-                        outlined: true,
-                        selected: false,
-                        onTap: _addCustom,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  const _SheetSection('About trip'),
-                  const SizedBox(height: 10),
-                  Container(
-                    height: 96,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 13, vertical: 11),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.chipBorder),
-                    ),
-                    child: TextField(
-                      controller: _overview,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
-                        hintText: 'ภาพรวมของทริป',
-                        hintStyle: TextStyle(color: AppColors.postFieldHint),
-                      ),
-                      style: const TextStyle(fontSize: 14, height: 1.45),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(horizontal: 13),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.chipBorder),
-                    ),
-                    child: Row(
+            // The fields scroll; ตกลง does not. A primary action that can
+            // scroll out of reach is a sheet you cannot finish on a short
+            // screen.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _budget,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
+                        Container(
+                          width: 44,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD9D6D1),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            const SizedBox(width: 34),
+                            const Expanded(
+                              child: Text(
+                                'Title',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: AppColors.foreground,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r'[0-9.,]')),
-                            ],
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: '0.00',
-                              hintStyle:
-                                  TextStyle(color: AppColors.postFieldHint),
+                            Material(
+                              color: AppColors.postDraftBg,
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                onTap: () => Navigator.of(context).pop(),
+                                customBorder: const CircleBorder(),
+                                child: const SizedBox(
+                                  width: 34,
+                                  height: 34,
+                                  child: Icon(Icons.close,
+                                      size: 19, color: AppColors.foreground),
+                                ),
+                              ),
                             ),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _controller,
+                          maxLength: 200,
+                          autofocus: widget.title.trim().isEmpty,
+                          textInputAction: TextInputAction.done,
+                          style: const TextStyle(
+                            color: AppColors.foreground,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          decoration: InputDecoration(
+                            counterText: '',
+                            hintText: 'Title',
+                            hintStyle: const TextStyle(
+                              color: AppColors.postFieldHint,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            suffixIcon: const Icon(Icons.edit_outlined,
+                                size: 20, color: AppColors.postPurple),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 15),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide:
+                                  const BorderSide(color: AppColors.chipBorder),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide:
+                                  const BorderSide(color: AppColors.chipBorder),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                  color: AppColors.postPurple, width: 1.3),
                             ),
                           ),
                         ),
-                        const Text(
-                          'ต่อคน',
-                          style: TextStyle(
-                              color: AppColors.postFieldHint, fontSize: 12),
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          tooltip: 'สกุลเงิน',
-                          initialValue: _currency,
-                          position: PopupMenuPosition.under,
-                          onSelected: (value) =>
-                              setState(() => _currency = value),
-                          itemBuilder: (context) => [
-                            for (final code in aboutTripCurrencies)
-                              PopupMenuItem<String>(
-                                  value: code, child: Text(code)),
-                          ],
+                        const SizedBox(height: 14),
+                        InkWell(
+                          onTap: _pickPlace,
+                          borderRadius: BorderRadius.circular(12),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
+                                horizontal: 13, vertical: 12),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: AppColors.chipBorder),
                             ),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  _currency,
-                                  style: const TextStyle(
-                                    color: AppColors.foreground,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
+                                const Icon(Icons.location_on_outlined,
+                                    size: 18, color: AppColors.postPurple),
+                                const SizedBox(width: 9),
+                                Expanded(
+                                  child: Text(
+                                    _place?.name ?? 'Add Location',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: _place == null
+                                          ? AppColors.postFieldHint
+                                          : AppColors.foreground,
+                                      fontSize: 14,
+                                      fontWeight: _place == null
+                                          ? FontWeight.w500
+                                          : FontWeight.w700,
+                                    ),
                                   ),
                                 ),
-                                const Icon(Icons.keyboard_arrow_down,
-                                    size: 16, color: AppColors.muted),
+                                const Icon(Icons.chevron_right,
+                                    size: 20, color: AppColors.muted),
                               ],
                             ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Trip Activity',
+                            style: TextStyle(
+                              color: AppColors.foreground,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Only the chosen activities: the Title sheet is opened from the
+                        // title row itself, so a "+ Trip activity" chip would be a second
+                        // door onto the same sheet.
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            for (final entry in styleByLabel.entries)
+                              _ActivityChip(
+                                label: entry.key,
+                                icon: styleIcon(entry.value),
+                                selected: _picked.contains(entry.value),
+                                onTap: () => setState(() =>
+                                    _picked.contains(entry.value)
+                                        ? _picked.remove(entry.value)
+                                        : _picked.add(entry.value)),
+                              ),
+                            for (final label in _custom)
+                              _ActivityChip(
+                                label: label,
+                                icon: Icons.close,
+                                selected: true,
+                                onTap: () =>
+                                    setState(() => _custom.remove(label)),
+                              ),
+                            _ActivityChip(
+                              label: 'เพิ่ม',
+                              icon: Icons.add,
+                              outlined: true,
+                              selected: false,
+                              onTap: _addCustom,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        const _SheetSection('About trip'),
+                        const SizedBox(height: 10),
+                        Container(
+                          height: 96,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 13, vertical: 11),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.chipBorder),
+                          ),
+                          child: TextField(
+                            controller: _overview,
+                            maxLines: null,
+                            expands: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              hintText: 'ภาพรวมของทริป',
+                              hintStyle:
+                                  TextStyle(color: AppColors.postFieldHint),
+                            ),
+                            style: const TextStyle(fontSize: 14, height: 1.45),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          height: 48,
+                          padding: const EdgeInsets.symmetric(horizontal: 13),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.chipBorder),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _budget,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9.,]')),
+                                  ],
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    hintText: '0.00',
+                                    hintStyle: TextStyle(
+                                        color: AppColors.postFieldHint),
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const Text(
+                                'ต่อคน',
+                                style: TextStyle(
+                                    color: AppColors.postFieldHint,
+                                    fontSize: 12),
+                              ),
+                              const SizedBox(width: 10),
+                              PopupMenuButton<String>(
+                                tooltip: 'สกุลเงิน',
+                                initialValue: _currency,
+                                position: PopupMenuPosition.under,
+                                onSelected: (value) =>
+                                    setState(() => _currency = value),
+                                itemBuilder: (context) => [
+                                  for (final code in aboutTripCurrencies)
+                                    PopupMenuItem<String>(
+                                        value: code, child: Text(code)),
+                                ],
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border:
+                                        Border.all(color: AppColors.chipBorder),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _currency,
+                                        style: const TextStyle(
+                                          color: AppColors.foreground,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const Icon(Icons.keyboard_arrow_down,
+                                          size: 16, color: AppColors.muted),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  SizedBox(
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                  child: SizedBox(
                     width: double.infinity,
                     height: 54,
                     child: FilledButton(
+                      key: postTitleConfirmKey,
                       onPressed: () =>
                           Navigator.of(context).pop(PostTitleResult(
                         title: _controller.text.trim(),
@@ -607,6 +678,8 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
                           budget: _typedBudget,
                           currency: _currency,
                         ),
+                        place: _place,
+                        clearedPlace: _clearedPlace,
                       )),
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.postShare,
@@ -622,8 +695,8 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

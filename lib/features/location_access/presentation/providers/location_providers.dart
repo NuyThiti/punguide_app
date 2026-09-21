@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../data/location_permission_store.dart';
+import '../../data/location_sync.dart';
 import '../../domain/location_service.dart';
 import '../../domain/picked_location.dart';
 
@@ -42,14 +43,76 @@ class LocationPermissionController extends Notifier<LocationPermissionStatus?> {
 
   /// Takes the answer and writes it through, so the page does not come back on
   /// the next launch. Only clearing the app's storage undoes this.
+  ///
+  /// A refusal also erases the copy the account holds. Note that
+  /// [LocationPermissionStatus.unavailable] deliberately does not: it means
+  /// the question could not be put — location services switched off, or no
+  /// plugin — and throwing away a good stored position over a momentary
+  /// "could not ask" would lose data the traveller never asked to lose.
   Future<void> record(LocationPermissionStatus status) async {
     state = status;
     await ref.read(locationPermissionStoreProvider).write(status);
+
+    if (status == LocationPermissionStatus.denied) {
+      ref.read(locationFixProvider.notifier).forget();
+      await ref.read(locationSyncProvider).forget();
+    }
   }
 }
 
-/// The device's own position, once granted. Null until a plugin can supply it.
-final locationFixProvider = StateProvider<LocationFixPoint?>((ref) => null);
+/// Where the traveller is, as far as this run of the app knows.
+///
+/// Every reading goes through [LocationFixController.capture], which is the
+/// one place that mirrors it onto the account — so a new call site cannot
+/// quietly forget to sync.
+final locationFixProvider =
+    NotifierProvider<LocationFixController, LocationFixPoint?>(
+  LocationFixController.new,
+);
+
+class LocationFixController extends Notifier<LocationFixPoint?> {
+  @override
+  LocationFixPoint? build() => null;
+
+  /// Takes a fresh reading from the device and sends it up.
+  Future<void> capture(LocationFix fix) async {
+    state = LocationFixPoint(
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+    );
+    await ref.read(locationSyncProvider).push(fix);
+  }
+
+  /// Makes sure there is *some* position to measure from, without insisting on
+  /// the GPS.
+  ///
+  /// The account's stored fix lands first: it costs one request, no hardware
+  /// and no wait, which is the whole reason it is kept. The device is then
+  /// asked for a fresher one, which replaces it and syncs back up if the
+  /// traveller has moved — the "update on app open" half of the contract.
+  Future<void> ensureFix() async {
+    if (state == null) {
+      final stored = await ref.read(locationSyncProvider).pull();
+      if (stored != null) {
+        state = LocationFixPoint(
+          latitude: stored.latitude,
+          longitude: stored.longitude,
+        );
+      }
+    }
+
+    if (ref.read(locationPermissionProvider) !=
+        LocationPermissionStatus.granted) {
+      return;
+    }
+    final fix = await ref.read(locationServiceProvider).currentFix();
+    if (fix != null) await capture(fix);
+  }
+
+  /// Drops the position this run was holding. Does not touch the account —
+  /// [LocationPermissionController.record] owns that call.
+  void forget() => state = null;
+}
 
 /// What has been typed into the picker's search field.
 final locationQueryProvider = StateProvider.autoDispose<String>((ref) => '');

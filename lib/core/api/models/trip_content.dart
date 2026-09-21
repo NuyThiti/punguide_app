@@ -122,7 +122,8 @@ class TripContent {
       this.transportModes = const [],
       this.transportCost,
       this.transportCurrency,
-      this.tripHack});
+      this.tripHack,
+      this.contactInfo});
   final String title, content;
   final List<String>? mediaIds;
   final List<ContentImage> images;
@@ -140,6 +141,9 @@ class TripContent {
   /// ISO 4217. Absent means THB, the same rule the trip's budget uses.
   final String? transportCurrency;
   final String? tripHack;
+
+  /// Whatever the writer typed under "ติดต่อ" — a name, a number, a page.
+  final String? contactInfo;
   factory TripContent.fromJson(Map<String, dynamic> json) => TripContent(
       title: Json.string(json, 'title') ?? '',
       content: Json.string(json, 'content') ?? '',
@@ -161,7 +165,8 @@ class TripContent {
       transportModes: Json.stringList(json, 'transportModes'),
       transportCost: Json.number(json, 'transportCost'),
       transportCurrency: Json.string(json, 'transportCurrency'),
-      tripHack: Json.string(json, 'tripHack'));
+      tripHack: Json.string(json, 'tripHack'),
+      contactInfo: Json.string(json, 'contactInfo'));
   static List<TripContent> listFrom(Object? value) =>
       Json.asMapList(value).map(TripContent.fromJson).toList();
   TripContentRequest toRequest() => TripContentRequest(
@@ -178,7 +183,8 @@ class TripContent {
       transportModes: transportModes,
       transportCost: transportCost,
       transportCurrency: transportCurrency,
-      tripHack: tripHack);
+      tripHack: tripHack,
+      contactInfo: contactInfo);
   Map<String, dynamic> toJson() => toRequest().toJson();
 }
 
@@ -198,7 +204,8 @@ class TripContentRequest {
       this.transportModes = const [],
       this.transportCost,
       this.transportCurrency,
-      this.tripHack});
+      this.tripHack,
+      this.contactInfo});
   final String title, content;
   final List<String>? mediaIds;
   final List<String> imageUrls;
@@ -210,6 +217,7 @@ class TripContentRequest {
   final double? transportCost;
   final String? transportCurrency;
   final String? tripHack;
+  final String? contactInfo;
   Map<String, dynamic> toJson() {
     final ids = mediaIds ?? const <String>[];
     if (title.length > 200 ||
@@ -253,6 +261,10 @@ class TripContentRequest {
           'สกุลเงินต้องเป็นรหัส ISO 4217 3 ตัวพิมพ์ใหญ่');
     if ((tripHack?.length ?? 0) > 2000)
       throw const FormatException('Trip Hack ยาวได้ไม่เกิน 2000 ตัวอักษร');
+    // One line, as the writer typed it: a name, a number, a page, or all
+    // three. Splitting it into a schema would ask for less than the form does.
+    if ((contactInfo?.length ?? 0) > 500)
+      throw const FormatException('ข้อมูลติดต่อยาวได้ไม่เกิน 500 ตัวอักษร');
     for (final url in imageUrls) {
       final uri = Uri.tryParse(url);
       if (url.length > 4096 ||
@@ -276,7 +288,9 @@ class TripContentRequest {
       if (transportModes.isNotEmpty) 'transportModes': transportModes,
       if (transportCost != null) 'transportCost': transportCost,
       if (transportCurrency != null) 'transportCurrency': transportCurrency,
-      if (tripHack != null && tripHack!.isNotEmpty) 'tripHack': tripHack
+      if (tripHack != null && tripHack!.isNotEmpty) 'tripHack': tripHack,
+      if (contactInfo != null && contactInfo!.isNotEmpty)
+        'contactInfo': contactInfo
     };
   }
 

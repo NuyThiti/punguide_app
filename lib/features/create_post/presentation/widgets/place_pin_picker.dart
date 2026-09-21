@@ -6,7 +6,6 @@ import '../../../../core/api/pluno_api.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../location_access/domain/location_service.dart';
-import '../../../location_access/domain/picked_location.dart';
 import '../../../location_access/presentation/providers/location_providers.dart';
 import '../../domain/models/post_draft.dart';
 import '../providers/place_pin_providers.dart';
@@ -66,9 +65,9 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
     super.dispose();
   }
 
-  /// Runs the OS dialog. This build ships no location plugin, so the answer is
-  /// usually "unavailable" — which is why the map is offered as the way out
-  /// rather than leaving the traveller stuck on a prompt that cannot succeed.
+  /// Runs the OS dialog. The map is still offered as the way out, because the
+  /// answer can be a refusal — or the device can simply fail to produce a fix
+  /// indoors — and a traveller must never be stuck on a prompt.
   Future<void> _turnOnLocation() async {
     setState(() => _asking = true);
     final status = await ref.read(locationServiceProvider).requestPermission();
@@ -81,8 +80,8 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
       final fix = await ref.read(locationServiceProvider).currentFix();
       if (!mounted) return;
       if (fix != null) {
-        ref.read(locationFixProvider.notifier).state =
-            LocationFixPoint(latitude: fix.latitude, longitude: fix.longitude);
+        await ref.read(locationFixProvider.notifier).capture(fix);
+        if (!mounted) return;
       }
     }
     setState(() => _asking = false);

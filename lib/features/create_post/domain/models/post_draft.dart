@@ -169,6 +169,7 @@ class PostSpotDetails {
     this.transportModes = const <String>[],
     this.transportCost,
     this.tripHack = '',
+    this.contactInfo = '',
   });
 
   /// "เวลาที่ฉันไป" — the one time the writer was there.
@@ -182,10 +183,14 @@ class PostSpotDetails {
   final double? transportCost;
   final String tripHack;
 
+  /// One line as the writer typed it: a name, a number, a page, or all three.
+  final String contactInfo;
+
   bool get hasTime => visitedAt != null || opensAt != null || closesAt != null;
   bool get hasTransport => transportModes.isNotEmpty || transportCost != null;
   bool get hasHack => tripHack.trim().isNotEmpty;
-  bool get isEmpty => !hasTime && !hasTransport && !hasHack;
+  bool get hasContact => contactInfo.trim().isNotEmpty;
+  bool get isEmpty => !hasTime && !hasTransport && !hasHack && !hasContact;
 
   PostSpotDetails copyWith({
     TimeOfDay? visitedAt,
@@ -194,6 +199,7 @@ class PostSpotDetails {
     List<String>? transportModes,
     double? transportCost,
     String? tripHack,
+    String? contactInfo,
     bool clearTime = false,
     bool clearTransportCost = false,
   }) =>
@@ -205,6 +211,7 @@ class PostSpotDetails {
         transportCost:
             clearTransportCost ? null : (transportCost ?? this.transportCost),
         tripHack: tripHack ?? this.tripHack,
+        contactInfo: contactInfo ?? this.contactInfo,
       );
 }
 

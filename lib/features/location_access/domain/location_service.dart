@@ -13,12 +13,28 @@ enum LocationPermissionStatus {
 }
 
 /// A position read from the device.
+///
+/// [accuracyMeters] and [capturedAt] exist for `PUT /users/me/location`, which
+/// stores both alongside the coordinates. [capturedAt] is when the *device*
+/// took the reading — the API rejects one more than a day old or more than
+/// five minutes into the future, so a cached fix has to be aged before it is
+/// sent anywhere.
 @immutable
 class LocationFix {
-  const LocationFix({required this.latitude, required this.longitude});
+  const LocationFix({
+    required this.latitude,
+    required this.longitude,
+    this.accuracyMeters,
+    this.capturedAt,
+  });
 
   final double latitude;
   final double longitude;
+
+  /// The radius the platform reported, in metres.
+  final int? accuracyMeters;
+
+  final DateTime? capturedAt;
 }
 
 /// Asks the OS for the traveller's position.

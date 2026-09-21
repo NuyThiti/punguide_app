@@ -7,7 +7,6 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../paigun/presentation/providers/paigun_providers.dart';
-import '../domain/location_service.dart';
 import '../domain/picked_location.dart';
 import 'providers/location_providers.dart';
 import 'widgets/location_map_surface.dart';
@@ -52,27 +51,18 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     _loadFix();
   }
 
-  /// Fetches the device's position when it is allowed but not yet in hand.
+  /// Finds a position to measure distances from.
   ///
-  /// The Location Access page takes a fix as soon as it is granted, but that
-  /// only lasts the run. On the next launch the permission is remembered and
-  /// the fix is not, so without this the distances below would quietly stop
-  /// showing.
+  /// The permission is remembered between launches and the fix is not, so
+  /// without this the distances below would quietly stop showing on the second
+  /// run. [LocationFixController.ensureFix] takes the account's stored fix
+  /// first — no GPS, no wait — then refreshes it from the device.
   Future<void> _loadFix() async {
-    if (ref.read(locationPermissionProvider) !=
-        LocationPermissionStatus.granted) {
-      return;
-    }
-    if (ref.read(locationFixProvider) != null) return;
+    await ref.read(locationFixProvider.notifier).ensureFix();
+    if (!mounted) return;
 
-    final fix = await ref.read(locationServiceProvider).currentFix();
-    if (!mounted || fix == null) return;
-
-    final point = LocationFixPoint(
-      latitude: fix.latitude,
-      longitude: fix.longitude,
-    );
-    ref.read(locationFixProvider.notifier).state = point;
+    final point = ref.read(locationFixProvider);
+    if (point == null) return;
     setState(() => _picked = _picked?.measuredFrom(point));
   }
 

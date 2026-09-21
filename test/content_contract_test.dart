@@ -288,6 +288,67 @@ void main() {
         {'content': 'เปล่า'});
   });
 
+  test('contactInfo travels as one line and is capped at 500', () {
+    expect(
+      const TripContentRequest(
+              content: 'x', contactInfo: 'คุณบุญอนันต์ 081-234-5678')
+          .toJson()['contactInfo'],
+      'คุณบุญอนันต์ 081-234-5678',
+    );
+    expect(
+      () => TripContentRequest(content: 'x', contactInfo: 'ก' * 501).toJson(),
+      throwsA(isA<FormatException>()),
+    );
+
+    final read = TripContent.fromJson(
+        {'content': 'x', 'contactInfo': 'คุณบุญอนันต์ 081-234-5678'});
+    expect(read.contactInfo, 'คุณบุญอนันต์ 081-234-5678');
+    expect(read.toRequest().toJson()['contactInfo'],
+        'คุณบุญอนันต์ 081-234-5678');
+  });
+
+  test('description is public and separate from specialNotes', () {
+    final trip = ApiTrip.fromJson({
+      'id': 't1',
+      'ownerId': 'u1',
+      'title': 'ทริป',
+      'destination': 'ระยอง',
+      'status': 'draft',
+      'schedule': <String, dynamic>{},
+      'totalBudget': 0,
+      'isSaved': false,
+      'isLiked': false,
+      'likeCount': 0,
+      'remixCount': 0,
+      'createdAt': '2026-09-21T00:00:00.000Z',
+      'updatedAt': '2026-09-21T00:00:00.000Z',
+      'description': 'ระยองเป็นจังหวัดที่มีสถานที่ท่องเที่ยวมากมาย',
+      'specialNotes': 'เดินเยอะไม่ได้',
+    });
+    expect(trip.description, 'ระยองเป็นจังหวัดที่มีสถานที่ท่องเที่ยวมากมาย');
+    expect(trip.specialNotes, 'เดินเยอะไม่ได้');
+
+    // A reader who is not the owner gets the blurb but not the private note.
+    final asReader = ApiTrip.fromJson({
+      'id': 't1',
+      'ownerId': 'u1',
+      'title': 'ทริป',
+      'destination': 'ระยอง',
+      'status': 'draft',
+      'schedule': <String, dynamic>{},
+      'totalBudget': 0,
+      'isSaved': false,
+      'isLiked': false,
+      'likeCount': 0,
+      'remixCount': 0,
+      'createdAt': '2026-09-21T00:00:00.000Z',
+      'updatedAt': '2026-09-21T00:00:00.000Z',
+      'description': 'ระยองเป็นจังหวัดที่มีสถานที่ท่องเที่ยวมากมาย',
+    });
+    expect(asReader.description, isNotNull);
+    expect(asReader.specialNotes, isNull);
+  });
+
   test('closing before opening is allowed, malformed times are not', () {
     // A bar that opens 18:00 and closes 02:00 crosses midnight.
     expect(

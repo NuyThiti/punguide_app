@@ -63,6 +63,16 @@ class PostSpotDetailRows extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
+          if (details.hasContact) ...[
+            Flexible(
+              child: _DetailChip(
+                icon: Icons.call_outlined,
+                text: details.contactInfo.trim(),
+                onTap: () => onEdit(PostSpotDetail.contact),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           if (details.hasHack)
             Flexible(
               child: _DetailChip(
@@ -104,7 +114,7 @@ class PostSpotDetailRows extends StatelessWidget {
 }
 
 /// Which of the three a row or chip stands for.
-enum PostSpotDetail { time, transport, hack }
+enum PostSpotDetail { time, transport, hack, contact }
 
 class _DetailChip extends StatelessWidget {
   const _DetailChip({
@@ -514,6 +524,90 @@ class _TripHackSheetState extends State<_TripHackSheet> {
             onCancel: () => Navigator.of(context).pop(),
             onConfirm: () => Navigator.of(context).pop(
               widget.current.copyWith(tripHack: _text.text.trim()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ติดต่อ — one line, as the writer wants to give it.
+Future<PostSpotDetails?> showContactSheet(
+  BuildContext context, {
+  required PostSpotDetails current,
+}) {
+  return showModalBottomSheet<PostSpotDetails>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ContactSheet(current: current),
+  );
+}
+
+class _ContactSheet extends StatefulWidget {
+  const _ContactSheet({required this.current});
+
+  final PostSpotDetails current;
+
+  @override
+  State<_ContactSheet> createState() => _ContactSheetState();
+}
+
+class _ContactSheetState extends State<_ContactSheet> {
+  late final TextEditingController _text =
+      TextEditingController(text: widget.current.contactInfo);
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ComposerSheet(
+      title: 'ติดต่อ',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 14),
+            child: Text(
+              'ชื่อผู้ติดต่อ เบอร์โทร เพจ หรือทั้งหมดรวมกัน',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          ),
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(
+              color: AppColors.screen,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: TextField(
+              controller: _text,
+              autofocus: true,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                counterText: '',
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'เช่น คุณบุญอนันต์ 081-234-5678',
+                hintStyle: TextStyle(color: AppColors.postFieldHint),
+              ),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          const SizedBox(height: 20),
+          _SheetActions(
+            onCancel: () => Navigator.of(context).pop(),
+            onConfirm: () => Navigator.of(context).pop(
+              widget.current.copyWith(contactInfo: _text.text.trim()),
             ),
           ),
         ],

@@ -31,7 +31,8 @@ typedef PostPhotoMove = ({int block, int item, int photo});
 enum PostSpotExtra {
   tripHack('Trip Hack'),
   recommendTime('เวลาที่แนะนำ'),
-  howToGetHere('การเดินทาง');
+  howToGetHere('การเดินทาง'),
+  contact('ติดต่อ');
 
   const PostSpotExtra(this.label);
 
@@ -265,6 +266,7 @@ class _PostBlockState extends State<PostBlock> {
                   PostSpotDetail.time => PostSpotExtra.recommendTime,
                   PostSpotDetail.transport => PostSpotExtra.howToGetHere,
                   PostSpotDetail.hack => PostSpotExtra.tripHack,
+                  PostSpotDetail.contact => PostSpotExtra.contact,
                 }),
               ),
             ],
@@ -772,6 +774,12 @@ class _AttachmentRow extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       clipBehavior: Clip.none,
       child: Row(children: [
+        PostAddChip(
+          icon: Icons.add_photo_alternate_outlined,
+          tooltip: 'รูปภาพ',
+          onTap: onPickImage,
+        ),
+        const SizedBox(width: 8),
         if (onAddHeading != null)
           PostAddChip(
             icon: Icons.title,
@@ -789,12 +797,6 @@ class _AttachmentRow extends StatelessWidget {
           ),
         if (onAddLocation != null) const SizedBox(width: 8),
         PostAddChip(
-          icon: Icons.add_photo_alternate_outlined,
-          tooltip: 'รูปภาพ',
-          onTap: onPickImage,
-        ),
-        const SizedBox(width: 8),
-        PostAddChip(
           icon: Icons.schedule,
           tooltip: PostSpotExtra.recommendTime.label,
           onTap: () => onExtra(PostSpotExtra.recommendTime),
@@ -804,6 +806,13 @@ class _AttachmentRow extends StatelessWidget {
           icon: Icons.directions_car_outlined,
           tooltip: PostSpotExtra.howToGetHere.label,
           onTap: () => onExtra(PostSpotExtra.howToGetHere),
+        ),
+        const SizedBox(width: 8),
+        PostAddChip(
+          icon: Icons.call_outlined,
+          label: PostSpotExtra.contact.label,
+          tooltip: PostSpotExtra.contact.label,
+          onTap: () => onExtra(PostSpotExtra.contact),
         ),
         const SizedBox(width: 8),
         PostAddChip(

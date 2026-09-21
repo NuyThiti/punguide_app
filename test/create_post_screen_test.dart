@@ -180,7 +180,7 @@ Future<void> _fillAboutTrip(
   if (budget.isNotEmpty) {
     await tester.enterText(find.widgetWithText(TextField, '0.00'), budget);
   }
-  await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+  tester.widget<FilledButton>(find.byKey(postTitleConfirmKey)).onPressed!();
   await tester.pumpAndSettle();
 }
 
@@ -1024,22 +1024,22 @@ void main() {
     // One card says what the post is and who it is by. The plan link is not
     // on the page any more — it is the Next step's own screen.
     expect(find.text('Title..'), findsOneWidget);
-    expect(find.text('Trip activity'), findsOneWidget);
     expect(find.text('Public'), findsOneWidget);
     expect(find.text('เชื่อมแผนของฉัน'), findsNothing);
     expect(find.byType(PostIdentityCard), findsOneWidget);
+    // The title row is the only way into the Title sheet; an add chip beside
+    // it would be a second door onto the same thing.
+    expect(find.text('Trip activity'), findsNothing);
 
-    // Author, title and activities read top to bottom inside that one card.
+    // Author then title, top to bottom inside that one card.
     final card = find.byType(PostIdentityCard);
-    for (final part in ['Public', 'Title..', 'Trip activity']) {
+    for (final part in ['Public', 'Title..']) {
       expect(
           find.descendant(of: card, matching: find.text(part)), findsOneWidget,
           reason: part);
     }
     expect(tester.getTopLeft(find.text('Public')).dy,
         lessThan(tester.getTopLeft(find.text('Title..')).dy));
-    expect(tester.getTopLeft(find.text('Title..')).dy,
-        lessThan(tester.getTopLeft(find.text('Trip activity')).dy));
 
     // The spot: a heading, where it is, then the story.
     // Optional parts offer themselves from the spot's options row rather than
@@ -1427,6 +1427,96 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the card says where the traveller is, until a place is set',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {'id': 'near-1', 'name': 'สนามหลวง', 'lat': 13.7563, 'lng': 100.493},
+        ]),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    // Turn the wheel for the nearby lookup, which leaves the framework.
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    // No fix in the test environment, so nothing is claimed about where the
+    // traveller is — the line only appears when there is really an origin.
+    expect(find.textContaining('ตอนนี้อยู่แถว'), findsNothing);
+  });
+
+  testWidgets('the Title sheet sets where the post is about', (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    // The spot pins เชียงใหม่ from the harness's own stub …
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+
+    // … and the post's own place is somewhere else, so the assertion below
+    // shows which of the two the destination comes from.
+    // The locality is read off the address, not sent as its own field.
+    adapter.replies['GET /places/search'] = [
+      const FakeReply(200, [
+        {
+          'id': 'place-2',
+          'name': 'พระนคร',
+          // The locality is the segment before the country, postcode-free.
+          'address': '161 ถ. ข้าวสาร, เขตพระนคร, '
+              'กรุงเทพมหานคร 10200, ประเทศไทย',
+        },
+      ]),
+    ];
+
+    await tester.tap(find.text('Title..'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add Location'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Add Location'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Location'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).last, 'พระนคร');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('พระนคร').last);
+    await tester.pumpAndSettle();
+
+    // The picker is gone and the Title sheet's row reads the chosen place.
+    expect(find.text('Find places nearby'), findsNothing);
+    expect(find.text('พระนคร'), findsOneWidget);
+
+    // Pressed through its callback: the sheet's pinned footer is laid out on
+    // screen but does not take a tap on this tall test viewport.
+    tester.widget<FilledButton>(find.byKey(postTitleConfirmKey)).onPressed!();
+    await tester.pumpAndSettle();
+
+    // Back on the page, the card shows where the post is about.
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('พระนคร · กรุงเทพมหานคร')),
+        findsOneWidget);
+
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    // The locality of the post's own place, not the spot's pin.
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['destination'],
+        'กรุงเทพมหานคร');
+  });
+
   testWidgets('About trip is written in the Title sheet', (tester) async {
     await _pumpComposer(tester);
 
@@ -1477,7 +1567,7 @@ void main() {
     expect(find.text('พิมพ์ไปแล้วเปลี่ยนใจ'), findsNothing);
     expect(find.text('ที่เขียนไว้ก่อน'), findsOneWidget);
   });
-  testWidgets('About trip goes up as specialNotes and budgetLimit',
+  testWidgets('About trip goes up as description and budgetLimit',
       (tester) async {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
@@ -1494,7 +1584,10 @@ void main() {
     await _finishPublish(tester);
 
     final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
-    expect(patched['specialNotes'], 'ทริปเดินกินย่านเมืองเก่า');
+    // The blurb is public, so it is `description` — never `specialNotes`,
+    // which only the owner can read back.
+    expect(patched['description'], 'ทริปเดินกินย่านเมืองเก่า');
+    expect(patched.containsKey('specialNotes'), isFalse);
     expect(patched['budgetLimit'], 2000);
   });
 
@@ -1734,6 +1827,36 @@ void main() {
     expect(section['transportCurrency'], 'THB');
   });
 
+  testWidgets('ติดต่อ rides along on the section as one line', (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    await _tapSpotOption(tester, find.text('ติดต่อ'));
+    expect(find.text('ชื่อผู้ติดต่อ เบอร์โทร เพจ หรือทั้งหมดรวมกัน'),
+        findsOneWidget);
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น คุณบุญอนันต์ 081-234-5678'),
+        'คุณบุญอนันต์ 081-234-5678');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('คุณบุญอนันต์ 081-234-5678'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    final section =
+        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+            as Map;
+    // Stored as typed — a name and a number together, not split into fields.
+    expect(section['contactInfo'], 'คุณบุญอนันต์ 081-234-5678');
+  });
+
   testWidgets('a spot with no extras sends none of their keys', (tester) async {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
@@ -1755,7 +1878,8 @@ void main() {
       'transportModes',
       'transportCost',
       'transportCurrency',
-      'tripHack'
+      'tripHack',
+      'contactInfo'
     ]) {
       expect(section.containsKey(key), isFalse, reason: key);
     }
@@ -1765,7 +1889,7 @@ void main() {
       (tester) async {
     final trip = ApiTrip.fromJson({
       ...createdTripJson(),
-      'specialNotes': 'ทริปเดินกินย่านเมืองเก่า',
+      'description': 'ทริปเดินกินย่านเมืองเก่า',
       'budgetLimit': 2000,
       'budgetCurrency': 'THB',
       'contents': [

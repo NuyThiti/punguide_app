@@ -52,7 +52,7 @@ where table_name='trips' and column_name in ('budget_currency','budget_amount_ma
 | ข้อเดิม | สิ่งที่ได้มา | client ทำอะไร |
 |---|---|---|
 | 2.1 ฟิลด์ราย section | `visitedAt` `opensAt` `closesAt` `transportModes` `transportCost` `transportCurrency` `tripHack` ใน `contents[]` (JSONB เดิม ไม่ต้อง migrate) | ส่งขึ้นตอน publish และอ่านกลับตอนเปิดโพสต์เดิมมาแก้ |
-| 2.2 `specialNotes` | `GET /trips/:id` คืนแล้ว **เฉพาะเจ้าของ** | Trip Overview กู้คืนจาก server ได้ |
+| 2.2 คำโปรย | `description` (สาธารณะ) แยกจาก `specialNotes` (เจ้าของเท่านั้น) | ช่อง Trip Overview ย้ายไปเก็บที่ `description` |
 | 2.3 งบ | `budgetCurrency` (ไม่ส่ง = THB) + `guestCount` ระดับบนสุด | dropdown สกุลเงินใช้งานได้จริง 6 สกุล |
 | 2.4 Trip Activity เอง | `customStyles` / `customTransport` / `customConstraints` ใน create/update | ปุ่ม `+ เพิ่ม` บันทึกได้ ชิปที่เพิ่มเองกดลบได้ |
 
@@ -65,6 +65,10 @@ where table_name='trips' and column_name in ('budget_currency','budget_amount_ma
 - `budgetLimit` ยังเป็นยอดตามที่พิมพ์ ไม่คูณจำนวนคน — คำว่า "ต่อคน" เป็นการอ่านฝั่ง client
 - `customStyles` ส่ง **เฉพาะเมื่อมีค่า** เพราะ PATCH merge ต่อ key: ส่ง `[]` = ล้างของเดิม
 - `specialNotes` ที่ได้เป็น null หมายถึง **"ไม่ใช่ของเรา"** ไม่ใช่ "เจ้าของเว้นว่าง"
+
+**แก้ของที่เคยทำผิดไว้ (2026-09-21):** ช่อง Trip Overview ในชีต Title เคยถูกเก็บลง
+`specialNotes` ซึ่งเป็นโน้ตส่วนตัวที่คนอ่านคนอื่นไม่เห็นเลย ตอนนี้ย้ายไป `description`
+ตามที่หลังบ้านระบุ — `specialNotes` ไม่ถูกส่งจากหน้านี้อีกแล้ว
 
 **ยังไม่ได้ verify กับ server จริง** เพราะติดข้อ 1.1 ด้านล่าง — เทสต์ที่มีเป็น contract
 test กับ widget test ที่ยืนยัน body ที่ส่งขึ้นและการอ่านกลับ

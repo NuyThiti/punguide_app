@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'api_config.dart';
+import 'api_logger.dart';
 import 'api_exception.dart';
 import 'auth_token_store.dart';
 
@@ -45,6 +46,12 @@ class PlunoApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(onRequest: _onRequest, onError: _onError),
     );
+    if (kDebugMode) {
+      // Last, so it sees the request as it actually goes out — after the
+      // token and the cookies have been attached.
+      _dio.interceptors.add(const ApiLogInterceptor());
+      _refreshDio.interceptors.add(const ApiLogInterceptor());
+    }
   }
 
   /// Builds a client whose cookie jar survives app restarts, so a returning

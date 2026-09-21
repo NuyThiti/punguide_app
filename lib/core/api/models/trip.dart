@@ -167,6 +167,7 @@ class TripListItem {
     required this.tags,
     this.budgetCurrency,
     this.placeCount = 0,
+    this.description,
     required this.isSaved,
     required this.isLiked,
     required this.likeCount,
@@ -197,6 +198,7 @@ class TripListItem {
         coverImage: Media.maybeFromJson(json['coverImage']),
         budgetCurrency: Json.string(json, 'budgetCurrency'),
         placeCount: Json.integer(json, 'placeCount') ?? 0,
+        description: Json.string(json, 'description'),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
         likeCount: Json.integer(json, 'likeCount') ?? 0,
@@ -238,6 +240,9 @@ class TripListItem {
   ///
   /// A plan's staging shelf — stops not yet on a day — is **not** counted.
   final int placeCount;
+
+  /// The post's blurb, so a card can print it without opening the trip.
+  final String? description;
 
   /// `styles` and `customStyles`, already merged for display.
   final List<String> tags;
@@ -328,6 +333,7 @@ class ApiTrip {
     this.budgetCurrency,
     this.placeCount = 0,
     this.linkedTrip,
+    this.description,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -356,6 +362,7 @@ class ApiTrip {
         // Owner-only: someone opening a public trip gets no key at all, so
         // null here means "not mine to read", not "the writer left it blank".
         specialNotes: Json.string(json, 'specialNotes'),
+        description: Json.string(json, 'description'),
         guestCount: Json.integer(json, 'guestCount'),
         budgetCurrency: Json.string(json, 'budgetCurrency'),
         placeCount: Json.integer(json, 'placeCount') ?? 0,
@@ -396,7 +403,13 @@ class ApiTrip {
   /// The trip's own prose. **Owner only**: the public response leaves it out
   /// on purpose, since it often carries personal notes (allergies, mobility,
   /// small children).
+  ///
+  /// Not the post's blurb — that is [description], which everyone sees.
   final String? specialNotes;
+
+  /// The blurb under the post's name, written for whoever reads it. Absent
+  /// when none was written.
+  final String? description;
 
   final double totalBudget;
   final BudgetTier? budgetTier;

@@ -1,6 +1,7 @@
 import '../../network/api_client.dart';
 import '../models/auth_user.dart';
 import '../models/json.dart';
+import '../models/user_location.dart';
 import 'upload_form.dart';
 
 /// Sign-up, sign-in, and the session probe.
@@ -86,7 +87,8 @@ class AuthApi {
   }
 }
 
-/// The two profile mutations. Username and email are deliberately immutable.
+/// The profile mutations, plus the account's copy of where the traveller is.
+/// Username and email are deliberately immutable.
 class UsersApi {
   const UsersApi(this._client);
 
@@ -118,4 +120,30 @@ class UsersApi {
     );
     return AuthUser.fromJson(Json.asMap(body));
   }
+
+  /// Where the traveller was last seen, or null when nothing is stored.
+  ///
+  /// Never a 404: "has not given permission yet" is an ordinary answer, so the
+  /// endpoint returns 200 with `{"location": null}`.
+  Future<UserLocation?> location() async {
+    final body = await _client.get<Map<String, dynamic>>('/users/me/location');
+    return UserLocation.fromEnvelope(body);
+  }
+
+  /// Saves the position, replacing whatever was there.
+  ///
+  /// 400 when the coordinates are out of range, or when `capturedAt` is more
+  /// than five minutes ahead of the server or more than a day behind it — so
+  /// never hand this a cached reading without checking its age first.
+  Future<UserLocation?> saveLocation(UserLocation location) async {
+    final body = await _client.put<Map<String, dynamic>>(
+      '/users/me/location',
+      body: location.toJson(),
+    );
+    return UserLocation.fromEnvelope(body);
+  }
+
+  /// Erases the stored position. Idempotent — a 204 either way, so there is no
+  /// need to find out whether anything was there.
+  Future<void> deleteLocation() => _client.delete<void>('/users/me/location');
 }

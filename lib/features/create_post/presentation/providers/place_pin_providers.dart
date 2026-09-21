@@ -146,3 +146,18 @@ String? _localityOf(String? address) {
 }
 
 final _postcode = RegExp(r'\b\d{4,6}\b');
+
+/// Where the traveller is right now, named.
+///
+/// The account's own fix (`GET /users/me/location`, pulled at startup into
+/// [locationFixProvider]) is a pair of coordinates, which says nothing to a
+/// reader — so the nearest place from `/places/suggest` stands in for it.
+///
+/// Null while there is no fix, no nearby place, or the lookup failed: this is
+/// a nicety beside the post's own place, never a reason to show an error.
+final currentPlaceProvider = Provider<PostPlace?>((ref) {
+  if (ref.watch(placePinOriginProvider) == null) return null;
+  final nearby = ref.watch(nearbyPlacePinsProvider).valueOrNull;
+  if (nearby == null || nearby.isEmpty) return null;
+  return nearby.first;
+});

@@ -16,6 +16,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../domain/models/post_draft.dart';
+import 'providers/place_pin_providers.dart';
 import 'widgets/create_post_header.dart';
 import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
@@ -112,6 +113,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// What the whole trip was about, and what it cost per head. Both optional.
   PostAboutTrip _about = const PostAboutTrip();
   final _postDestination = TextEditingController();
+
+  /// Where the post is about as a whole, picked in the Title sheet. Its name
+  /// is what fills `_postDestination`; the object itself is kept so the sheet
+  /// can reopen on the same place.
+  PostPlace? _postPlace;
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
       _unavailablePaths = {};
@@ -178,14 +184,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _draftId = trip.id;
       _postTitle.text = trip.title;
       _postDestination.text = trip.destination;
-      // specialNotes is owner-only; a null here means the response withheld it
-      // rather than that the writer left About trip blank.
       final linked = trip.linkedTrip;
       if (linked != null) {
         _trip = PostTripLink(id: linked.id, title: linked.title);
       }
       _about = PostAboutTrip(
-        overview: trip.specialNotes ?? '',
+        overview: trip.description ?? '',
         budget: trip.budgetLimit,
         // Absent on the wire means THB — nothing was backfilled.
         currency: trip.budgetCurrency ?? 'THB',
@@ -212,6 +216,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           transportModes: section.transportModes,
           transportCost: section.transportCost,
           tripHack: section.tripHack ?? '',
+          contactInfo: section.contactInfo ?? '',
         );
         item
           ..body.text = section.content
@@ -335,6 +340,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       styles: _styles,
       customStyles: _customStyles,
       about: _about,
+      place: _postPlace,
     );
     if (result == null || !mounted) return;
     setState(() {
@@ -342,6 +348,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _styles = List.unmodifiable(result.styles);
       _customStyles = List.unmodifiable(result.customStyles);
       _about = result.about;
+      // Taking the place off has to empty the destination too, or publishing
+      // would keep sending the one the traveller just removed.
+      if (result.clearedPlace) {
+        _postPlace = null;
+        _postDestination.clear();
+      } else if (result.place != null) {
+        _postPlace = result.place;
+        _postDestination.text = result.place!.area?.trim().isNotEmpty == true
+            ? result.place!.area!.trim()
+            : result.place!.name.trim();
+      }
     });
     _saveLocal();
   }
@@ -1084,8 +1101,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               // Only alongside an amount: a currency on its own says nothing.
               transportCurrency:
                   topic.details.transportCost == null ? null : 'THB',
-              tripHack: topic.details.hasHack
-                  ? topic.details.tripHack.trim()
+              tripHack:
+                  topic.details.hasHack ? topic.details.tripHack.trim() : null,
+              contactInfo: topic.details.hasContact
+                  ? topic.details.contactInfo.trim()
                   : null));
         }
       }
@@ -1123,10 +1142,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           linkedTripId: _trip == null
               ? const Patch<String>.clear()
               : Patch<String>.value(_trip!.id),
-          // About trip. `specialNotes` is write-only on this API — it goes up
-          // and never comes back on the trip — so the overview survives the
-          // publish but not a reopen; the local draft is what restores it.
-          specialNotes: overview.isEmpty ? null : overview,
+          // About trip's overview is the post's blurb, so it goes in
+          // `description`, which every reader sees. `specialNotes` beside it
+          // is the owner's private note and must not carry public prose.
+          description: overview.isEmpty ? null : overview,
           // Stored exactly as typed: the server does no per-head arithmetic,
           // so "ต่อคน" stays the app's reading of the same number.
           budgetLimit: _about.budget,
@@ -1251,6 +1270,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         await showTransportSheet(context, current: current),
       PostSpotExtra.tripHack =>
         await showTripHackSheet(context, current: current),
+      PostSpotExtra.contact =>
+        await showContactSheet(context, current: current),
     };
     if (updated == null || !mounted) return;
     setState(() => _blocks[index].details = updated);
@@ -1310,6 +1331,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       onEditTitle: _editTitle,
                       about: _about,
                       onEditAbout: _editAbout,
+                      place: _postPlace,
+                      currentPlace: ref.watch(currentPlaceProvider),
                     ),
                     const SizedBox(height: 10),
                     PostWarnings(

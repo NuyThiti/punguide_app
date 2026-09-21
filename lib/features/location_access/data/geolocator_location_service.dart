@@ -77,6 +77,12 @@ class GeolocatorLocationService implements LocationService {
   static LocationFix _fixOf(Position position) => LocationFix(
         latitude: position.latitude,
         longitude: position.longitude,
+        // The platforms report a radius in metres as a double; the API takes
+        // a whole number, and sub-metre precision on an accuracy estimate is
+        // noise anyway.
+        accuracyMeters:
+            position.accuracy.isFinite ? position.accuracy.round() : null,
+        capturedAt: position.timestamp,
       );
 
   /// `deniedForever` is a refusal like any other as far as this app is

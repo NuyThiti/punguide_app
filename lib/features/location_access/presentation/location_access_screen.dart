@@ -7,7 +7,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../domain/location_service.dart';
-import '../domain/picked_location.dart';
 import 'providers/location_providers.dart';
 import 'widgets/location_permission_sheet.dart';
 
@@ -89,11 +88,12 @@ class _LocationAccessScreenState extends ConsumerState<LocationAccessScreen> {
     if (status == LocationPermissionStatus.granted) {
       final fix = await ref.read(locationServiceProvider).currentFix();
       if (!mounted) return;
+      // capture, not a plain assignment: this is the first reading of the
+      // traveller's life in the app, and the one the contract asks to be sent
+      // up as soon as permission is given.
       if (fix != null) {
-        ref.read(locationFixProvider.notifier).state = LocationFixPoint(
-          latitude: fix.latitude,
-          longitude: fix.longitude,
-        );
+        await ref.read(locationFixProvider.notifier).capture(fix);
+        if (!mounted) return;
       }
     }
 
