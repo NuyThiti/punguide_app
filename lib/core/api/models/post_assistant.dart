@@ -131,12 +131,67 @@ class SectionPlaceOptions {
 /// A post the assistant drafted from photos. Nothing here is saved: the
 /// traveller reads it, edits it, and only then does `PATCH /trips/:id` run.
 @immutable
+
+/// The nearest place to where the traveller is now, for the composer's
+/// "ตอนนี้อยู่แถว …" line.
+///
+/// Deliberately a place and not an administrative area: there is no reverse
+/// geocoder behind this, and "แถวสนามหลวง" is what a Thai speaker actually
+/// says — not "แขวงพระบรมมหาราชวัง".
+@immutable
+class NearbyArea {
+  const NearbyArea({
+    required this.name,
+    this.placeId,
+    this.latitude,
+    this.longitude,
+    this.distanceMeters,
+  });
+
+  /// Null for a missing or nameless answer, so a caller never has to tell
+  /// "no position" from "a blank label".
+  static NearbyArea? maybeFrom(Object? value) {
+    if (value is! Map) return null;
+    final json = Json.asMap(value);
+    final name = Json.string(json, 'name')?.trim();
+    if (name == null || name.isEmpty) return null;
+
+    return NearbyArea(
+      name: name,
+      placeId: Json.string(json, 'placeId'),
+      latitude: Json.number(json, 'latitude'),
+      longitude: Json.number(json, 'longitude'),
+      distanceMeters: Json.number(json, 'distanceM'),
+    );
+  }
+
+  /// What goes after "ตอนนี้อยู่แถว ".
+  final String name;
+
+  /// Google's id, not ours — the place may never have been saved here.
+  final String? placeId;
+
+  final double? latitude, longitude;
+
+  /// How far the traveller is from it. Null when the server did not say, which
+  /// is treated as near enough to show: it answered with the closest thing it
+  /// found either way.
+  final double? distanceMeters;
+
+  /// Whether the name still describes where the traveller is standing.
+  ///
+  /// Past a couple of kilometres the nearest place stops being a landmark and
+  /// becomes a different neighbourhood, and "ตอนนี้อยู่แถว" would be a lie.
+  bool get isNearby => (distanceMeters ?? 0) <= 2000;
+}
+
 class GeneratedPostDraft {
   const GeneratedPostDraft({
     this.title = '',
     this.contents = const [],
     this.locationOptions = const [],
     this.warnings = const [],
+    this.currentArea,
   });
 
   factory GeneratedPostDraft.fromJson(Map<String, dynamic> json) =>
@@ -153,6 +208,7 @@ class GeneratedPostDraft {
             .map(SectionPlaceOptions.fromJson)
             .toList(growable: false),
         warnings: Json.stringList(json, 'warnings'),
+        currentArea: NearbyArea.maybeFrom(json['currentArea']),
       );
 
   /// The headline it suggests. Empty when it had nothing to go on.
@@ -167,6 +223,14 @@ class GeneratedPostDraft {
   /// Why the draft may not match what the traveller expected. Every one of
   /// these has to reach the screen.
   final List<String> warnings;
+
+  /// Roughly where the traveller was standing when they asked, or null when
+  /// the request carried no position, nothing sat near it, or the lookup
+  /// failed — none of which is an error.
+  ///
+  /// This describes the *person*, not the photos: it never reaches the post's
+  /// own text, and a section's place still has to be confirmed by hand.
+  final NearbyArea? currentArea;
 
   /// The candidates for [index], or null when that section has none.
   SectionPlaceOptions? optionsFor(int index) {

@@ -113,6 +113,16 @@ class TripsApi {
   /// [notes] is context, not instruction, and is the only thing that lets the
   /// assistant write "เรา" instead of the first person singular.
   ///
+  /// [currentLat]/[currentLng] are where the traveller is *now*, and are only
+  /// ever a fallback: a photo that carries its own coordinates always wins,
+  /// because a trip is usually written up at home days later. They also decide
+  /// [GeneratedPostDraft.currentArea]. Omitted, the server falls back to the
+  /// fix stored by `PUT /users/me/location`, and then to nothing at all.
+  ///
+  /// When the suggestions did come from here the answer carries a warning
+  /// saying so — those mean "near you now", not "near the photo", so they have
+  /// to reach the screen.
+  ///
   /// Pass an [idempotencyKey] per attempt: the same key within five minutes
   /// returns the draft it returned the first time, free. "Draft again" needs a
   /// fresh one.
@@ -122,6 +132,8 @@ class TripsApi {
     String? language,
     String? notes,
     String? locationName,
+    double? currentLat,
+    double? currentLng,
     String? idempotencyKey,
   }) async {
     // The endpoint is billed per photo and caps a call at 20; the app splits
@@ -139,6 +151,17 @@ class TripsApi {
     if ((locationName?.length ?? 0) > 200) {
       throw const FormatException('ชื่อสถานที่ต้องไม่เกิน 200 ตัวอักษร');
     }
+    // A lone coordinate is a bug at the call site, not half an answer: sent
+    // on its own the server would ignore it and the draft would silently lose
+    // its near-me suggestions.
+    if ((currentLat == null) != (currentLng == null)) {
+      throw const FormatException(
+          'ตำแหน่งปัจจุบันต้องส่งทั้งละติจูดและลองจิจูด');
+    }
+    if (currentLat != null &&
+        (currentLat.abs() > 90 || currentLng!.abs() > 180)) {
+      throw const FormatException('ตำแหน่งปัจจุบันอยู่นอกช่วงที่เป็นไปได้');
+    }
 
     final body = await _client.post<Map<String, dynamic>>(
       '/trips/$tripId/contents/generate',
@@ -150,6 +173,11 @@ class TripsApi {
         'language': language,
         'notes': notes,
         'locationName': locationName,
+        if (currentLat != null)
+          'currentLocation': <String, dynamic>{
+            'lat': currentLat,
+            'lng': currentLng,
+          },
       }),
     );
     return GeneratedPostDraft.fromJson(Json.asMap(body));

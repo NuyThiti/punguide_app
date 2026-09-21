@@ -118,6 +118,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// is what fills `_postDestination`; the object itself is kept so the sheet
   /// can reopen on the same place.
   PostPlace? _postPlace;
+
+  /// What the assistant said the traveller was standing near, kept from the
+  /// last draft. It costs nothing extra — the server works it out from the
+  /// position the generate call already carried — and it beats the client's
+  /// own guess, so it replaces it once it arrives.
+  NearbyArea? _currentArea;
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
       _unavailablePaths = {};
@@ -468,6 +474,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return true;
   }
 
+  /// What goes after "ตอนนี้อยู่แถว " on the identity card, or null when the
+  /// app cannot honestly say.
+  ///
+  /// The assistant's answer wins when there is one: the server ranks by
+  /// distance, while the client's own list is whatever `/places/suggest`
+  /// returned. Too far away is the same as not knowing — past a couple of
+  /// kilometres the nearest place is a different neighbourhood, and the line
+  /// would be telling the traveller where they are not.
+  String? _nearbyAreaName(WidgetRef ref) {
+    final answered = _currentArea;
+    if (answered != null) return answered.isNearby ? answered.name : null;
+    return ref.watch(currentPlaceProvider)?.name;
+  }
+
   /// The place the traveller pinned themselves, which is the only name the
   /// assistant may write into a caption.
   ///
@@ -541,12 +561,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       if (!mounted || token != _arrangement) return false;
 
       final notes = _postTitle.text.trim();
+      // Only ever a fallback for photos with no coordinates of their own, and
+      // what names the "ตอนนี้อยู่แถว" line. Null is fine: the server then
+      // falls back to the fix the account holds.
+      final origin = ref.read(placePinOriginProvider);
       final draft = await api.trips.generateContents(
         _draftId!,
         photos: uploaded,
         language: 'th',
         notes: notes.isEmpty ? null : notes,
         locationName: _confirmedPlaceName(),
+        currentLat: origin?.lat,
+        currentLng: origin?.lng,
         idempotencyKey: _assistKey,
       );
       if (!mounted || token != _arrangement) return false;
@@ -682,6 +708,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         _postTitle.text = draft.title.trim();
       }
       _warnings = List.unmodifiable(warnings);
+      // Absent means the server had no position to work from, which is not a
+      // reason to throw away a name it gave us a moment ago.
+      _currentArea = draft.currentArea ?? _currentArea;
       _syncCover();
     });
     _saveLocal();
@@ -1332,7 +1361,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       about: _about,
                       onEditAbout: _editAbout,
                       place: _postPlace,
-                      currentPlace: ref.watch(currentPlaceProvider),
+                      currentArea: _nearbyAreaName(ref),
                     ),
                     const SizedBox(height: 10),
                     PostWarnings(

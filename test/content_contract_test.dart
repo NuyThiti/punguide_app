@@ -195,9 +195,15 @@ void main() {
       List<PostAssistantPhoto> photos = const [PostAssistantPhoto(mediaId: a)],
       String? notes,
       String? locationName,
+      double? currentLat,
+      double? currentLng,
     }) =>
         api.trips.generateContents('trip-new',
-            photos: photos, notes: notes, locationName: locationName);
+            photos: photos,
+            notes: notes,
+            locationName: locationName,
+            currentLat: currentLat,
+            currentLng: currentLng);
 
     // 1-20 photos, none repeated.
     expect(() => call(photos: const []), throwsA(isA<FormatException>()));
@@ -228,6 +234,86 @@ void main() {
         () => call(
             photos: const [PostAssistantPhoto(mediaId: a, latitude: 18.7)]),
         throwsA(isA<FormatException>()));
+
+    // So does the traveller's own position — half of it would be dropped by
+    // the server and the draft would quietly lose its near-me suggestions.
+    expect(() => call(currentLat: 13.7), throwsA(isA<FormatException>()));
+    expect(() => call(currentLng: 100.5), throwsA(isA<FormatException>()));
+    expect(() => call(currentLat: 91, currentLng: 100.5),
+        throwsA(isA<FormatException>()));
+    expect(() => call(currentLat: 13.7, currentLng: 181),
+        throwsA(isA<FormatException>()));
+  });
+
+  test('the traveller position rides along and comes back as currentArea',
+      () async {
+    final adapter = FakeAdapter({
+      'POST /trips/trip-new/contents/generate': [
+        FakeReply(201, {
+          'title': 'ร่างจากรูป',
+          'contents': [
+            {'content': 'เดินเล่นตอนเย็น', 'mediaIds': []},
+          ],
+          'locationOptions': [],
+          'warnings': [
+            'These photos carry no coordinates, so suggestions are near you',
+          ],
+          'currentArea': {
+            'name': 'สนามหลวง',
+            'placeId': 'ChIJ',
+            'latitude': 13.7565,
+            'longitude': 100.4932,
+            'distanceM': 42,
+          },
+        })
+      ]
+    });
+    final api = fakeApi(adapter);
+    addTearDown(api.close);
+
+    final draft = await api.trips.generateContents(
+      'trip-new',
+      photos: const [PostAssistantPhoto(mediaId: a)],
+      language: 'th',
+      currentLat: 13.7563,
+      currentLng: 100.493,
+    );
+
+    // One nested object, and nothing invented: the endpoint whitelists keys.
+    expect(adapter.requests.last.data, {
+      'photos': [
+        {'mediaId': a}
+      ],
+      'language': 'th',
+      'currentLocation': {'lat': 13.7563, 'lng': 100.493},
+    });
+
+    expect(draft.currentArea!.name, 'สนามหลวง');
+    expect(draft.currentArea!.distanceMeters, 42);
+    expect(draft.currentArea!.isNearby, isTrue);
+    // The warning saying the suggestions are near the person, not the photo,
+    // has to survive to the screen.
+    expect(draft.warnings, hasLength(1));
+  });
+
+  test('currentArea absent, blank or far away never names a place', () {
+    GeneratedPostDraft parse(Object? area) =>
+        GeneratedPostDraft.fromJson({'currentArea': area});
+
+    // Every one of these is an ordinary answer, not a failure.
+    expect(parse(null).currentArea, isNull);
+    expect(parse('สนามหลวง').currentArea, isNull);
+    expect(parse({'placeId': 'ChIJ'}).currentArea, isNull);
+    expect(parse({'name': '  '}).currentArea, isNull);
+
+    // No distance means the server still answered with the closest thing it
+    // found, so it shows; two kilometres out it is a different neighbourhood.
+    expect(parse({'name': 'สนามหลวง'}).currentArea!.isNearby, isTrue);
+    expect(parse({'name': 'สนามหลวง', 'distanceM': 2000}).currentArea!.isNearby,
+        isTrue);
+    expect(
+        parse({'name': 'ไอคอนสยาม', 'distanceM': 2001}).currentArea!.isNearby,
+        isFalse);
   });
 
   testWidgets(
@@ -303,8 +389,8 @@ void main() {
     final read = TripContent.fromJson(
         {'content': 'x', 'contactInfo': 'คุณบุญอนันต์ 081-234-5678'});
     expect(read.contactInfo, 'คุณบุญอนันต์ 081-234-5678');
-    expect(read.toRequest().toJson()['contactInfo'],
-        'คุณบุญอนันต์ 081-234-5678');
+    expect(
+        read.toRequest().toJson()['contactInfo'], 'คุณบุญอนันต์ 081-234-5678');
   });
 
   test('description is public and separate from specialNotes', () {
