@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
+import 'package:pluno/features/home/presentation/widgets/home_assistant_fab.dart';
+import 'package:pluno/shared/widgets/app_bottom_nav.dart';
 
 import 'support/home_feed_fixtures.dart';
 
@@ -169,6 +171,29 @@ void main() {
     await tester.drag(find.byType(ListView).first, const Offset(0, -300));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(chips), pinned);
+  });
+
+  testWidgets('the assistant button floats clear of the nav bar',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(_trips));
+    await tester.pumpAndSettle();
+
+    final fab = find.byType(HomeAssistantFab);
+    expect(fab, findsOneWidget);
+
+    // It must sit above the bar, not behind it.
+    final fabBottom = tester.getBottomLeft(fab).dy;
+    final navTop = tester.getTopLeft(find.byType(AppBottomNav)).dy;
+    expect(fabBottom, lessThan(navTop));
+
+    // No assistant screen yet, so the tap says so rather than doing nothing.
+    await tester.tap(fab);
+    await tester.pumpAndSettle();
+    expect(find.text('ผู้ช่วย PunGuide ยังไม่เปิดใช้งาน'), findsOneWidget);
   });
 
   testWidgets('home renders an empty state when the feed is empty',

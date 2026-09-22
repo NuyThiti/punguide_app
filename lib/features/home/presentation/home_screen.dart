@@ -11,6 +11,7 @@ import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import 'providers/home_feed_providers.dart';
 import 'widgets/destination_card.dart';
+import 'widgets/home_assistant_fab.dart';
 import 'widgets/home_filter_bar.dart';
 import 'widgets/home_hero.dart';
 import 'widgets/pun_guide_grid.dart';
@@ -187,6 +188,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           Positioned(
+            right: 16,
+            bottom: HomeAssistantFab.bottomOffsetOf(context),
+            child: HomeAssistantFab(onTap: _openAssistant),
+          ),
+          Positioned(
             left: 0,
             right: 0,
             bottom: 0,
@@ -200,6 +206,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
+
+  /// Pushed, not swapped: the conversation is a detour off the feed, and
+  /// backing out of it should land where the traveller left.
+  void _openAssistant() => context.pushNamed(AppRoute.aiChat.name);
 
   /// One definition, rendered twice: in the list, and pinned on top of it.
   Widget _filterBar() {

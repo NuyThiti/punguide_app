@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/ai_chat/presentation/ai_chat_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/create_post/presentation/create_post_screen.dart';
 import '../../features/create_trip/presentation/create_trip_screen.dart';
@@ -23,6 +24,7 @@ import '../../features/trip_detail/presentation/trip_detail_screen.dart';
 
 enum AppRoute {
   home,
+  aiChat,
   login,
   discover,
   paigun,
@@ -190,6 +192,14 @@ final appRouter = GoRouter(
       redirect: _locationGate,
       pageBuilder: (context, state) =>
           _instantPage(state, const LocationPickerScreen()),
+    ),
+    GoRoute(
+      path: '/ai-chat',
+      name: AppRoute.aiChat.name,
+      // Pushed from Home rather than swapped, so backing out of the
+      // conversation lands on the feed the traveller left.
+      pageBuilder: (context, state) =>
+          _instantPage(state, const AiChatScreen()),
     ),
     GoRoute(
       path: '/login',

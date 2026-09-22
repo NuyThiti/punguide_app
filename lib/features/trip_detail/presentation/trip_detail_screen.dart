@@ -126,30 +126,112 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     );
   }
 
+  /// A post, in the order the composer collects it: who wrote it, what it is
+  /// called, where, what kind of trip, the blurb, then the spots.
+  Widget _contentBody(ApiTrip trip) {
+    final styles = trip.brief?.styles ?? const <TravelStyle>[];
+    final blurb = trip.description?.trim() ?? '';
+
+    return SafeArea(
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(
+          _gutter(context),
+          8,
+          _gutter(context),
+          32,
+        ),
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: _leave,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'ย้อนกลับ',
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => _todo('แชร์โพสต์ยังไม่เปิดใช้งาน'),
+                icon: const Icon(Icons.ios_share),
+                tooltip: 'แชร์',
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _PostAuthorRow(trip: trip),
+          const SizedBox(height: 14),
+          Text(
+            trip.title,
+            style: const TextStyle(
+              color: AppColors.foreground,
+              fontSize: 22,
+              height: 1.25,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (trip.destination.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.location_on_outlined,
+                  size: 15,
+                  color: AppColors.postPurple,
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    trip.destination,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (styles.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final style in styles) _PostStyleChip(style: style),
+              ],
+            ),
+          ],
+          if (blurb.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              blurb,
+              style: const TextStyle(
+                color: Color(0xFF5F6864),
+                fontSize: 14.5,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          if (trip.coverImage != null) ...[
+            const SizedBox(height: 18),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: AspectRatio(
+                aspectRatio: 1.6,
+                child: CoverImage(source: trip.coverImage!.urls.full),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          TripContentSections(sections: trip.contents),
+        ],
+      ),
+    );
+  }
+
   Widget _body(ApiTrip trip) {
-    if (trip.type == TripType.content) {
-      return SafeArea(
-          child: ListView(padding: const EdgeInsets.all(18), children: [
-        Row(children: [
-          IconButton(onPressed: _leave, icon: const Icon(Icons.arrow_back)),
-          Expanded(
-              child: Text(trip.title,
-                  style: const TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.w700)))
-        ]),
-        Text(trip.destination, style: const TextStyle(color: AppColors.muted)),
-        if (trip.coverImage != null)
-          Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: AspectRatio(
-                      aspectRatio: 1.6,
-                      child: CoverImage(source: trip.coverImage!.urls.full)))),
-        const SizedBox(height: 16),
-        TripContentSections(sections: trip.contents),
-      ]));
-    }
+    if (trip.type == TripType.content) return _contentBody(trip);
     final plan = _PlanView.of(trip);
     // A trip whose days were deleted must not leave the tab strip pointing
     // past the end of the list.
@@ -248,6 +330,88 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+/// Who wrote the post.
+///
+/// The trip's owner, not the signed-in viewer — `customer` is the account the
+/// trip belongs to.
+class _PostAuthorRow extends StatelessWidget {
+  const _PostAuthorRow({required this.trip});
+
+  final ApiTrip trip;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatar = trip.customer?.avatarUrl;
+
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          clipBehavior: Clip.antiAlias,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.postPurpleSoft,
+          ),
+          child: avatar == null || avatar.isEmpty
+              ? const Icon(Icons.person, size: 18, color: AppColors.postPurple)
+              : CoverImage(source: avatar, fit: BoxFit.cover),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            trip.customer?.name ?? 'ไม่ระบุผู้เขียน',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.foreground,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A Trip Activity chip, the same label and glyph the composer offers.
+class _PostStyleChip extends StatelessWidget {
+  const _PostStyleChip({required this.style});
+
+  final TravelStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.postPurpleSoft,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(styleIcon(style), size: 14, color: AppColors.postPurple),
+          const SizedBox(width: 6),
+          // Every label in `styleByLabel` is short, but a chip that cannot
+          // give way is one unknown enum away from running off the row.
+          Flexible(
+            child: Text(
+              styleLabel(style) ?? style.wire,
+              style: const TextStyle(
+                color: AppColors.postPurple,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

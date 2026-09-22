@@ -155,11 +155,13 @@ class PostTopicItem {
 /// Everything a spot says beyond its story: when to go, how to get there, and
 /// the one tip worth passing on.
 ///
-/// **None of this reaches the server.** A content section carries a title, a
-/// body, media, a location and photo metadata — nothing else — and `/trips`
-/// rejects keys it does not know, so an invented field would fail the whole
-/// publish. The composer keeps these with the draft and says so before a post
-/// goes out.
+/// **All of this reaches the server now.** A content section grew `visitedAt`,
+/// `opensAt`, `closesAt`, `transportModes`, `transportCost`,
+/// `transportCurrency`, `tripHack` and `contactInfo`, and
+/// `TripContentRequest.toJson` validates and sends them — the viewer reads the
+/// same fields back off `GET /trips/:id`. It did not always: this was draft-only
+/// while the fields were missing, and `/trips` still rejects keys it does not
+/// know, so anything new needs the contract first.
 @immutable
 class PostSpotDetails {
   const PostSpotDetails({

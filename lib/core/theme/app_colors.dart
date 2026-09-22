@@ -104,4 +104,30 @@ class AppColors {
   static const filterWheelWell = Color(0xFFFFF6EA);
   static const filterStepIdle = Color(0xFFF6E4DA);
   static const filterDivider = Color(0xFFEDE9E3);
+
+  /// Ai Chat (Figma 2281-46309): the assistant's own screen. The spark
+  /// gradient is the one [assets/icons/ai_assistant.svg] paints itself with,
+  /// so the header pill, the empty state's diamond and the send key all read
+  /// as the same object.
+  static const aiSparkStart = Color(0xFFFF8569);
+  static const aiSparkMid = Color(0xFFFFDB4E);
+  static const aiSparkEnd = Color(0xFF80FFAE);
+
+  /// The warm wash behind the page — amber at the crown, gone by the time the
+  /// conversation starts, and lit again under the composer.
+  static const aiWashTop = Color(0xFFFFE3AE);
+  static const aiWashMid = Color(0xFFFFF3DC);
+  static const aiWashBottom = Color(0xFFFFEFD8);
+
+  /// Bubbles: the assistant speaks on warm paper, the traveller on graphite.
+  static const aiBubbleAssistant = Color(0xFFF2F0ED);
+  static const aiBubbleUser = Color(0xFF6E6E6E);
+
+  /// The composer card, its two round tools, and the grey a hint is set in.
+  static const aiComposer = Color(0xFFF5F2EE);
+  static const aiComposerTool = Color(0xFFEBE7E2);
+  static const aiHint = Color(0xFFA9A49E);
+
+  /// The greeting under the diamond.
+  static const aiGreeting = Color(0xFF9A9691);
 }

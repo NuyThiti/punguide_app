@@ -4,18 +4,14 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/models/post_draft.dart';
-import '../../../../shared/extensions/currency_extensions.dart';
 import 'composer_sheet.dart';
+import '../../../../shared/formatting/spot_detail_text.dart';
 
 String _clock(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:'
     '${time.minute.toString().padLeft(2, '0')}';
 
 /// "06:00 AM", the way the filled row reads it back.
-String _clock12(TimeOfDay time) {
-  final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-  final minute = time.minute.toString().padLeft(2, '0');
-  return '$hour:$minute ${time.period == DayPeriod.am ? 'AM' : 'PM'}';
-}
+String _clock12(TimeOfDay time) => clock12Text(_clock(time));
 
 /// The filled details under a spot's story, on one line.
 ///
@@ -94,23 +90,17 @@ class PostSpotDetailRows extends StatelessWidget {
   }
 
   /// "MRT · เดิน ฿100", dropping whichever half is missing.
-  static String _transportText(PostSpotDetails details) {
-    final modes = details.transportModes.join(' · ');
-    final cost = details.transportCost;
-    if (cost == null) return modes;
-    if (modes.isEmpty) return cost.asBaht;
-    return '$modes ${cost.asBaht}';
-  }
+  static String _transportText(PostSpotDetails details) =>
+      transportText(details.transportModes, details.transportCost);
 
   /// "06.00 - 14.30 น.", or null when no hours were given.
-  static String? _hoursRange(PostSpotDetails details) {
-    final opens = details.opensAt;
-    final closes = details.closesAt;
-    if (opens == null && closes == null) return null;
-    final from = opens == null ? '—' : _clock(opens).replaceAll(':', '.');
-    final to = closes == null ? '—' : _clock(closes).replaceAll(':', '.');
-    return '$from - $to น.';
-  }
+  ///
+  /// Shared with the viewer through the wire's `HH:mm`, so a spot reads the
+  /// same in the composer and in the post.
+  static String? _hoursRange(PostSpotDetails details) => hoursRangeText(
+        details.opensAt == null ? null : _clock(details.opensAt!),
+        details.closesAt == null ? null : _clock(details.closesAt!),
+      );
 }
 
 /// Which of the three a row or chip stands for.
