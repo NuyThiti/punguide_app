@@ -61,7 +61,9 @@ class _TripPicker extends ImagePickerPlatform {
 }
 
 Widget _harness(
-    {FakeAdapter? adapter, ApiTrip? initialTrip, List<Override> extra = const []}) {
+    {FakeAdapter? adapter,
+    ApiTrip? initialTrip,
+    List<Override> extra = const []}) {
   // Always a fake client: importing photos now talks to the API before it
   // draws anything, and an unstubbed route answers 500 rather than reaching
   // for plugins the test environment does not have.
@@ -134,8 +136,8 @@ Future<void> _pumpComposer(WidgetTester tester,
 Future<void> _settleNearby(WidgetTester tester) async {
   for (var i = 0; i < 12; i++) {
     await tester.pump(const Duration(milliseconds: 50));
-    await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
   }
   await tester.pumpAndSettle();
 }
@@ -449,7 +451,10 @@ void main() {
         const FakeReply(200, {
           'title': 'ร่างจากรูป',
           'contents': [
-            {'content': 'เดินเล่นตอนเย็น', 'mediaIds': [_a]},
+            {
+              'content': 'เดินเล่นตอนเย็น',
+              'mediaIds': [_a]
+            },
           ],
           'locationOptions': [],
           'warnings': [],
@@ -687,7 +692,7 @@ void main() {
   });
 
   testWidgets(
-      'photo-only content publishes with user-entered trip fields and no cover',
+      'photo-only content publishes with user-entered trip fields, led by its own photo',
       (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(
@@ -698,6 +703,7 @@ void main() {
       'POST /trips/trip-new/media': [
         FakeReply(201, _image(_a, 'https://example.com/a.jpg'))
       ],
+      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
@@ -734,13 +740,41 @@ void main() {
         'location': {'status': 'none'}
       }
     ]);
+    // No cover was chosen, so the post leads with the one picture it has
+    // rather than going out with a blank where the image belongs.
+    expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _a});
+  });
+
+  testWidgets('a post with no pictures publishes without a cover',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
+        'ทริปของฉัน';
+    tester
+        .widget<PostBlock>(find.byType(PostBlock))
+        .items!
+        .first
+        .bodyController
+        .text = 'เล่าเฉย ๆ ไม่มีรูป';
+    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    // There is nothing to lead with, and a cover is not worth inventing.
     expect(adapter.paths, isNot(contains('PUT /trips/trip-new/cover')));
+    expect(adapter.paths, contains('PATCH /trips/trip-new'));
   });
 
   testWidgets(
       'owner edit preserves media order and only confirms suggestion on tap',
       (tester) async {
     final adapter = FakeAdapter({
+      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())]
     });
     final trip = ApiTrip.fromJson({
@@ -773,8 +807,11 @@ void main() {
     await tester.pumpAndSettle();
     await _tapNext(tester);
     await _finishPublish(tester);
+    // Nothing is re-uploaded, and the trip had no cover of its own, so it is
+    // led by the picture that now reads first.
     expect(adapter.paths.where((p) => p != 'GET /trips/mine'),
-        ['PATCH /trips/trip-new']);
+        ['PUT /trips/trip-new/cover', 'PATCH /trips/trip-new']);
+    expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _b});
     final section =
         (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single;
     expect(section['mediaIds'], [_b, _a]);
@@ -1033,6 +1070,83 @@ void main() {
     expect(adapter.paths.indexOf('PUT /trips/trip-new/cover'),
         lessThan(adapter.paths.indexOf('PATCH /trips/trip-new')));
     expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('the header cover joins no spot and still publishes',
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/cover.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/story.jpg')),
+      ],
+      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    // The header's round action, before anything has been chosen.
+    await tester.tap(find.byTooltip('รูปหน้าปก'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+
+    // The whole point: it is the cover, and it is in no spot. A picture the
+    // traveller never put in the story must not appear in it.
+    expect(
+        tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
+    // Shown where it was chosen, with the way to undo it.
+    expect(find.byTooltip('เปลี่ยนรูปหน้าปก'), findsOneWidget);
+    expect(find.byTooltip('เอารูปหน้าปกออก'), findsOneWidget);
+
+    // Give the post something to actually say, then publish.
+    tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
+        'ทริปของฉัน';
+    tester
+        .widget<PostBlock>(find.byType(PostBlock))
+        .items!
+        .first
+        .bodyController
+        .text = 'เดินเล่นตอนเย็น';
+    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    await _finishPublish(tester);
+
+    // It reached the trip as its cover even though no section carried it, and
+    // no section claims it as one of its pictures.
+    expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _a});
+    expect(adapter.paths.indexOf('PUT /trips/trip-new/cover'),
+        lessThan(adapter.paths.indexOf('PATCH /trips/trip-new')));
+    final sections = adapter.bodyOf('PATCH /trips/trip-new')!['contents'];
+    for (final section in sections as List) {
+      expect((section as Map)['mediaIds'] ?? const [], isNot(contains(_a)));
+    }
+  });
+
+  testWidgets('the header cover can be taken off again', (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    await _pumpComposer(tester);
+
+    await tester.tap(find.byTooltip('รูปหน้าปก'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('เปลี่ยนรูปหน้าปก'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('เอารูปหน้าปกออก'));
+    await tester.pumpAndSettle();
+
+    // Back to the offer, and nothing was left behind in a spot.
+    expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
+    expect(find.byTooltip('เปลี่ยนรูปหน้าปก'), findsNothing);
+    expect(
+        tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
   });
 
   testWidgets('removing the selected cover never chooses another automatically',
@@ -1689,8 +1803,7 @@ void main() {
     expect(find.text('ต่อคน'), findsOneWidget);
     expect(find.text('THB'), findsOneWidget);
   });
-  testWidgets('a filled About trip reads back inside the card',
-      (tester) async {
+  testWidgets('a filled About trip reads back inside the card', (tester) async {
     await _pumpComposer(tester);
     await _fillAboutTrip(tester, overview: 'เดินเที่ยวย่านพระนคร');
 
@@ -1716,8 +1829,8 @@ void main() {
 
     await tester.tap(find.text('ที่เขียนไว้ก่อน'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.widgetWithText(TextField, 'ภาพรวมของทริป'), 'พิมพ์ไปแล้วเปลี่ยนใจ');
+    await tester.enterText(find.widgetWithText(TextField, 'ภาพรวมของทริป'),
+        'พิมพ์ไปแล้วเปลี่ยนใจ');
     // Out through the scrim rather than ตกลง.
     await tester.tapAt(const Offset(200, 30));
     await tester.pumpAndSettle();

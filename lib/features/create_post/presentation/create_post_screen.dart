@@ -48,7 +48,11 @@ class _PublishResume {
   String key = '', title = '', postDestination = '';
   PostAboutTrip about = const PostAboutTrip();
   List<PostSpotDetails> spotDetails = const [];
-  bool coverWasInContents = false;
+
+  /// The cover media was uploaded by this composer, so it is ours to
+  /// clean up once it stops being the cover.
+  bool coverMediaIsOurs = false;
+  bool coverOffPage = false;
   Set<String> uncertain = {}, legacy = {}, unavailable = {};
   Map<String, TripPhoto> metadata = {};
 }
@@ -104,8 +108,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   int _arrangement = 0;
   final Map<String, Media> _uploaded = {};
   String? _coverPath;
+
+  /// The cover came from the header, so it belongs to no spot. Nothing on the
+  /// page carries it, which means nothing on the page can take it away either
+  /// — see [_syncCover].
+  bool _coverOffPage = false;
   String? _savedCoverId;
-  bool _savedCoverWasInContents = false;
+  bool _coverMediaIsOurs = false;
   String _createKey = uuidV4();
   String? _creationTitle, _creationDestination;
   final _postTitle = TextEditingController();
@@ -127,7 +136,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _unavailablePaths = {};
   final Map<String, TripPhoto> _photoMetadata = {};
 
+  /// Drops the cover when the photo it pointed at has left the page.
+  ///
+  /// A cover chosen from the header is not one of the page's photos, so there
+  /// is nothing for it to have left — it stays until the traveller clears it.
   void _syncCover() {
+    if (_coverOffPage) return;
     final photos = _blocks.expand((block) => block.imagePaths);
     if (!photos.contains(_coverPath)) {
       _coverPath = null;
@@ -165,7 +179,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _tripDestination = resume?.destination;
       _uploaded.addAll(resume?.uploaded ?? {});
       if (resume != null) {
-        _savedCoverWasInContents = resume.coverWasInContents;
+        _coverMediaIsOurs = resume.coverMediaIsOurs;
+        _coverOffPage = resume.coverOffPage;
         _createKey = resume.key;
         _creationTitle = resume.creationTitle;
         _creationDestination = resume.creationDestination;
@@ -250,7 +265,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             }
             if (trip.coverImage?.mediaId == id) {
               _coverPath = path;
-              _savedCoverWasInContents = true;
+              _coverMediaIsOurs = true;
             }
           }
         } else {
@@ -430,20 +445,42 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
   }
 
-  /// The header's round action: choose the photo the post leads with.
+  /// The header's round action: the photo the post leads with, and nothing
+  /// else. It joins no spot, so it never turns up in the story as a picture
+  /// the traveller did not put there.
   ///
-  /// A cover has to be a photo the post actually carries — publishing marks
-  /// one of the uploaded media as the cover — so this adds it to the first
-  /// spot and then points the cover at it.
+  /// It is still uploaded at publish and pointed at with `media.setCover` —
+  /// see the cover step in [_publish].
   Future<void> _pickCover() async {
-    final before = _blocks.first.items.first.imagePaths.length;
-    await _pickPhoto(0);
-    if (!mounted) return;
-    final paths = _blocks.first.items.first.imagePaths;
-    if (paths.length <= before) return;
-    setState(() => _coverPath = paths.last);
+    final source = await showPhotoSourceSheet(context);
+    if (source == null || !mounted) return;
+    try {
+      final image = await _picker.pickImage(source: source);
+      if (image == null || !mounted) return;
+      // Deliberately not read for EXIF. A cover is decoration; letting its
+      // coordinates stand in for the trip's destination, or its timestamp
+      // order the spots, would be the picture deciding what the post says.
+      setState(() {
+        _coverPath = image.path;
+        _coverOffPage = true;
+      });
+      _saveLocal();
+      _message('ตั้งเป็นรูปหน้าปกแล้ว');
+    } catch (_) {
+      if (mounted) {
+        _message(
+            'เลือกรูปไม่สำเร็จ กรุณาตรวจสิทธิ์แล้วลองอีกครั้ง ร่างเดิมยังอยู่');
+      }
+    }
+  }
+
+  /// Takes the cover off without touching whatever spot the photo may sit in.
+  void _clearCover() {
+    setState(() {
+      _coverPath = null;
+      _coverOffPage = false;
+    });
     _saveLocal();
-    _message('ตั้งเป็นรูปหน้าปกแล้ว');
   }
 
   void _cancelArrangement() {
@@ -1042,7 +1079,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     ref.read(_localPublishProvider(_storageKey).notifier).state =
         _PublishResume(
             _draftId, _savedCoverId, Map.of(_uploaded), _tripDestination)
-          ..coverWasInContents = _savedCoverWasInContents
+          ..coverMediaIsOurs = _coverMediaIsOurs
+          ..coverOffPage = _coverOffPage
           ..sourceId = widget.initialTrip?.id
           ..key = _createKey
           ..creationTitle = _creationTitle
@@ -1195,12 +1233,40 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
       TripContentRequest.serializeAll(contents);
 
-      final cover = _coverPath == null ? null : _uploaded[_coverPath];
-      if (cover != null) {
-        await api.media.setCover(_draftId!, cover.mediaId);
-        _savedCoverId = cover.mediaId;
-        _savedCoverWasInContents = true;
-      } else if (_savedCoverWasInContents &&
+      // A cover off the page is in no section, so the loop above never saw it.
+      if (_coverPath != null && _coverOffPage) {
+        await _uploadCover(api, _coverPath!);
+      }
+      final chosen = _coverPath == null ? null : _uploaded[_coverPath]?.mediaId;
+      // Nothing chosen: lead with the post's own first picture rather than
+      // ship a card with a blank where every other card has an image. Only
+      // ever fills a blank — a trip that already has a cover keeps the one it
+      // has, so editing an old post never silently re-covers it — and a post
+      // with no pictures at all simply goes out without one.
+      final coverId =
+          chosen ?? (_savedCoverId == null ? _leadPhotoOf(contents) : null);
+      var covered = coverId;
+      if (covered != null) {
+        try {
+          await api.media.setCover(_draftId!, covered);
+        } on ApiException {
+          // A cover the traveller chose is part of what they asked for, so it
+          // still stops the publish. One the app picked for them must not:
+          // going out without a cover is a far smaller loss than the post not
+          // going out at all.
+          if (chosen != null) rethrow;
+          _message('ตั้งรูปหน้าปกอัตโนมัติไม่สำเร็จ แต่โพสต์เผยแพร่แล้ว');
+          covered = null;
+        }
+      }
+      if (covered != null) {
+        _savedCoverId = covered;
+        // Ours only if this composer actually uploaded it. A post reopened for
+        // editing can be covered with a picture it already had, and that one
+        // is not ours to delete later.
+        _coverMediaIsOurs =
+            _uploaded.values.any((media) => media.mediaId == covered);
+      } else if (_coverMediaIsOurs &&
           _savedCoverId != null &&
           !contents.any((s) => s.mediaIds?.contains(_savedCoverId) ?? false)) {
         // The server rejects deleting media still referenced by saved contents.
@@ -1209,7 +1275,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         await api.media.delete(_draftId!, removed);
         _uploaded.removeWhere((_, m) => m.mediaId == removed);
         _savedCoverId = null;
-        _savedCoverWasInContents = false;
+        _coverMediaIsOurs = false;
       }
       final overview = _about.overview.trim();
       await api.trips.update(_draftId!,
@@ -1270,6 +1336,43 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _postDestination.text = result.$2;
     _saveLocal();
     return true;
+  }
+
+  /// The first picture the post carries, in the order it reads. Null when it
+  /// carries none — sections can be all words, and the oldest posts reference
+  /// pictures by URL with no media id behind them.
+  static String? _leadPhotoOf(List<TripContentRequest> contents) {
+    for (final section in contents) {
+      final ids = section.mediaIds;
+      if (ids != null && ids.isNotEmpty) return ids.first;
+    }
+    return null;
+  }
+
+  /// Puts the header's cover in the trip's gallery. Keyed by its own path,
+  /// like every other upload, so a retry after a failure reuses it rather than
+  /// sending the file twice.
+  Future<void> _uploadCover(PlunoApi api, String path) async {
+    if (_uncertainUploads.contains(path) && !await _resolveUpload(path, path)) {
+      return;
+    }
+    if (_uploaded.containsKey(path)) return;
+    if (_uploaded.length >= 200) {
+      throw const FormatException(
+          'มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
+    }
+    final prepared = await preparePostPhoto(path);
+    try {
+      _uploaded[path] = await api.media
+          .upload(_draftId!, bytes: prepared.$1, filename: prepared.$2);
+    } on ApiException catch (error) {
+      // Same rule the section photos follow: a timeout or a 5xx may still have
+      // stored the file, so the next attempt checks the gallery first.
+      if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500) {
+        _uncertainUploads.add(path);
+      }
+      rethrow;
+    }
   }
 
   Future<bool> _resolveUpload(String key, String path) async {
@@ -1392,6 +1495,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               CreatePostHeader(
                 onClose: _close,
                 onPickCover: _pickCover,
+                onClearCover: _clearCover,
+                coverPath: _coverPath,
                 onImportPhotos: _createFromPhotos,
                 importing: _arranging,
                 onCancelImport: _cancelArrangement,
@@ -1536,7 +1641,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                 'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
                             return;
                           }
-                          setState(() => _coverPath = path);
+                          setState(() {
+                            _coverPath = path;
+                            _coverOffPage = false;
+                          });
                         },
                         onRemoveImage: (photoIndex) => setState(() {
                           _blocks[index]

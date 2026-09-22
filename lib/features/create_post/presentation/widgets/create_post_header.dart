@@ -16,6 +16,8 @@ class CreatePostHeader extends StatelessWidget {
     super.key,
     required this.onClose,
     required this.onPickCover,
+    required this.onClearCover,
+    this.coverPath,
     required this.onImportPhotos,
     required this.importing,
     required this.onCancelImport,
@@ -25,6 +27,14 @@ class CreatePostHeader extends StatelessWidget {
 
   /// The round action opposite the back button: the post's cover photo.
   final VoidCallback onPickCover;
+
+  /// Takes the cover off again. The action is the only place it shows, so it
+  /// has to be the place it can be undone.
+  final VoidCallback onClearCover;
+
+  /// What is on the cover now, shown in the action itself so choosing one is
+  /// not a tap that appears to do nothing.
+  final String? coverPath;
 
   /// "Creates post from Photos" — reads the picked photos' EXIF and groups
   /// them into sections.
@@ -70,11 +80,18 @@ class CreatePostHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                _RoundAction(
-                  icon: Icons.add_photo_alternate_outlined,
-                  tooltip: 'รูปหน้าปก',
-                  onTap: onPickCover,
-                ),
+                if (coverPath == null)
+                  _RoundAction(
+                    icon: Icons.add_photo_alternate_outlined,
+                    tooltip: 'รูปหน้าปก',
+                    onTap: onPickCover,
+                  )
+                else
+                  _CoverAction(
+                    path: coverPath!,
+                    onTap: onPickCover,
+                    onClear: onClearCover,
+                  ),
               ],
             ),
           ),
@@ -305,6 +322,73 @@ class PostAuthorRow extends StatelessWidget {
         const SizedBox(width: 10),
         PostAudienceChip(audience: audience, onTap: onChangeAudience),
       ],
+    );
+  }
+}
+
+/// The cover once there is one: the picture itself, with the way to take it
+/// off sitting on its corner.
+class _CoverAction extends StatelessWidget {
+  const _CoverAction(
+      {required this.path, required this.onTap, required this.onClear});
+
+  final String path;
+  final VoidCallback onTap, onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      // The clear badge is allowed past the corner, which is the only way it
+      // fits without eating the picture it belongs to.
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Tooltip(
+              message: 'เปลี่ยนรูปหน้าปก',
+              child: GestureDetector(
+                onTap: onTap,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: CoverImage(source: path),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: -6,
+            right: -6,
+            child: Tooltip(
+              message: 'เอารูปหน้าปกออก',
+              child: GestureDetector(
+                onTap: onClear,
+                // A 20pt dot is under the comfortable tap size, so the target
+                // is padded out around it rather than drawn bigger.
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: const BoxDecoration(
+                      color: AppColors.postHeader,
+                      shape: BoxShape.circle,
+                    ),
+                    child:
+                        const Icon(Icons.close, size: 13, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
