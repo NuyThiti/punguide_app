@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../domain/chat_message.dart';
 import 'ai_spark.dart';
 
 /// One line of the transcript.
@@ -17,6 +17,7 @@ class AiChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assistant = message.isAssistant;
+    final text = message.text ?? '';
 
     // Capped rather than free: a bubble that ran the full width would lose the
     // ragged edge that tells the two speakers apart at a glance.
@@ -33,7 +34,7 @@ class AiChatBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
         ),
         child: Text(
-          message.text,
+          text,
           style: TextStyle(
             color: assistant ? AppColors.foreground : Colors.white,
             fontSize: 15,

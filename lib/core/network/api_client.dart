@@ -258,6 +258,47 @@ class PlunoApiClient {
   }) =>
       _sendNullable<T>('DELETE', path, body: body, headers: headers);
 
+  /// Opens a streaming response and hands back its raw bytes.
+  ///
+  /// Used for the assistant's server-sent events, which are the one place the
+  /// API answers progressively. The token and cookie interceptors still run,
+  /// so the caller gets the same session as every other request.
+  ///
+  /// The returned stream must be drained or cancelled — an abandoned one holds
+  /// the socket open.
+  Future<Stream<List<int>>> streamPost(
+    String path, {
+    Object? body,
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final response = await _dio.request<ResponseBody>(
+        path,
+        data: body,
+        options: Options(
+          method: 'POST',
+          responseType: ResponseType.stream,
+          headers: headers,
+          // A streamed turn can sit quiet while the planner works; the normal
+          // receive timeout would cut it off mid-answer.
+          receiveTimeout: Duration.zero,
+        ),
+      );
+      final stream = response.data?.stream;
+      if (stream == null) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          messages: const ['เซิร์ฟเวอร์ตอบกลับว่าง'],
+          method: 'POST',
+          path: path,
+        );
+      }
+      return stream;
+    } on DioException catch (failure) {
+      throw ApiException.fromDio(failure);
+    }
+  }
+
   /// Multipart upload — used by avatar and trip media.
   Future<T> upload<T>(
     String path, {

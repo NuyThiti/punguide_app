@@ -2,6 +2,7 @@ import '../network/api_client.dart';
 import '../network/api_config.dart';
 import 'services/auth_api.dart';
 import 'services/budget_api.dart';
+import 'services/chat_api.dart';
 import 'services/itinerary_api.dart';
 import 'services/media_api.dart';
 import 'services/places_api.dart';
@@ -19,6 +20,7 @@ export 'models/accommodation.dart';
 export 'models/activity.dart';
 export 'models/auth_user.dart';
 export 'models/budget.dart';
+export 'models/chat.dart';
 export 'models/day.dart';
 export 'models/destination_place.dart';
 export 'models/enums.dart';
@@ -37,6 +39,7 @@ export 'models/trip_feed_query.dart';
 export 'models/user_location.dart';
 export 'services/auth_api.dart';
 export 'services/budget_api.dart';
+export 'services/chat_api.dart';
 export 'services/itinerary_api.dart';
 export 'services/media_api.dart';
 export 'services/places_api.dart';
@@ -58,7 +61,8 @@ class PlunoApi {
         places = PlacesApi(client),
         routes = RoutesApi(client),
         media = MediaApi(client),
-        share = ShareApi(client);
+        share = ShareApi(client),
+        chat = ChatApi(client);
 
   /// Reads the host from `PLUNO_API_BASE_URL`, restores the stored access
   /// token, and opens the on-disk cookie jar.
@@ -78,6 +82,9 @@ class PlunoApi {
   final RoutesApi routes;
   final MediaApi media;
   final ShareApi share;
+
+  /// The travel assistant. Token-only — there is no anonymous mode here.
+  final ChatApi chat;
 
   /// True once a token has been restored or issued. It says nothing about the
   /// token still being valid — the client refreshes it on first use.

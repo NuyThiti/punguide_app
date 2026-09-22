@@ -7,10 +7,15 @@ import 'package:pluno/core/api/pluno_api.dart';
 
 /// One canned answer for a request.
 class FakeReply {
-  const FakeReply(this.statusCode, this.body);
+  const FakeReply(this.statusCode, this.body) : raw = null;
+
+  /// A body sent through verbatim rather than JSON-encoded — for the
+  /// assistant's `text/event-stream` turns, whose wire format is not JSON.
+  const FakeReply.text(this.statusCode, String this.raw) : body = null;
 
   final int statusCode;
   final Object? body;
+  final String? raw;
 }
 
 /// A stand-in transport: records every request and replies from a queue keyed
@@ -38,6 +43,16 @@ class FakeAdapter implements HttpClientAdapter {
       );
     }
     final reply = queue.length == 1 ? queue.first : queue.removeAt(0);
+    final raw = reply.raw;
+    if (raw != null) {
+      return ResponseBody.fromString(
+        raw,
+        reply.statusCode,
+        headers: <String, List<String>>{
+          Headers.contentTypeHeader: <String>['text/event-stream'],
+        },
+      );
+    }
     return ResponseBody.fromString(
       reply.body == null ? '' : jsonEncode(reply.body),
       reply.statusCode,

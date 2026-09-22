@@ -14,10 +14,15 @@ class AiChatComposer extends StatelessWidget {
     required this.onSend,
     required this.onSuggestion,
     this.suggestion,
+    this.sending = false,
   });
 
   final TextEditingController controller;
   final VoidCallback onSend;
+
+  /// A turn is in flight — the send key is held until it lands, so one tap
+  /// cannot become two turns.
+  final bool sending;
 
   /// The one-tap opener above the card. Null once the conversation has
   /// started — it is a way in, not a permanent shortcut.
@@ -74,7 +79,7 @@ class AiChatComposer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _SendKey(onTap: onSend),
+                  _SendKey(onTap: sending ? null : onSend),
                 ],
               ),
               const SizedBox(height: 10),
@@ -86,10 +91,13 @@ class AiChatComposer extends StatelessWidget {
                     onTap: () {},
                   ),
                   const SizedBox(width: 10),
-                  _ComposerTool(
+                  // Drawn in Figma, but there is no route on the API that
+                  // takes audio — so it is shown and held rather than wired to
+                  // nothing.
+                  const _ComposerTool(
                     icon: Icons.mic_none,
-                    label: 'พูด',
-                    onTap: () {},
+                    label: 'พูด (ยังไม่เปิดใช้งาน)',
+                    onTap: null,
                   ),
                   const Spacer(),
                 ],
@@ -143,7 +151,7 @@ class _SuggestionChip extends StatelessWidget {
 class _SendKey extends StatelessWidget {
   const _SendKey({required this.onTap});
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -156,9 +164,9 @@ class _SendKey extends StatelessWidget {
           width: 44,
           height: 44,
           alignment: Alignment.center,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: LinearGradient(
+            gradient: const LinearGradient(
               begin: Alignment.bottomLeft,
               end: Alignment.topRight,
               colors: [
@@ -167,6 +175,8 @@ class _SendKey extends StatelessWidget {
                 AppColors.aiSparkStart,
               ],
             ),
+            // Dimmed, not hidden: the key stays where the thumb expects it.
+            backgroundBlendMode: onTap == null ? BlendMode.luminosity : null,
           ),
           child: const Icon(
             Icons.near_me,
@@ -188,12 +198,13 @@ class _ComposerTool extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
+      enabled: onTap != null,
       label: label,
       child: GestureDetector(
         onTap: onTap,
@@ -205,7 +216,11 @@ class _ComposerTool extends StatelessWidget {
             color: AppColors.aiComposerTool,
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 19, color: AppColors.foreground),
+          child: Icon(
+            icon,
+            size: 19,
+            color: onTap == null ? AppColors.postFieldHint : AppColors.foreground,
+          ),
         ),
       ),
     );
