@@ -364,7 +364,9 @@ void main() {
       ],
     });
 
-    await _pumpComposer(tester, adapter: adapter);
+    // Located on purpose: the point is that a library photo withholds the
+    // position even when the app knows exactly where the traveller is.
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
     await tester.tap(find.text('Create from Photos'));
     await _settleImport(tester);
 
@@ -391,6 +393,10 @@ void main() {
     expect(body['language'], 'th');
     // Nothing was pinned by hand, so the assistant gets no name it may write.
     expect(body.containsKey('locationName'), isFalse);
+    // These came out of the library. They could be last year's, from a city
+    // the traveller is nowhere near, so where they are now says nothing about
+    // them and must not steer the suggestions.
+    expect(body.containsKey('currentLocation'), isFalse);
     final request = adapter.requests
         .lastWhere((r) => r.path == '/trips/trip-new/contents/generate');
     expect(request.headers['Idempotency-Key'], isNotEmpty);

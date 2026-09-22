@@ -551,7 +551,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// quota is spent, the network is down — so the caller can still group the
   /// photos locally. The uploads are kept either way: publish reuses them
   /// rather than sending the same files twice.
-  Future<bool> _draftWithAssistant(List<TripPhoto> photos, int token) async {
+  /// [fromCamera] says the photos were taken just now, which is the only case
+  /// where where the traveller is standing describes where the photos are of.
+  Future<bool> _draftWithAssistant(List<TripPhoto> photos, int token,
+      {required bool fromCamera}) async {
     // A fresh key per attempt. Replaying one returns the draft it returned
     // before, which is right for a retry and wrong for a different set of
     // photos — and the traveller may well have picked different photos.
@@ -582,10 +585,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       if (!mounted || token != _arrangement) return false;
 
       final notes = _postTitle.text.trim();
-      // Only ever a fallback for photos with no coordinates of their own, and
-      // what names the "ตอนนี้อยู่แถว" line. Null is fine: the server then
-      // falls back to the fix the account holds.
-      final origin = ref.read(placePinOriginProvider);
+      // Withheld for anything out of the library. A photo just taken is where
+      // the traveller is; one picked from the library could be last year's,
+      // from a city they are not in, and guessing places near the desk they
+      // are writing at would be worse than offering none.
+      final origin = fromCamera ? ref.read(placePinOriginProvider) : null;
       final draft = await api.trips.generateContents(
         _draftId!,
         photos: uploaded,
@@ -748,6 +752,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _message('ร่างให้แล้ว ตรวจและแก้ได้ก่อนแชร์ สถานที่ต้องกดยืนยันเอง');
   }
 
+  /// The header's Create from Photos, which reads the library.
+  ///
+  /// Library only, so the assistant is never told where the traveller is —
+  /// see [_draftWithAssistant]. A camera route into this would pass
+  /// `fromCamera: true`; there is not one yet.
   Future<void> _createFromPhotos() async {
     if (_arranging) return;
     final token = ++_arrangement;
@@ -776,7 +785,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // The assistant writes the draft when it can. It needs the trip and the
       // uploaded photos first, so anything short of a working endpoint falls
       // back to grouping them here, which is what this button did before.
-      if (await _draftWithAssistant(photos, token)) return;
+      if (await _draftWithAssistant(photos, token, fromCamera: false)) return;
       if (!mounted || token != _arrangement) return;
 
       final groups = const TripPhotoGrouper().group(photos);
