@@ -155,18 +155,21 @@ Future<void> _confirmPlace(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-/// Turns the wheel for work that leaves the framework — uploads, the assistant
-/// call, decoding a photo. Plain pumping never advances those, and the import
-/// spinner keeps `pumpAndSettle` from ever settling on its own.
 /// Create from Photos asks where the photos come from before it opens
 /// anything. Which answer is given decides whether the assistant is told where
 /// the traveller is, so every caller has to say.
+///
+/// Settling here waits only for the sheet to arrive; the picker has not been
+/// asked for anything yet, so nothing is off in the background to hang on.
 Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
-  await _tapImport(tester);
+  await tester.tap(find.text('Create from Photos'));
   await tester.pumpAndSettle();
   await tester.tap(find.text(camera ? 'ถ่ายรูป' : 'เลือกจากคลังภาพ'));
 }
 
+/// Turns the wheel for work that leaves the framework — uploads, the assistant
+/// call, decoding a photo. Plain pumping never advances those, and the import
+/// spinner keeps `pumpAndSettle` from ever settling on its own.
 Future<void> _settleImport(WidgetTester tester) async {
   for (var i = 0; i < 40; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -240,6 +243,10 @@ Future<void> _fillAboutTrip(
 
 /// Taps one of a spot's options. The row scrolls sideways now, so a chip past
 /// the fold has to be brought on screen before it can be hit.
+/// The heading chip, found by its tooltip. Its label was emptied to leave the
+/// icon alone, so there is no text on it to look for any more.
+final _headingChip = find.byTooltip('ตั้งชื่อหัวข้อ');
+
 Future<void> _tapSpotOption(WidgetTester tester, Finder chip) async {
   await tester.ensureVisible(chip.first);
   await tester.pumpAndSettle();
@@ -423,6 +430,44 @@ void main() {
     final request = adapter.requests
         .lastWhere((r) => r.path == '/trips/trip-new/contents/generate');
     expect(request.headers['Idempotency-Key'], isNotEmpty);
+  });
+
+  testWidgets('a photo taken now sends where the traveller is standing',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    final picker = _TripPicker(Future.value([]),
+        shot: _UnreadablePhoto('assets/images/puntok_osaka.jpg'));
+    ImagePickerPlatform.instance = picker;
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'ร่างจากรูป',
+          'contents': [
+            {'content': 'เดินเล่นตอนเย็น', 'mediaIds': [_a]},
+          ],
+          'locationOptions': [],
+          'warnings': [],
+        })
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await _tapImport(tester, camera: true);
+    await _settleImport(tester);
+
+    expect(picker.lastSource, ImageSource.camera);
+    // Taken just now, so where the traveller is standing is also where the
+    // photo is of — the one case worth telling the assistant about.
+    final body = adapter.bodyOf('POST /trips/trip-new/contents/generate')!;
+    expect(body['currentLocation'], isA<Map<String, dynamic>>());
+    expect((body['currentLocation'] as Map)['lat'], isA<num>());
+    expect((body['currentLocation'] as Map)['lng'], isA<num>());
   });
 
   testWidgets('a place the traveller pinned is the one name the assistant gets',
@@ -1104,7 +1149,7 @@ void main() {
     // The spot: a heading, where it is, then the story.
     // Optional parts offer themselves from the spot's options row rather than
     // sit open as blank fields.
-    expect(find.text('ชื่อหัวข้อ'), findsOneWidget);
+    expect(_headingChip, findsOneWidget);
     expect(find.text('Location'), findsOneWidget);
     // About trip is written in the Title sheet, so it is not on the page.
     expect(find.text('About trip'), findsNothing);
@@ -1121,7 +1166,9 @@ void main() {
           w is SingleChildScrollView && w.scrollDirection == Axis.horizontal),
     );
     expect(options, findsOneWidget);
-    for (final chip in ['ชื่อหัวข้อ', 'Location', 'Trip Hack']) {
+    expect(find.descendant(of: options, matching: _headingChip), findsOneWidget,
+        reason: 'ชื่อหัวข้อ');
+    for (final chip in ['Location', 'Trip Hack']) {
       expect(find.descendant(of: options, matching: find.text(chip)),
           findsOneWidget,
           reason: chip);
@@ -1227,9 +1274,9 @@ void main() {
     // Nothing to fill in yet — just the offer.
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
         findsNothing);
-    expect(find.text('ชื่อหัวข้อ'), findsOneWidget);
+    expect(_headingChip, findsOneWidget);
 
-    await _tapSpotOption(tester, find.text('ชื่อหัวข้อ'));
+    await _tapSpotOption(tester, _headingChip);
 
     // Now the field is there, focused, ready to type into.
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
@@ -1247,7 +1294,7 @@ void main() {
   testWidgets('a heading that has text stays put when focus moves on',
       (tester) async {
     await _pumpComposer(tester);
-    await _tapSpotOption(tester, find.text('ชื่อหัวข้อ'));
+    await _tapSpotOption(tester, _headingChip);
     await tester.enterText(find.byType(TextField).first, 'ร้านอาหารที่ต้องแวะ');
     await tester.pumpAndSettle();
 
