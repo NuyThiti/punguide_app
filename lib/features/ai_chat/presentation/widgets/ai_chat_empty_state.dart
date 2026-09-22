@@ -18,7 +18,7 @@ class AiChatEmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: const [
-          AiSpark(size: 116, blur: 20),
+          AiSpark(size: 116, blur: 15),
           SizedBox(height: 28),
           Text(
             'Hi! Travelers\nWhat are you looking for today?',

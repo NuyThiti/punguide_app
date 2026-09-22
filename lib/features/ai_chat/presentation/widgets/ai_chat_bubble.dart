@@ -18,8 +18,13 @@ class AiChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final assistant = message.isAssistant;
 
+    // Capped rather than free: a bubble that ran the full width would lose the
+    // ragged edge that tells the two speakers apart at a glance.
     final bubble = Flexible(
       child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.74,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         decoration: BoxDecoration(
           color: assistant

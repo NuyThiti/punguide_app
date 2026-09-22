@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
+import 'package:pluno/features/ai_chat/presentation/ai_chat_screen.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/features/home/presentation/widgets/home_assistant_fab.dart';
 import 'package:pluno/shared/widgets/app_bottom_nav.dart';
@@ -20,6 +21,12 @@ Widget _harness(List<TripListItem> trips) {
             path: '/',
             name: AppRoute.home.name,
             builder: (_, __) => const HomeScreen(),
+          ),
+          // Where the assistant button goes.
+          GoRoute(
+            path: '/ai-chat',
+            name: AppRoute.aiChat.name,
+            builder: (_, __) => const AiChatScreen(),
           ),
         ],
       ),
@@ -190,10 +197,10 @@ void main() {
     final navTop = tester.getTopLeft(find.byType(AppBottomNav)).dy;
     expect(fabBottom, lessThan(navTop));
 
-    // No assistant screen yet, so the tap says so rather than doing nothing.
+    // Tapping it opens Ai Chat over the feed.
     await tester.tap(fab);
     await tester.pumpAndSettle();
-    expect(find.text('ผู้ช่วย PunGuide ยังไม่เปิดใช้งาน'), findsOneWidget);
+    expect(find.byType(AiChatScreen), findsOneWidget);
   });
 
   testWidgets('home renders an empty state when the feed is empty',

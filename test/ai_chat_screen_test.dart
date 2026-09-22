@@ -38,19 +38,43 @@ void main() {
 
     expect(find.byType(AiChatEmptyState), findsNothing);
 
-    // The traveller's line, then the assistant's answer to it.
+    // The empty state's question leads, so the traveller's line still has the
+    // prompt it answered above it.
     final bubbles = tester
         .widgetList<AiChatBubble>(find.byType(AiChatBubble))
         .toList();
-    expect(bubbles, hasLength(2));
-    expect(bubbles.first.message.author, ChatAuthor.traveller);
-    expect(bubbles.first.message.text, 'ที่เที่ยวใกล้ ๆ ฉันตอนนี้');
-    expect(bubbles.last.message.author, ChatAuthor.assistant);
+    expect(bubbles, hasLength(3));
+    expect(bubbles[0].message.author, ChatAuthor.assistant);
+    expect(bubbles[0].message.text, 'What are you looking for today?');
+    expect(bubbles[1].message.author, ChatAuthor.traveller);
+    expect(bubbles[1].message.text, 'ที่เที่ยวใกล้ ๆ ฉันตอนนี้');
+    expect(bubbles[2].message.author, ChatAuthor.assistant);
 
-    // The field is emptied, and the opener has done its job.
     expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
         isEmpty);
-    expect(find.text('สถานที่ใกล้ฉัน'), findsNothing);
+
+    // The opener stays where the design leaves it.
+    expect(find.text('สถานที่ใกล้ฉัน'), findsOneWidget);
+  });
+
+  testWidgets('the greeting only leads once, however many turns follow',
+      (tester) async {
+    await _pumpChat(tester);
+
+    for (final line in ['ทะเลใกล้ ๆ', 'คาเฟ่ด้วย']) {
+      await tester.enterText(find.byType(TextField), line);
+      await tester.tap(find.byIcon(Icons.near_me));
+      await tester.pumpAndSettle();
+    }
+
+    final bubbles = tester
+        .widgetList<AiChatBubble>(find.byType(AiChatBubble))
+        .toList();
+    expect(bubbles, hasLength(5));
+    expect(
+      bubbles.where((b) => b.message.text == 'What are you looking for today?'),
+      hasLength(1),
+    );
   });
 
   testWidgets('the opener sends itself, and blank input sends nothing',
@@ -64,7 +88,10 @@ void main() {
     await tester.tap(find.text('สถานที่ใกล้ฉัน'));
     await tester.pumpAndSettle();
 
-    final first = tester.widgetList<AiChatBubble>(find.byType(AiChatBubble));
-    expect(first.first.message.text, 'สถานที่ใกล้ฉัน');
+    final bubbles = tester
+        .widgetList<AiChatBubble>(find.byType(AiChatBubble))
+        .toList();
+    expect(bubbles[1].message.author, ChatAuthor.traveller);
+    expect(bubbles[1].message.text, 'สถานที่ใกล้ฉัน');
   });
 }

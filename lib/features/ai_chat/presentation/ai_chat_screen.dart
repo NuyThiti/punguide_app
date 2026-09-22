@@ -31,9 +31,15 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   final _messages = <ChatMessage>[];
 
-  /// The opener the design prints above the composer. It disappears once the
-  /// traveller has said anything, their own words being the better prompt.
+  /// The opener the design prints above the composer. It stays put once the
+  /// conversation has started — the design keeps it there, and a shortcut that
+  /// vanished the moment it was used would be the harder one to find again.
   static const _opener = 'สถานที่ใกล้ฉัน';
+
+  /// The greeting the empty state asks in full. The design carries it into the
+  /// transcript as the assistant's first bubble, so the question the traveller
+  /// answered is still on screen above their answer.
+  static const _greeting = 'What are you looking for today?';
 
   @override
   void dispose() {
@@ -53,7 +59,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            stops: [0, 0.13, 0.38, 0.88, 1],
+            stops: [0, 0.09, 0.28, 0.82, 1],
             colors: [
               AppColors.aiWashTop,
               AppColors.aiWashMid,
@@ -84,7 +90,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   controller: _controller,
                   onSend: _send,
                   onSuggestion: _sendText,
-                  suggestion: _messages.isEmpty ? _opener : null,
+                  suggestion: _opener,
                 ),
               ),
             ],
@@ -107,6 +113,9 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
     _controller.clear();
     setState(() {
+      if (_messages.isEmpty) {
+        _messages.add(const ChatMessage.assistant(_greeting));
+      }
       _messages
         ..add(ChatMessage.traveller(trimmed))
         ..add(ChatMessage.assistant(_replyTo(trimmed)));
