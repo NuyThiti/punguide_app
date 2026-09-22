@@ -1,11 +1,11 @@
 {
-    "name": "pluno",
-    "short_name": "pluno",
+    "name": "PunGuide",
+    "short_name": "PunGuide",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "PunGuide — วางแผนเที่ยว แชร์แพลน ไปกัน",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

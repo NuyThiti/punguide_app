@@ -11,6 +11,7 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/location_access/presentation/location_access_screen.dart';
 import '../../features/location_access/presentation/location_picker_screen.dart';
 import '../../features/location_access/presentation/providers/location_providers.dart';
+import '../../features/my_trips/presentation/my_trips_screen.dart';
 import '../../features/paigun/presentation/paigun_filter_screen.dart';
 import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -32,6 +33,7 @@ enum AppRoute {
   createPost,
   editTrip,
   editTripBrief,
+  myTrips,
   savedTrips,
   remixTrip,
   puntok,
@@ -105,6 +107,15 @@ final appRouter = GoRouter(
         state,
         SearchScreen(initialQuery: state.queryParams['q']),
       ),
+    ),
+    // Declared before `/trips/:tripId` so the literal wins: go_router matches
+    // in declaration order, and below the pattern this would open a trip whose
+    // id is "mine".
+    GoRoute(
+      path: '/trips/mine',
+      name: AppRoute.myTrips.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const MyTripsScreen()),
     ),
     GoRoute(
       path: '/trips/:tripId',

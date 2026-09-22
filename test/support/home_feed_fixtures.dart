@@ -59,9 +59,13 @@ Map<String, dynamic> feedTripJson({
   int likeCount = 127,
   int remixCount = 127,
   double? distanceKm,
+  String type = 'plan_trip',
+  String status = 'draft',
+  int? placeCount,
 }) {
   return <String, dynamic>{
     'id': id,
+    'type': type,
     'title': title,
     'destination': destination,
     if (country != null)
@@ -73,7 +77,8 @@ Map<String, dynamic> feedTripJson({
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
       },
-    'status': 'draft',
+    'status': status,
+    if (placeCount != null) 'placeCount': placeCount,
     'schedule': <String, dynamic>{
       if (durationDays != null) 'durationDays': durationDays,
     },

@@ -108,6 +108,13 @@ class ProfileScreen extends ConsumerWidget {
                     ProfileMenuRow(
                       icon: Icons.luggage_outlined,
                       label: 'ทริปของฉัน',
+                      onTap: () => context.goNamed(AppRoute.myTrips.name),
+                    ),
+                    // Bookmarks are somebody else's trips, so they get their
+                    // own row rather than sharing one with the traveller's.
+                    ProfileMenuRow(
+                      icon: Icons.bookmark_added_outlined,
+                      label: 'ทริปที่บันทึกไว้',
                       onTap: () => context.goNamed(AppRoute.savedTrips.name),
                     ),
                     ProfileMenuRow(

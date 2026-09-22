@@ -783,7 +783,7 @@ class _AttachmentRow extends StatelessWidget {
         if (onAddHeading != null)
           PostAddChip(
             icon: Icons.title,
-            label: 'ชื่อหัวข้อ',
+            label: '',
             tooltip: 'ตั้งชื่อหัวข้อ',
             onTap: onAddHeading!,
           ),

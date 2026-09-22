@@ -37,13 +37,27 @@ class _UnreadablePhoto extends XFile {
 }
 
 class _TripPicker extends ImagePickerPlatform {
-  _TripPicker(this.result);
+  _TripPicker(this.result, {this.shot});
   final Future<List<XFile>> result;
+
+  /// What the camera hands back, one frame at a time.
+  final XFile? shot;
+  ImageSource? lastSource;
+
   @override
   Future<List<XFile>> getMultiImageWithOptions(
-          {MultiImagePickerOptions options =
-              const MultiImagePickerOptions()}) =>
-      result;
+      {MultiImagePickerOptions options = const MultiImagePickerOptions()}) {
+    lastSource = ImageSource.gallery;
+    return result;
+  }
+
+  @override
+  Future<XFile?> getImageFromSource(
+      {required ImageSource source,
+      ImagePickerOptions options = const ImagePickerOptions()}) async {
+    lastSource = source;
+    return shot;
+  }
 }
 
 Widget _harness(
@@ -144,6 +158,15 @@ Future<void> _confirmPlace(WidgetTester tester) async {
 /// Turns the wheel for work that leaves the framework — uploads, the assistant
 /// call, decoding a photo. Plain pumping never advances those, and the import
 /// spinner keeps `pumpAndSettle` from ever settling on its own.
+/// Create from Photos asks where the photos come from before it opens
+/// anything. Which answer is given decides whether the assistant is told where
+/// the traveller is, so every caller has to say.
+Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
+  await _tapImport(tester);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(camera ? 'ถ่ายรูป' : 'เลือกจากคลังภาพ'));
+}
+
 Future<void> _settleImport(WidgetTester tester) async {
   for (var i = 0; i < 40; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -278,7 +301,7 @@ void main() {
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
         'วันหยุด';
@@ -367,7 +390,7 @@ void main() {
     // Located on purpose: the point is that a library photo withholds the
     // position even when the app knows exactly where the traveller is.
     await _pumpComposer(tester, adapter: adapter, extra: _located);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
 
     // A spot per section, each holding the photo it was written about.
@@ -432,7 +455,7 @@ void main() {
 
     await _pumpComposer(tester, adapter: adapter);
     await _confirmPlace(tester);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
 
     expect(
@@ -478,7 +501,7 @@ void main() {
     });
 
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
 
     // One card per photo, in the order they were sent, the wordless one kept
@@ -513,7 +536,7 @@ void main() {
     });
 
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
 
     // No draft, but the photos are still laid out and the traveller is told.
@@ -567,7 +590,7 @@ void main() {
     });
 
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
 
     // The sheet leads with what the assistant suggested.
@@ -633,7 +656,7 @@ void main() {
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
     await _tapNext(tester);
     await tester.enterText(
@@ -789,7 +812,7 @@ void main() {
     addTearDown(() => ImagePickerPlatform.instance = previous);
     await _pumpComposer(tester);
     await tester.enterText(_bodyField().first, 'ข้อความเดิม');
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
     var blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
     expect(blocks, hasLength(2));
@@ -818,7 +841,7 @@ void main() {
     addTearDown(() => ImagePickerPlatform.instance = previous);
     await _pumpComposer(tester);
     await tester.enterText(find.byType(TextField).first, 'ยังอยู่');
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await tester.pump();
     expect(find.text('กำลังจัดรูปเป็นเรื่องราว…'), findsOneWidget);
     await tester.tap(find.text('ยกเลิก'));
@@ -838,7 +861,7 @@ void main() {
     await _pumpComposer(tester);
     await tester.enterText(find.byType(TextField).first, 'ร่างที่เก็บไว้');
     final router = GoRouter.of(tester.element(find.byType(CreatePostScreen)));
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await tester.pump();
     await tester.tap(find.byTooltip('ปิด'));
     await tester.pumpAndSettle();
@@ -861,7 +884,7 @@ void main() {
         Future.value([_UnreadablePhoto('assets/images/puntok_osaka.jpg')]));
     addTearDown(() => ImagePickerPlatform.instance = previous);
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('Create from Photos'));
+    await _tapImport(tester);
     await _settleImport(tester);
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
         hasLength(1));
@@ -888,7 +911,7 @@ void main() {
       addTearDown(() => ImagePickerPlatform.instance = previous);
       await _pumpComposer(tester);
       await tester.enterText(find.byType(TextField).first, 'ร่างเดิม');
-      await tester.tap(find.text('Create from Photos'));
+      await _tapImport(tester);
       await tester.pump();
       if (denied) {
         pending.completeError(Exception('permission denied'));

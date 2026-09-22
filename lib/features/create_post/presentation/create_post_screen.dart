@@ -754,16 +754,29 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   /// The header's Create from Photos, which reads the library.
   ///
-  /// Library only, so the assistant is never told where the traveller is —
-  /// see [_draftWithAssistant]. A camera route into this would pass
-  /// `fromCamera: true`; there is not one yet.
+  /// Asks where the photos come from first, because the answer decides more
+  /// than which picker opens: only a shot taken now is somewhere the traveller
+  /// actually is, so only that one sends a position — see
+  /// [_draftWithAssistant].
   Future<void> _createFromPhotos() async {
     if (_arranging) return;
+    // Asked before the spinner starts: the sheet can sit open for a while, and
+    // dismissing it should leave the page exactly as it was.
+    final source = await showPhotoSourceSheet(context);
+    if (source == null || !mounted) return;
+    final fromCamera = source == ImageSource.camera;
+
     final token = ++_arrangement;
     setState(() => _arranging = true);
     try {
       // Original files preserve metadata; the system picker supports limited access.
-      final files = await _picker.pickMultiImage();
+      // The camera hands back one frame at a time, which is the whole of this
+      // batch; the library hands back the whole selection.
+      final files = fromCamera
+          ? [await _picker.pickImage(source: ImageSource.camera)]
+              .whereType<XFile>()
+              .toList()
+          : await _picker.pickMultiImage();
       if (!mounted || token != _arrangement || files.isEmpty) return;
       final photos = <TripPhoto>[];
       for (final file in files) {
@@ -785,7 +798,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // The assistant writes the draft when it can. It needs the trip and the
       // uploaded photos first, so anything short of a working endpoint falls
       // back to grouping them here, which is what this button did before.
-      if (await _draftWithAssistant(photos, token, fromCamera: false)) return;
+      if (await _draftWithAssistant(photos, token, fromCamera: fromCamera)) {
+        return;
+      }
       if (!mounted || token != _arrangement) return;
 
       final groups = const TripPhotoGrouper().group(photos);
@@ -809,8 +824,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           'จัดรูปแล้ว ตรวจและแก้ไขในเนื้อหาด้านล่าง กดค้างที่รูปเพื่อลาก หรือกดย้ายรูป');
     } catch (_) {
       if (mounted && token == _arrangement)
-        _message(
-            'เลือกรูปไม่สำเร็จ กรุณาตรวจสิทธิ์เข้าถึงรูปแล้วลองอีกครั้ง ร่างเดิมยังอยู่');
+        _message(fromCamera
+            ? 'เปิดกล้องไม่สำเร็จ กรุณาตรวจสิทธิ์กล้องแล้วลองอีกครั้ง ร่างเดิมยังอยู่'
+            : 'เลือกรูปไม่สำเร็จ กรุณาตรวจสิทธิ์เข้าถึงรูปแล้วลองอีกครั้ง ร่างเดิมยังอยู่');
     } finally {
       if (mounted && token == _arrangement) setState(() => _arranging = false);
     }
