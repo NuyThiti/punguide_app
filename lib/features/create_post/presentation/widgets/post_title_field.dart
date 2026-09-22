@@ -29,7 +29,6 @@ class PostIdentityCard extends StatelessWidget {
     required this.about,
     required this.onEditAbout,
     this.place,
-    this.currentArea,
   });
 
   /// Null while signed out — the guest path still reaches the composer.
@@ -47,11 +46,6 @@ class PostIdentityCard extends StatelessWidget {
 
   /// Where the post is about, when the Title sheet has been given one.
   final PostPlace? place;
-
-  /// The name of whatever the traveller is standing near, already resolved —
-  /// the card only ever prints it. Shown only while the post has no place of
-  /// its own: once it does, that is the answer and this would just be noise.
-  final String? currentArea;
 
   @override
   Widget build(BuildContext context) {
@@ -169,28 +163,6 @@ class PostIdentityCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-          ],
-          if (place == null && currentArea != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.my_location,
-                    size: 14, color: AppColors.postFieldHint),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'ตอนนี้อยู่แถว $currentArea',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.postFieldHint,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
           if (chosen.isNotEmpty) ...[

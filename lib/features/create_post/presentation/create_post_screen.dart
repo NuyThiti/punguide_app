@@ -119,11 +119,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// can reopen on the same place.
   PostPlace? _postPlace;
 
-  /// What the assistant said the traveller was standing near, kept from the
-  /// last draft. It costs nothing extra — the server works it out from the
-  /// position the generate call already carried — and it beats the client's
-  /// own guess, so it replaces it once it arrives.
-  NearbyArea? _currentArea;
+  /// True once the traveller has had a say about the post's place — they chose
+  /// one, or they took one off. After that the app never fills it in again.
+  bool _placeIsTheirs = false;
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
       _unavailablePaths = {};
@@ -273,6 +271,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     for (final block in _blocks) {
       block.listen(_refresh);
     }
+
+    // Listened to rather than read: the nearby lookup is a request, so it has
+    // no answer yet on the first frame, and subscribing is also what keeps it
+    // alive long enough to make one.
+    ref.listenManual(
+      currentPlaceProvider,
+      fireImmediately: true,
+      (_, place) {
+        if (place != null) _adoptNearbyPlace(place);
+      },
+    );
   }
 
   @override
@@ -357,13 +366,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // Taking the place off has to empty the destination too, or publishing
       // would keep sending the one the traveller just removed.
       if (result.clearedPlace) {
+        _placeIsTheirs = true;
         _postPlace = null;
         _postDestination.clear();
       } else if (result.place != null) {
-        _postPlace = result.place;
-        _postDestination.text = result.place!.area?.trim().isNotEmpty == true
-            ? result.place!.area!.trim()
-            : result.place!.name.trim();
+        _placeIsTheirs = true;
+        _fillPlace(result.place!);
       }
     });
     _saveLocal();
@@ -474,18 +482,31 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return true;
   }
 
-  /// What goes after "ตอนนี้อยู่แถว " on the identity card, or null when the
-  /// app cannot honestly say.
+  /// Fills the post's place in from where the traveller is, when they have not
+  /// said anything about it themselves.
   ///
-  /// The assistant's answer wins when there is one: the server ranks by
-  /// distance, while the client's own list is whatever `/places/suggest`
-  /// returned. Too far away is the same as not knowing — past a couple of
-  /// kilometres the nearest place is a different neighbourhood, and the line
-  /// would be telling the traveller where they are not.
-  String? _nearbyAreaName(WidgetRef ref) {
-    final answered = _currentArea;
-    if (answered != null) return answered.isNearby ? answered.name : null;
-    return ref.watch(currentPlaceProvider)?.name;
+  /// Only ever fills a blank. The moment they pick a place or take one off the
+  /// app stops guessing, because a post opened to be edited days later would
+  /// otherwise be retagged with wherever it is being written.
+  void _adoptNearbyPlace(PostPlace place) {
+    if (_placeIsTheirs || _postPlace != null) return;
+    // A trip opened for editing arrives with its destination already written;
+    // that is an answer too, even without a place object behind it.
+    if (_postDestination.text.trim().isNotEmpty) return;
+
+    _fillPlace(place);
+    if (!mounted) return;
+    setState(() {});
+    _saveLocal();
+  }
+
+  /// The one place `_postPlace` and the destination are written together, so
+  /// they cannot drift apart.
+  void _fillPlace(PostPlace place) {
+    _postPlace = place;
+    _postDestination.text = place.area?.trim().isNotEmpty == true
+        ? place.area!.trim()
+        : place.name.trim();
   }
 
   /// The place the traveller pinned themselves, which is the only name the
@@ -708,11 +729,21 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         _postTitle.text = draft.title.trim();
       }
       _warnings = List.unmodifiable(warnings);
-      // Absent means the server had no position to work from, which is not a
-      // reason to throw away a name it gave us a moment ago.
-      _currentArea = draft.currentArea ?? _currentArea;
       _syncCover();
     });
+    // The server ranked this by distance, which beats the nearest row of
+    // whatever `/places/suggest` happened to return, so it is worth adopting
+    // even when the client already filled the blank.
+    final answered = draft.currentArea;
+    if (answered != null && answered.isNearby) {
+      _adoptNearbyPlace(PostPlace(
+        id: answered.placeId ?? answered.name,
+        name: answered.name,
+        placeId: answered.placeId,
+        latitude: answered.latitude,
+        longitude: answered.longitude,
+      ));
+    }
     _saveLocal();
     _message('ร่างให้แล้ว ตรวจและแก้ได้ก่อนแชร์ สถานที่ต้องกดยืนยันเอง');
   }
@@ -1361,7 +1392,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       about: _about,
                       onEditAbout: _editAbout,
                       place: _postPlace,
-                      currentArea: _nearbyAreaName(ref),
                     ),
                     const SizedBox(height: 10),
                     PostWarnings(

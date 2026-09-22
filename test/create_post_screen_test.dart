@@ -12,6 +12,8 @@ import 'package:pluno/features/create_post/domain/models/post_draft.dart';
 import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_block.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
+import 'package:pluno/features/location_access/domain/location_service.dart';
+import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
 
 import 'support/fake_api.dart';
 
@@ -44,13 +46,17 @@ class _TripPicker extends ImagePickerPlatform {
       result;
 }
 
-Widget _harness({FakeAdapter? adapter, ApiTrip? initialTrip}) {
+Widget _harness(
+    {FakeAdapter? adapter, ApiTrip? initialTrip, List<Override> extra = const []}) {
   // Always a fake client: importing photos now talks to the API before it
   // draws anything, and an unstubbed route answers 500 rather than reaching
   // for plugins the test environment does not have.
   final client = adapter ?? FakeAdapter(<String, List<FakeReply>>{});
   return ProviderScope(
-    overrides: [plunoApiProvider.overrideWith((ref) async => fakeApi(client))],
+    overrides: [
+      plunoApiProvider.overrideWith((ref) async => fakeApi(client)),
+      ...extra,
+    ],
     child: MaterialApp.router(
       routerConfig: GoRouter(
         initialLocation: '/posts/create',
@@ -71,8 +77,18 @@ Widget _harness({FakeAdapter? adapter, ApiTrip? initialTrip}) {
   );
 }
 
+/// Grants location, which is what gives `placePinOriginProvider` a point to
+/// measure from — without it the composer has no idea where the traveller is
+/// and never fills the place in.
+final _located = [
+  storedLocationPermissionProvider
+      .overrideWithValue(LocationPermissionStatus.granted),
+];
+
 Future<void> _pumpComposer(WidgetTester tester,
-    {FakeAdapter? adapter, ApiTrip? initialTrip}) async {
+    {FakeAdapter? adapter,
+    ApiTrip? initialTrip,
+    List<Override> extra = const []}) async {
   // Taller than a phone on purpose: a spot now carries a name, a location, the
   // story, the attachment row and three detail rows, so two of them do not fit
   // one screen — and a lazy list never builds what it cannot show, which would
@@ -94,9 +110,24 @@ Future<void> _pumpComposer(WidgetTester tester,
       ])
     ];
   }
-  await tester.pumpWidget(_harness(adapter: client, initialTrip: initialTrip));
+  await tester.pumpWidget(
+      _harness(adapter: client, initialTrip: initialTrip, extra: extra));
   await tester.pumpAndSettle();
 }
+
+/// The nearby lookup is a real request, so it leaves the framework and a plain
+/// pump never sees its answer.
+Future<void> _settleNearby(WidgetTester tester) async {
+  for (var i = 0; i < 12; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)));
+  }
+  await tester.pumpAndSettle();
+}
+
+PostPlace? _cardPlace(WidgetTester tester) =>
+    tester.widget<PostIdentityCard>(find.byType(PostIdentityCard)).place;
 
 Future<void> _confirmPlace(WidgetTester tester) async {
   if (tester.widget<PostBlock>(find.byType(PostBlock).first).place != null)
@@ -1427,29 +1458,80 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the card says where the traveller is, until a place is set',
+  testWidgets('a blank post takes the place the traveller is standing in',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': 'near-1',
+            'name': 'สนามหลวง',
+            'address': 'ถนน ราชดำเนินกลาง, เขตพระนคร, กรุงเทพมหานคร, ประเทศไทย',
+            'lat': 13.7563,
+            'lng': 100.493,
+          },
+        ]),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await _settleNearby(tester);
+
+    expect(_cardPlace(tester)?.name, 'สนามหลวง');
+    expect(find.textContaining('สนามหลวง'), findsWidgets);
+    // The old wording only told the traveller where they were, which is not
+    // the same as the post having a place.
+    expect(find.textContaining('ตอนนี้อยู่แถว'), findsNothing);
+  });
+
+  testWidgets('a Plus Code never becomes what the post says it was about',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': 'near-1',
+            'name': 'สนามหลวง',
+            // What Google answers for a place with no street number of its
+            // own: the segment is led by an Open Location Code.
+            // No commas anywhere, which is how Google writes a Thai
+            // address, led by an Open Location Code because the place has no
+            // street number of its own.
+            'address':
+                'QF4V+88R ถนน ราชดำเนินกลาง แขวงพระบรมมหาราชวัง เขตพระนคร กรุงเทพมหานคร 10200',
+            'lat': 13.7563,
+            'lng': 100.493,
+          },
+        ]),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await _settleNearby(tester);
+
+    expect(_cardPlace(tester)?.area, 'กรุงเทพมหานคร');
+    expect(find.textContaining('QF4V'), findsNothing);
+  });
+
+  testWidgets('a post opened for editing keeps its own place', (tester) async {
+    final adapter = FakeAdapter({
       'GET /places/suggest': [
         const FakeReply(200, [
           {'id': 'near-1', 'name': 'สนามหลวง', 'lat': 13.7563, 'lng': 100.493},
         ]),
       ],
     });
-    await _pumpComposer(tester, adapter: adapter);
-    // Turn the wheel for the nearby lookup, which leaves the framework.
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
-    await tester.pumpAndSettle();
+    // Written up at home a week later: the destination it already carries is
+    // the answer, and where the traveller is sitting now is not.
+    await _pumpComposer(
+      tester,
+      adapter: adapter,
+      extra: _located,
+      initialTrip: ApiTrip.fromJson(
+          {...createdTripJson(), 'destination': 'ดานัง, เวียดนาม'}),
+    );
+    await _settleNearby(tester);
 
-    // No fix in the test environment, so nothing is claimed about where the
-    // traveller is — the line only appears when there is really an origin.
-    expect(find.textContaining('ตอนนี้อยู่แถว'), findsNothing);
+    expect(_cardPlace(tester), isNull);
+    expect(find.textContaining('สนามหลวง'), findsNothing);
   });
 
   testWidgets('the Title sheet sets where the post is about', (tester) async {
