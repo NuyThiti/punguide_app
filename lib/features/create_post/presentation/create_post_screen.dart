@@ -1069,11 +1069,22 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return '';
   }
 
+  /// Forgets what this run remembered of the draft.
+  ///
+  /// Save Draft is how a draft is kept, which is what lets leaving mean
+  /// leaving. This only clears what the app held: a draft trip already created
+  /// on the server, with whatever was uploaded to it, stays there and shows up
+  /// under ทริปฉัน — nothing written is destroyed, it just stops following the
+  /// composer around.
+  void _clearLocal() {
+    ref.read(_localDraftProvider(_storageKey).notifier).state = null;
+    ref.read(_localCoverProvider(_storageKey).notifier).state = null;
+    ref.read(_localPublishProvider(_storageKey).notifier).state = null;
+  }
+
   void _saveLocal() {
     if (_published) {
-      ref.read(_localDraftProvider(_storageKey).notifier).state = null;
-      ref.read(_localCoverProvider(_storageKey).notifier).state = null;
-      ref.read(_localPublishProvider(_storageKey).notifier).state = null;
+      _clearLocal();
       return;
     }
     ref.read(_localPublishProvider(_storageKey).notifier).state =
@@ -1098,10 +1109,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     ref.read(_localCoverProvider(_storageKey).notifier).state = _coverPath;
   }
 
-  void _close() {
+  /// Leaves the composer. [keepDraft] is Save Draft, which has just written
+  /// the draft down and must not have it thrown away on the way out.
+  void _close({bool keepDraft = false}) {
     if (_publishing) return;
     _arrangement++;
-    _saveLocal();
+    if (!keepDraft) _clearLocal();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     } else {
@@ -1471,7 +1484,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   void _saveDraftAndClose() {
     _saveLocal();
     _message('เก็บร่างไว้ในเครื่องแล้ว');
-    _close();
+    _close(keepDraft: true);
   }
 
   @override
@@ -1483,7 +1496,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       child: PopScope(
         canPop: !_publishing && !_arranging,
         onPopInvokedWithResult: (didPop, result) {
-          if (didPop) _saveLocal();
+          // The system back gesture is leaving too, and leaving is leaving
+          // however it is done.
+          if (didPop) _clearLocal();
           if (!didPop && _arranging) _cancelArrangement();
         },
         child: AbsorbPointer(

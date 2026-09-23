@@ -934,27 +934,43 @@ void main() {
         tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
   });
 
-  testWidgets('closing during import keeps the draft when reopening',
-      (tester) async {
+  testWidgets('closing during import throws the draft away', (tester) async {
     final pending = Completer<List<XFile>>();
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(pending.future);
     addTearDown(() => ImagePickerPlatform.instance = previous);
     await _pumpComposer(tester);
-    await tester.enterText(find.byType(TextField).first, 'ร่างที่เก็บไว้');
+    await tester.enterText(find.byType(TextField).first, 'ร่างที่ไม่ได้เก็บ');
     final router = GoRouter.of(tester.element(find.byType(CreatePostScreen)));
     await _tapImport(tester);
     await tester.pump();
     await tester.tap(find.byTooltip('ปิด'));
     await tester.pumpAndSettle();
+    // The picker answers after the page is gone; it must not resurrect it.
     pending.complete([_UnreadablePhoto('late.jpg')]);
     await tester.pumpAndSettle();
     router.go('/posts/create');
     await tester.pumpAndSettle();
-    expect(find.text('ร่างที่เก็บไว้'), findsOneWidget);
+
+    // Leaving is leaving: Save Draft is what keeps a draft.
+    expect(find.text('ร่างที่ไม่ได้เก็บ'), findsNothing);
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Save Draft is what keeps a draft for next time', (tester) async {
+    await _pumpComposer(tester);
+    await tester.enterText(find.byType(TextField).first, 'ร่างที่เก็บไว้');
+    final router = GoRouter.of(tester.element(find.byType(CreatePostScreen)));
+
+    await _scrollTo(tester, find.text('Save Draft'));
+    await tester.tap(find.text('Save Draft'));
+    await tester.pumpAndSettle();
+
+    router.go('/posts/create');
+    await tester.pumpAndSettle();
+    expect(find.text('ร่างที่เก็บไว้'), findsOneWidget);
   });
 
   testWidgets(
