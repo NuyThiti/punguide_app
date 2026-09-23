@@ -7,6 +7,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../paigun/presentation/providers/paigun_providers.dart';
+import '../data/location_sync.dart';
 import '../domain/picked_location.dart';
 import 'providers/location_providers.dart';
 import 'widgets/location_map_surface.dart';
@@ -32,6 +33,8 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
 
   /// Held in the screen rather than a provider: it is scratch state for one
   /// visit, and the confirmed answer goes to [paigunOriginProvider] instead.
+  /// Null until the account's stored fix comes back, a search is picked, or
+  /// the map itself is tapped — never a guess.
   PickedLocation? _picked;
 
   bool _satellite = false;
@@ -39,16 +42,31 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
   @override
   void initState() {
     super.initState();
-    // Open on wherever the board is measuring from today, so the map has
-    // something under the pin before a single key is typed.
-    final origin = ref.read(paigunOriginProvider);
-    _picked = PickedLocation(
-      name: origin.label,
-      address: origin.address,
-      latitude: origin.latitude,
-      longitude: origin.longitude,
-    ).measuredFrom(ref.read(locationFixProvider));
+    _loadInitialPin();
     _loadFix();
+  }
+
+  /// Opens on whatever the account already has stored — the same fix
+  /// `/location`'s permission flow keeps in step with the device — rather
+  /// than a hardcoded district. Nothing stored means nothing pinned: the
+  /// picker opens blank and the sheet says so, instead of presenting a place
+  /// nobody actually confirmed.
+  ///
+  /// `_picked` may already have something in it by the time this resolves —
+  /// a tap or a search does not wait — so this never overwrites a choice the
+  /// traveller has since made.
+  Future<void> _loadInitialPin() async {
+    final stored = await ref.read(locationSyncProvider).pull();
+    if (!mounted || stored == null || _picked != null) return;
+    setState(
+      () => _picked = PickedLocation(
+        name: 'ตำแหน่งล่าสุดที่บันทึกไว้',
+        address: '${stored.latitude.toStringAsFixed(4)}, '
+            '${stored.longitude.toStringAsFixed(4)}',
+        latitude: stored.latitude,
+        longitude: stored.longitude,
+      ).measuredFrom(ref.read(locationFixProvider)),
+    );
   }
 
   /// Finds a position to measure distances from.

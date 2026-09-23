@@ -12,6 +12,7 @@ import 'package:pluno/features/location_access/presentation/providers/location_p
 import 'package:pluno/features/paigun/presentation/providers/paigun_providers.dart';
 
 import 'support/fake_api.dart';
+import 'support/home_feed_fixtures.dart';
 
 /// A stand-in for the OS dialog: answers whatever the test says it does, and
 /// records that it was asked at all.
@@ -112,8 +113,9 @@ void main() {
     _phone(tester);
 
     // Permission granted, but the device never produced a fix — indoors, or
-    // the request timed out. The picker must still open, showing the board's
-    // origin with no distance rather than a made-up one.
+    // the request timed out. The picker must still open with no distance
+    // rather than a made-up one, and with no pin either: nothing signed in,
+    // nothing stored, nothing to show.
     final service = _FakeLocationService(LocationPermissionStatus.granted);
     final container = ProviderContainer(
       overrides: [
@@ -132,7 +134,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(container.read(locationFixProvider), isNull);
-    expect(find.text('เขตพระนคร, กรุงเทพ 10200'), findsOneWidget);
+    expect(find.text('ยังไม่ได้เลือกตำแหน่ง'), findsOneWidget);
   });
 
   testWidgets('allowing asks the OS, keeps the fix, and opens the picker',
@@ -193,10 +195,12 @@ void main() {
     expect(find.text('paigun board'), findsOneWidget);
   });
 
-  testWidgets('the picker opens on the board origin and confirms it',
+  testWidgets('the picker opens blank when the account holds no location',
       (tester) async {
     _phone(tester);
 
+    // No signed-in session, so the account pull short-circuits to null
+    // without a request — same as a real signed-out visit.
     final container = ProviderContainer(overrides: _storeOverride());
     addTearDown(container.dispose);
 
@@ -205,15 +209,56 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The map has no key in a test build, so the placeholder stands in for it.
-    expect(find.text('ตำแหน่งของฉัน'), findsOneWidget);
-    expect(find.text('เขตพระนคร, กรุงเทพ 10200'), findsOneWidget);
+    // Nothing stored, nothing pinned — the sheet says so plainly rather than
+    // settling for the board's own hardcoded origin.
+    expect(find.text('ยังไม่ได้เลือกตำแหน่ง'), findsOneWidget);
+    expect(find.text('ตำแหน่งของฉัน'), findsNothing);
+
+    // The confirm button is inert with nothing chosen — tapping it must not
+    // move the board's origin or leave the picker.
+    await tester.tap(find.text('ยืนยันตำแหน่งนี้'));
+    await tester.pumpAndSettle();
+    expect(find.text('paigun board'), findsNothing);
+    expect(container.read(paigunOriginProvider).label, 'ตำแหน่งของฉัน');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("the picker opens on the account's stored location",
+      (tester) async {
+    _phone(tester);
+
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {
+          'location': {'lat': 13.75, 'lng': 100.5, 'accuracyM': 20},
+        }),
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [..._storeOverride(), ...paigunOverrides(adapter)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(initialLocation: '/location/pick', container: container),
+    );
+    await tester.pumpAndSettle();
+
+    // No reverse geocode, so it is named for what it is rather than guessing
+    // a place, and the coordinates stand in for an address. `textContaining`
+    // rather than an exact match: the same pull also seeds the device fix, so
+    // the row may additionally print a 0.0km distance to itself.
+    expect(find.text('ตำแหน่งล่าสุดที่บันทึกไว้'), findsOneWidget);
+    expect(find.textContaining('13.7500, 100.5000'), findsOneWidget);
 
     await tester.tap(find.text('ยืนยันตำแหน่งนี้'));
     await tester.pumpAndSettle();
 
     expect(find.text('paigun board'), findsOneWidget);
-    expect(container.read(paigunOriginProvider).label, 'ตำแหน่งของฉัน');
+    expect(
+      container.read(paigunOriginProvider).label,
+      'ตำแหน่งล่าสุดที่บันทึกไว้',
+    );
     expect(tester.takeException(), isNull);
   });
 
