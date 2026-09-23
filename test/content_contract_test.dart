@@ -129,6 +129,7 @@ void main() {
             {
               'sectionIndex': 0,
               'confidence': 'high',
+              'source': 'photo',
               'options': [
                 {'name': 'วัดเจดีย์หลวง', 'placeId': 'ChIJ', 'rating': 4.6}
               ],
@@ -182,8 +183,12 @@ void main() {
     expect(
         draft.contents.first.location!.status, ContentLocationStatus.suggested);
     expect(draft.optionsFor(0)!.options.single.name, 'วัดเจดีย์หลวง');
+    expect(draft.optionsFor(0)!.source, PlaceSource.photo);
     expect(draft.optionsFor(1)!.confidence, PlaceConfidence.low);
     expect(draft.optionsFor(1)!.options, isEmpty);
+    // An answer from before `source` existed, or one naming a source this
+    // build has never heard of, says nothing rather than claiming a provenance.
+    expect(draft.optionsFor(1)!.source, PlaceSource.none);
     expect(draft.warnings, ['2 photos have no caption yet']);
   });
 
@@ -294,6 +299,21 @@ void main() {
     // The warning saying the suggestions are near the person, not the photo,
     // has to survive to the screen.
     expect(draft.warnings, hasLength(1));
+  });
+
+  test('every suggestion source the contract names is understood', () {
+    SectionPlaceOptions parse(Object? source) => SectionPlaceOptions.fromJson(
+        {'sectionIndex': 0, 'confidence': 'high', 'source': source});
+
+    expect(parse('photo').source, PlaceSource.photo);
+    expect(parse('locationName').source, PlaceSource.locationName);
+    expect(parse('currentLocation').source, PlaceSource.currentLocation);
+    // The one the screen has to say out loud: the assistant reading the
+    // picture is the easiest of the four to get wrong.
+    expect(parse('image').source, PlaceSource.image);
+    expect(parse('none').source, PlaceSource.none);
+    expect(parse(null).source, PlaceSource.none);
+    expect(parse('something-later').source, PlaceSource.none);
   });
 
   test('currentArea absent, blank or far away never names a place', () {

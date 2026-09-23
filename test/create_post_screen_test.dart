@@ -414,7 +414,7 @@ void main() {
     // Its warnings have to be on screen, and its place stays unconfirmed.
     expect(find.text('• รูปที่สองมืดเกินกว่าจะอธิบายได้'), findsOneWidget);
     expect(find.text('วัดเจดีย์หลวง'), findsOneWidget);
-    expect(find.text('สถานที่ที่แนะนำจากรูป'), findsOneWidget);
+    expect(find.text('ผู้ช่วยแนะนำ ยังไม่ยืนยัน'), findsOneWidget);
 
     // The photos went up in order, with the key that makes a replay free.
     final body = adapter.bodyOf('POST /trips/trip-new/contents/generate')!;
@@ -797,7 +797,7 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
     expect(find.text('ร้านที่แนะนำ'), findsOneWidget);
-    expect(find.text('สถานที่ที่แนะนำจากรูป'), findsOneWidget);
+    expect(find.text('ผู้ช่วยแนะนำ ยังไม่ยืนยัน'), findsOneWidget);
     tester
         .widget<PostBlock>(find.byType(PostBlock))
         .onConfirmLocationInItem!(0);

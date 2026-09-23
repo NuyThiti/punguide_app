@@ -461,7 +461,11 @@ class _PostBlockContentItem extends StatelessWidget {
     if (location != null && location.status != ContentLocationStatus.none) {
       final name = location.name;
       if (location.status == ContentLocationStatus.suggested) {
-        return (name ?? 'รอยืนยัน', 'สถานที่ที่แนะนำจากรูป', true);
+        // Not "จากรูป": a suggestion can come from the photo's coordinates, from
+        // a sign the assistant read in the picture, or from where the traveller
+        // is standing. Which one it was is spelled out in the picker, where
+        // there is room to say it and a decision to make.
+        return (name ?? 'รอยืนยัน', 'ผู้ช่วยแนะนำ ยังไม่ยืนยัน', true);
       }
       return (name ?? 'สถานที่ที่ยืนยัน', null, true);
     }

@@ -96,6 +96,38 @@ class SuggestedPlace {
   final double? rating;
 }
 
+/// Where a section's suggestions came from, which decides how hard the screen
+/// should push the traveller to check them.
+enum PlaceSource {
+  /// The photo's own coordinates. The strongest of the four: it is where the
+  /// picture was actually taken.
+  photo('photo'),
+
+  /// The place the traveller had already confirmed themselves.
+  locationName('locationName'),
+
+  /// Where the traveller is standing, used when the photo carried no
+  /// coordinates — near them now, not near the picture.
+  currentLocation('currentLocation'),
+
+  /// The assistant reading the picture: a shop sign, a landmark, words on a
+  /// menu. The easiest of the four to get wrong, so it is said out loud.
+  image('image'),
+
+  /// No suggestion at all.
+  none('none');
+
+  const PlaceSource(this.wire);
+  final String wire;
+
+  /// An unknown or missing value reads as [none]: a source the app does not
+  /// recognise is not a reason to claim one it does.
+  static PlaceSource from(Object? value) => values.firstWhere(
+        (source) => source.wire == value,
+        orElse: () => PlaceSource.none,
+      );
+}
+
 /// The candidates for one section, in the order the assistant ranked them.
 ///
 /// Review-screen data only: [sectionIndex] points into the draft's `contents`,
@@ -107,12 +139,14 @@ class SectionPlaceOptions {
     required this.sectionIndex,
     required this.confidence,
     required this.options,
+    this.source = PlaceSource.none,
   });
 
   factory SectionPlaceOptions.fromJson(Map<String, dynamic> json) =>
       SectionPlaceOptions(
         sectionIndex: Json.number(json, 'sectionIndex')?.toInt() ?? 0,
         confidence: PlaceConfidence.from(json['confidence']),
+        source: PlaceSource.from(json['source']),
         options: (json['options'] is List
                 ? Json.asMapList(json['options'])
                 : const <Map<String, dynamic>>[])
@@ -123,14 +157,14 @@ class SectionPlaceOptions {
   final int sectionIndex;
   final PlaceConfidence confidence;
 
+  /// Where these came from. Older answers carry no `source`, which reads as
+  /// [PlaceSource.none] and simply says nothing.
+  final PlaceSource source;
+
   /// Empty when the section's photos carry no coordinates — the picker then
   /// offers its own search instead.
   final List<SuggestedPlace> options;
 }
-
-/// A post the assistant drafted from photos. Nothing here is saved: the
-/// traveller reads it, edits it, and only then does `PATCH /trips/:id` run.
-@immutable
 
 /// The nearest place to where the traveller is now, for the composer's
 /// "ตอนนี้อยู่แถว …" line.
@@ -185,6 +219,9 @@ class NearbyArea {
   bool get isNearby => (distanceMeters ?? 0) <= 2000;
 }
 
+/// A post the assistant drafted from photos. Nothing here is saved: the
+/// traveller reads it, edits it, and only then does `PATCH /trips/:id` run.
+@immutable
 class GeneratedPostDraft {
   const GeneratedPostDraft({
     this.title = '',

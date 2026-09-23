@@ -530,6 +530,23 @@ class _SuggestedList extends StatelessWidget {
   final ValueChanged<SuggestedPlace> onPick;
   final Widget? nearby;
 
+  /// Where these came from, in the traveller's words.
+  ///
+  /// Worth a line because the four sources are not equally trustworthy and
+  /// look identical once they are rows in a list: a place under the camera is
+  /// not the same claim as one the assistant read off a sign, and a place near
+  /// where the traveller is standing says nothing about a photo taken
+  /// somewhere else entirely.
+  String? get _sourceNote => switch (options.source) {
+        PlaceSource.photo => 'จากพิกัดที่ติดมากับรูป',
+        PlaceSource.locationName => 'จากสถานที่ที่คุณระบุไว้เอง',
+        PlaceSource.currentLocation =>
+          'รูปไม่มีพิกัด จึงหาจากตำแหน่งของคุณตอนนี้ ไม่ใช่ที่ที่ถ่ายรูป',
+        PlaceSource.image =>
+          'ผู้ช่วยเดาจากสิ่งที่เห็นในภาพ เช่น ป้ายหรือจุดสังเกต ควรตรวจก่อนยืนยัน',
+        PlaceSource.none => null,
+      };
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -549,13 +566,41 @@ class _SuggestedList extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               if (options.confidence == PlaceConfidence.low)
-                const Text(
-                  'ยังไม่ค่อยมั่นใจ ลองตรวจดู',
-                  style: TextStyle(color: AppColors.muted, fontSize: 12),
+                const Flexible(
+                  child: Text(
+                    'ยังไม่ค่อยมั่นใจ ลองตรวจดู',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
                 ),
             ],
           ),
         ),
+        if (_sourceNote != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  options.source == PlaceSource.image
+                      ? Icons.auto_awesome_outlined
+                      : Icons.info_outline,
+                  size: 14,
+                  color: AppColors.muted,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _sourceNote!,
+                    style: const TextStyle(
+                        color: AppColors.muted, fontSize: 12, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+          ),
         for (final place in options.options)
           _SuggestedRow(place: place, onTap: () => onPick(place)),
         if (nearby != null) ...[
