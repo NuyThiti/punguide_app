@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../shared/extensions/currency_extensions.dart';
+import '../../../../shared/models/trip_facts.dart';
 import '../../../../shared/widgets/cover_image.dart';
 
 /// Two-per-row trip card, from Figma node 1834-5085.
@@ -337,10 +337,10 @@ class _PlaceLine extends StatelessWidget {
   }
 }
 
-/// Duration and per-head budget on the left, remixes and saves on the right.
+/// What the trip is made of on the left, remixes and saves on the right.
 ///
-/// Duration and budget are dropped rather than shown as zero: a feed row can
-/// arrive with no schedule, and a trip with no costed plan totals 0.
+/// The left half is [tripFactsLine], so a post prints its places where a plan
+/// prints its days and budget rather than leaving the line blank.
 class _StatsLine extends StatelessWidget {
   const _StatsLine({required this.trip});
 
@@ -348,19 +348,11 @@ class _StatsLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final days = trip.schedule.durationDays;
-    final facts = <String>[
-      if (trip.type == TripType.planTrip && days != null && days > 0)
-        '$days วัน',
-      if (trip.type == TripType.planTrip && trip.totalBudget > 0)
-        '${trip.totalBudget.asApproxBaht} /คน',
-    ];
-
     return Row(
       children: [
         Expanded(
           child: Text(
-            facts.join(' • '),
+            tripFactsLine(trip),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(

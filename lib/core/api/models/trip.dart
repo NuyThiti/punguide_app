@@ -182,35 +182,48 @@ class TripListItem {
     this.distanceKm,
   });
 
-  factory TripListItem.fromJson(Map<String, dynamic> json) => TripListItem(
-        type: TripType.from(json['type']),
-        id: Json.requiredString(json, 'id'),
-        title: Json.requiredString(json, 'title'),
-        destination: Json.requiredString(json, 'destination'),
-        destinationPlace:
-            DestinationPlace.maybeFromJson(json['destinationPlace']),
-        status: TripStatus.from(json['status']) ?? TripStatus.draft,
-        schedule: Schedule.fromJson(Json.asMap(json['schedule'])),
-        budgetLimit: Json.number(json, 'budgetLimit'),
-        totalBudget: Json.number(json, 'totalBudget') ?? 0,
-        budgetTier: BudgetTier.from(json['budgetTier']),
-        tags: Json.stringList(json, 'tags'),
-        coverImage: Media.maybeFromJson(json['coverImage']),
-        budgetCurrency: Json.string(json, 'budgetCurrency'),
-        placeCount: Json.integer(json, 'placeCount') ?? 0,
-        description: Json.string(json, 'description'),
-        isSaved: Json.boolean(json, 'isSaved'),
-        isLiked: Json.boolean(json, 'isLiked'),
-        likeCount: Json.integer(json, 'likeCount') ?? 0,
-        remixCount: Json.integer(json, 'remixCount') ?? 0,
-        creator: TripCreator.maybeFromJson(json['creator']),
-        // Only present when the request carried both `lat` and `lng`; a trip
-        // whose destination is still free text never gets one, so absent is
-        // "unknown" rather than zero.
-        distanceKm: Json.number(json, 'distanceKm'),
-        createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
-        updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
-      );
+  factory TripListItem.fromJson(Map<String, dynamic> json) {
+    final place = DestinationPlace.maybeFromJson(json['destinationPlace']);
+
+    return TripListItem(
+      type: TripType.from(json['type']),
+      id: Json.requiredString(json, 'id'),
+      title: Json.requiredString(json, 'title'),
+      destination: Json.requiredString(json, 'destination'),
+      destinationPlace: place,
+      status: TripStatus.from(json['status']) ?? TripStatus.draft,
+      schedule: Schedule.fromJson(Json.asMap(json['schedule'])),
+      budgetLimit: Json.number(json, 'budgetLimit'),
+      totalBudget: Json.number(json, 'totalBudget') ?? 0,
+      budgetTier: BudgetTier.from(json['budgetTier']),
+      tags: Json.stringList(json, 'tags'),
+      coverImage: Media.maybeFromJson(json['coverImage']),
+      budgetCurrency: Json.string(json, 'budgetCurrency'),
+      placeCount: Json.integer(json, 'placeCount') ?? 0,
+      description: Json.string(json, 'description'),
+      isSaved: Json.boolean(json, 'isSaved'),
+      isLiked: Json.boolean(json, 'isLiked'),
+      likeCount: Json.integer(json, 'likeCount') ?? 0,
+      remixCount: Json.integer(json, 'remixCount') ?? 0,
+      creator: TripCreator.maybeFromJson(json['creator']),
+      // Only present when the request carried both `lat` and `lng`; a trip
+      // whose destination is still free text never gets one, so absent is
+      // "unknown" rather than zero.
+      //
+      // Read only when the row actually has a resolved destination, which
+      // is the documented condition for the field existing at all. Posts
+      // come back without one yet carry `distanceKm: 20015` — π × the
+      // Earth's radius, the maximum a great circle can be, which is what a
+      // null pair measures to rather than a place anyone can travel to.
+      // Dropping it here keeps that number off every card at once; take
+      // this guard out once the server stops sending it.
+      distanceKm: place?.hasCoordinates ?? false
+          ? Json.number(json, 'distanceKm')
+          : null,
+      createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
+      updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
+    );
+  }
 
   static List<TripListItem> listFrom(Object? value) =>
       Json.asMapList(value).map(TripListItem.fromJson).toList(growable: false);

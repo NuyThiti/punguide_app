@@ -28,15 +28,18 @@ Widget _harness(FakeAdapter adapter) {
 }
 
 /// Rows as the server hands them over: already ordered, and already measured
-/// against the coordinates the request carried. The third has no `distanceKm`
-/// at all, which is what comes back for a destination the backend has not
-/// resolved to a real place.
+/// against the coordinates the request carried. A measured row always carries
+/// the resolved place the measurement was made against — the last one has
+/// neither, which is what comes back for a destination still held as free
+/// text.
 final _rows = <Map<String, dynamic>>[
   feedTripJson(
     id: 'bkk',
     title: 'เที่ยวย่านพระนคร เก็บโฮสเทล',
     destination: 'Phra Nakhon, Thai',
     country: 'ไทย',
+    latitude: 13.7465,
+    longitude: 100.4927,
     durationDays: 1,
     totalBudget: 200,
     creatorName: 'BKKwalker',
@@ -49,6 +52,8 @@ final _rows = <Map<String, dynamic>>[
     title: 'น่าน 3 วัน 2 คืน',
     destination: 'น่าน',
     country: 'ไทย',
+    latitude: 18.6848,
+    longitude: 100.8000,
     durationDays: 3,
     totalBudget: 550,
     creatorName: 'BKKwalker',
@@ -57,6 +62,22 @@ final _rows = <Map<String, dynamic>>[
     distanceKm: 549,
   ),
   feedTripJson(id: 'lpq'),
+  feedTripJson(
+    id: 'post',
+    type: 'content',
+    title: 'เดินเล่นเมืองเก่าภูเก็ต',
+    destination: 'ภูเก็ต',
+    country: 'ไทย',
+    latitude: 7.8804,
+    longitude: 98.3923,
+    // A post carries neither of these, and the card must not print the trip
+    // it describes as if they were the post's own.
+    durationDays: 2,
+    totalBudget: 4000,
+    placeCount: 5,
+    creatorName: 'BKKwalker',
+    distanceKm: 680,
+  ),
 ];
 
 void _phone(WidgetTester tester, {double height = 852}) {
@@ -127,8 +148,24 @@ void main() {
     // A row the server could not measure keeps its card and simply has no
     // chip — never a "0 Km".
     expect(find.text('หลวงพระบาง 3 วัน 2 คืน'), findsWidgets);
-    expect(find.textContaining('0 Km'), findsNothing);
+    // Exact, not `textContaining`: a genuine "680 Km" contains "0 Km" too.
+    expect(find.text('0 Km'), findsNothing);
     // Duration and budget share one run of text under the divider.
+    expect(find.textContaining('฿ ~200 /คน'), findsWidgets);
+  });
+
+  testWidgets('a post prints its places where a plan prints days and budget',
+      (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(_harness(feedAdapter(_rows)));
+    await tester.pumpAndSettle();
+
+    // The post's own fact, not the schedule or budget of the trip it is about.
+    expect(find.text('5 สถานที่'), findsWidgets);
+    expect(find.textContaining('฿ ~4,000'), findsNothing);
+    expect(find.textContaining('2 วัน'), findsNothing);
+    // The plan beside it still reads as a plan.
     expect(find.textContaining('฿ ~200 /คน'), findsWidgets);
   });
 

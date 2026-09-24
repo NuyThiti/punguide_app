@@ -213,16 +213,10 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
               ),
             ),
           ],
-          if (trip.coverImage != null) ...[
-            const SizedBox(height: 18),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: AspectRatio(
-                aspectRatio: 1.6,
-                child: CoverImage(source: trip.coverImage!.urls.full),
-              ),
-            ),
-          ],
+          // No cover here on purpose: the writer picks it with "ใช้เป็นหน้าปก"
+          // from a spot's own photos, so showing it would print the same
+          // picture twice — once at the top and again in the spot it belongs
+          // to. It still stands in for the post on cards and feeds.
           const SizedBox(height: 24),
           TripContentSections(sections: trip.contents),
         ],

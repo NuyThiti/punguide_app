@@ -212,6 +212,55 @@ void main() {
       expect(adapter.paths, isEmpty);
     });
 
+    test('a hand-picked place is sent without accuracy or a capture time',
+        () async {
+      final adapter = _adapter();
+      final container = _container(adapter);
+
+      final sent = await container.read(locationSyncProvider).pushChosen(
+            latitude: 18.7883,
+            longitude: 98.9853,
+          );
+
+      expect(sent, isTrue);
+      final body = adapter.bodyOf('PUT $_path')!;
+      expect(body, containsPair('lat', 18.7883));
+      expect(body, containsPair('lng', 98.9853));
+      // A pinned point has no error radius, and nothing captured it — leaving
+      // both out clears the radius the last reading left and lets the server
+      // stamp its own time.
+      expect(body.containsKey('accuracyM'), isFalse);
+      expect(body.containsKey('capturedAt'), isFalse);
+    });
+
+    test('confirming a spot nearby is sent even though a fix would not be',
+        () async {
+      final adapter = _adapter();
+      final sync = _container(adapter).read(locationSyncProvider);
+      await sync.push(_fix());
+
+      // ~300 m: a passive reading this close is dropped, but choosing it by
+      // hand is a deliberate act and has to stick.
+      expect(await sync.push(_fix(latitude: 12.6841)), isFalse);
+      expect(
+        await sync.pushChosen(latitude: 12.6841, longitude: 101.2816),
+        isTrue,
+      );
+      expect(adapter.paths, ['PUT $_path', 'PUT $_path']);
+    });
+
+    test('a signed-out traveller keeps their pin to themselves', () async {
+      final adapter = _adapter();
+      final container = _container(adapter, signedIn: false);
+
+      final sent = await container
+          .read(locationSyncProvider)
+          .pushChosen(latitude: 1, longitude: 2);
+
+      expect(sent, isFalse);
+      expect(adapter.paths, isEmpty);
+    });
+
     test('forget erases the stored position', () async {
       final adapter = _adapter();
 

@@ -8,6 +8,8 @@ import 'features/auth/presentation/providers/auth_providers.dart';
 import 'features/location_access/data/geolocator_location_service.dart';
 import 'features/location_access/data/location_permission_store.dart';
 import 'features/location_access/presentation/providers/location_providers.dart';
+import 'features/paigun/data/paigun_origin_store.dart';
+import 'features/paigun/presentation/providers/paigun_providers.dart';
 
 export 'app.dart';
 
@@ -17,10 +19,14 @@ Future<void> main() async {
   // Read before the first frame so the route gate — which has to answer
   // synchronously — already knows whether the traveller has been asked.
   final locationPermission = await const PrefsLocationPermissionStore().read();
+  // And the place they last confirmed, so the board opens measuring from
+  // there rather than from the default district.
+  final paigunOrigin = await const PrefsPaigunOriginStore().read();
   runApp(
     ProviderScope(
       overrides: [
         storedLocationPermissionProvider.overrideWithValue(locationPermission),
+        storedPaigunOriginProvider.overrideWithValue(paigunOrigin),
         // The real CoreLocation / FusedLocationProvider flow. Tests and the
         // default keep the unconfigured stub.
         locationServiceProvider

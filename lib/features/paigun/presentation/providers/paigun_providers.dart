@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../data/paigun_origin_store.dart';
 import '../../domain/nearby_trip.dart';
 import '../../domain/trip_filter.dart';
 
@@ -22,19 +23,40 @@ final paigunFilterProvider =
 
 /// Where the board measures distances from.
 ///
-/// The map picker writes this when the traveller confirms a place, and the
-/// default below is what the header shows before anyone has. It goes up as
-/// `lat`/`lng` on every feed request, whichever wall is asking: the server
-/// only returns `distanceKm` when it is given both, and that number is what
-/// puts the chip on a card.
+/// The map picker writes this when the traveller confirms a place, and it goes
+/// up as `lat`/`lng` on every feed request, whichever wall is asking: the
+/// server only returns `distanceKm` when it is given both, and that number is
+/// what puts the chip on a card.
+///
+/// Starts from whatever was confirmed last time — `main` seeds
+/// [storedPaigunOriginProvider] from the store before the app builds — and
+/// falls back to the district the design is drawn on only when nobody has
+/// ever picked anything.
 final paigunOriginProvider = StateProvider<PaigunOrigin>(
-  (ref) => const PaigunOrigin(
-    label: 'ตำแหน่งของฉัน',
-    address: 'เขตพระนคร, กรุงเทพ 10200',
-    latitude: 13.7563,
-    longitude: 100.4930,
-  ),
+  (ref) => ref.watch(storedPaigunOriginProvider) ?? defaultPaigunOrigin,
 );
+
+/// What the board measures from before the traveller has said anything.
+const defaultPaigunOrigin = PaigunOrigin(
+  label: 'ตำแหน่งของฉัน',
+  address: 'เขตพระนคร, กรุงเทพ 10200',
+  latitude: 13.7563,
+  longitude: 100.4930,
+);
+
+/// Where a confirmed origin is kept between runs.
+final paigunOriginStoreProvider = Provider<PaigunOriginStore>(
+  (ref) => const PrefsPaigunOriginStore(),
+);
+
+/// The remembered origin as it stood when the app started, which `main`
+/// overrides once it has read storage. Null means nobody has ever confirmed
+/// one.
+///
+/// Read once at startup rather than awaited on demand, for the same reason
+/// the stored permission is: the board asks for its origin while it builds,
+/// and waiting on the disk would stall the first request behind it.
+final storedPaigunOriginProvider = Provider<PaigunOrigin?>((ref) => null);
 
 /// What the ตัวกรอง wizard last applied to the board.
 ///

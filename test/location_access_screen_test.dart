@@ -9,6 +9,8 @@ import 'package:pluno/features/location_access/domain/location_service.dart';
 import 'package:pluno/features/location_access/presentation/location_access_screen.dart';
 import 'package:pluno/features/location_access/presentation/location_picker_screen.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
+import 'package:pluno/features/paigun/data/paigun_origin_store.dart';
+import 'package:pluno/features/paigun/domain/nearby_trip.dart';
 import 'package:pluno/features/paigun/presentation/providers/paigun_providers.dart';
 
 import 'support/fake_api.dart';
@@ -244,10 +246,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // No reverse geocode, so it is named for what it is rather than guessing
-    // a place, and the coordinates stand in for an address. `textContaining`
-    // rather than an exact match: the same pull also seeds the device fix, so
-    // the row may additionally print a 0.0km distance to itself.
+    // Nothing around the point can name it — `/places/suggest` has no stub, so
+    // it fails — and the coordinates stay, which is what they are for.
+    // `textContaining` rather than an exact match: the same pull also seeds the
+    // device fix, so the row may additionally print a 0.0km distance to itself.
     expect(find.text('ตำแหน่งล่าสุดที่บันทึกไว้'), findsOneWidget);
     expect(find.textContaining('13.7500, 100.5000'), findsOneWidget);
 
@@ -260,6 +262,64 @@ void main() {
       'ตำแหน่งล่าสุดที่บันทึกไว้',
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a stored fix is named by the area around it', (tester) async {
+    _phone(tester);
+
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {
+          'location': {'lat': 13.75, 'lng': 100.5, 'accuracyM': 20},
+        }),
+      ],
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          // Deliberately out of distance order: the row the API thinks is most
+          // popular is 400 m away, the one across the road is second.
+          {
+            'id': 'far',
+            'name': 'วัดโพธิ์',
+            'address': '2 Sanam Chai Rd, Phra Nakhon, Bangkok 10200, Thailand',
+            'lat': 13.7465,
+            'lng': 100.4927,
+          },
+          {
+            'id': 'near',
+            'name': 'ร้านกาแฟหน้าปากซอย',
+            'address': '9 Na Phra Lan, Phra Nakhon, Bangkok 10210, Thailand',
+            'lat': 13.7501,
+            'lng': 100.5001,
+          },
+        ]),
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [..._storeOverride(), ...paigunOverrides(adapter)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(initialLocation: '/location/pick', container: container),
+    );
+    await tester.pumpAndSettle();
+
+    // The nearest place's *area*, not the shop itself — a cafe across the road
+    // is a landmark, not where the traveller is standing.
+    expect(find.text('Bangkok 10210'), findsOneWidget);
+    expect(find.text('ร้านกาแฟหน้าปากซอย'), findsNothing);
+    expect(find.textContaining('13.7500, 100.5000'), findsNothing);
+
+    await tester.tap(find.text('ยืนยันตำแหน่งนี้'));
+    await tester.pumpAndSettle();
+
+    // The board's header captions it itself rather than printing the same
+    // line twice.
+    final origin = container.read(paigunOriginProvider);
+    expect(origin.address, 'Bangkok 10210');
+    expect(origin.label, 'ตำแหน่งของฉัน');
+    expect(origin.latitude, 13.75);
+    expect(origin.longitude, 100.5);
   });
 
   testWidgets('Thai addresses, which carry no commas, are still trimmed',
@@ -330,9 +390,11 @@ void main() {
         ]),
       ],
     });
+    final store = InMemoryPaigunOriginStore();
     final container = ProviderContainer(
       overrides: [
-        plunoApiProvider.overrideWith((ref) async => fakeApi(adapter))
+        plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+        paigunOriginStoreProvider.overrideWithValue(store),
       ],
     );
     addTearDown(container.dispose);
@@ -362,5 +424,69 @@ void main() {
     expect(origin.label, 'เขตพระนคร');
     expect(origin.address, 'Bangkok 10200');
     expect(origin.latitude, 13.7563);
+
+    // And it is kept, so the next launch opens here.
+    expect((await store.read())?.address, 'Bangkok 10200');
+  });
+
+  testWidgets('confirming also sends the pin to the account', (tester) async {
+    _phone(tester);
+
+    final adapter = FakeAdapter({
+      'GET /places/search': [
+        const FakeReply(200, [
+          {
+            'id': 'cnx',
+            'name': 'เทศบาลนครเชียงใหม่',
+            'address': 'เทศบาลนครเชียงใหม่ อำเภอเมืองเชียงใหม่ เชียงใหม่ 50200',
+            'lat': 18.7883,
+            'lng': 98.9853,
+          },
+        ]),
+      ],
+      // The picker asks for the account's copy as it opens; nothing stored.
+      'GET /users/me/location': [
+        const FakeReply(200, <String, dynamic>{'location': null}),
+      ],
+      'PUT /users/me/location': [
+        const FakeReply(200, {
+          'location': {'lat': 18.7883, 'lng': 98.9853},
+        }),
+      ],
+    });
+    final container = ProviderContainer(
+      overrides: [
+        ..._storeOverride(),
+        ...paigunOverrides(adapter),
+        paigunOriginStoreProvider
+            .overrideWithValue(InMemoryPaigunOriginStore()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(initialLocation: '/location/pick', container: container),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'เทศบาล');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('เชียงใหม่ 50200'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ยืนยันตำแหน่งนี้'));
+    await tester.pumpAndSettle();
+
+    // So the same point follows the traveller to their next device.
+    expect(adapter.paths, contains('PUT /users/me/location'));
+    final body = adapter.bodyOf('PUT /users/me/location')!;
+    expect(body, containsPair('lat', 18.7883));
+    expect(body, containsPair('lng', 98.9853));
+    // A pinned point has no error radius and nothing captured it.
+    expect(body.containsKey('accuracyM'), isFalse);
+    expect(body.containsKey('capturedAt'), isFalse);
   });
 }

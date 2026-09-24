@@ -172,6 +172,34 @@ void main() {
     expect(find.text('เข้าถึงท้องถิ่น'), findsOneWidget);
   });
 
+  testWidgets('the cover is not repeated above the spot it came from',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: <String, dynamic>{
+        ..._postJson(contents: [
+          <String, dynamic>{
+            'title': 'จุดที่ปกมาจาก',
+            'content': 'เนื้อหา',
+            'imageUrls': const <String>['https://img/cover'],
+          },
+        ]),
+        // The writer picked this spot's photo with "ใช้เป็นหน้าปก".
+        'coverImage': const <String, dynamic>{
+          'mediaId': '55555555-5555-4555-8555-555555555555',
+          'urls': {
+            'large': 'https://img/cover',
+            'thumbnail': 'https://img/cover-t'
+          },
+        },
+      },
+    );
+
+    // The photo appears once — in its spot — not again as a header.
+    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
+  });
+
   testWidgets('spots are numbered and titled', (tester) async {
     phone(tester);
     await _pumpPost(tester);

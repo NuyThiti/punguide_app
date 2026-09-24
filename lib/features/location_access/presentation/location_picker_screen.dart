@@ -46,16 +46,35 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     _loadFix();
   }
 
-  /// Opens on whatever the account already has stored — the same fix
-  /// `/location`'s permission flow keeps in step with the device — rather
-  /// than a hardcoded district. Nothing stored means nothing pinned: the
-  /// picker opens blank and the sheet says so, instead of presenting a place
-  /// nobody actually confirmed.
+  /// Opens on the place the traveller last confirmed, and only then on the
+  /// account's own fix.
+  ///
+  /// That order matters: a confirmed place is an answer, the fix is a
+  /// reading. The answer is also kept on this device, so it survives a lapsed
+  /// session — the fix is read from `/users/me/location`, which answers 401
+  /// once the refresh token is gone.
+  ///
+  /// Nothing either way means nothing pinned: the picker opens blank and the
+  /// sheet says so, instead of presenting a place nobody actually confirmed.
   ///
   /// `_picked` may already have something in it by the time this resolves —
   /// a tap or a search does not wait — so this never overwrites a choice the
   /// traveller has since made.
   Future<void> _loadInitialPin() async {
+    final remembered = ref.read(storedPaigunOriginProvider);
+    if (remembered != null) {
+      if (!mounted || _picked != null) return;
+      // Already named, when it was confirmed — nothing to look up.
+      setState(
+        () => _picked = PickedLocation(
+          name: remembered.address,
+          latitude: remembered.latitude,
+          longitude: remembered.longitude,
+        ).measuredFrom(ref.read(locationFixProvider)),
+      );
+      return;
+    }
+
     final stored = await ref.read(locationSyncProvider).pull();
     if (!mounted || stored == null || _picked != null) return;
     setState(
@@ -67,6 +86,39 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
         longitude: stored.longitude,
       ).measuredFrom(ref.read(locationFixProvider)),
     );
+    await _nameCurrentPin();
+  }
+
+  /// Trades a pin's coordinates for the name of the area it sits in.
+  ///
+  /// Deliberately after the pin is already drawn, not before: naming costs a
+  /// request, and a traveller watching the map should not wait on it. If it
+  /// comes back with nothing — or does not come back at all — the coordinates
+  /// stay, which is what they were there for.
+  Future<void> _nameCurrentPin() async {
+    final pin = _picked;
+    if (pin == null) return;
+
+    String? area;
+    try {
+      area = await ref.read(placeNamerProvider).describe(
+            latitude: pin.latitude,
+            longitude: pin.longitude,
+          );
+    } on ApiException {
+      return;
+    }
+    if (!mounted || area == null) return;
+
+    // The traveller may have moved the pin while this was in flight; naming
+    // the old point over the new one would be worse than not naming it.
+    final current = _picked;
+    if (current == null ||
+        current.latitude != pin.latitude ||
+        current.longitude != pin.longitude) {
+      return;
+    }
+    setState(() => _picked = current.named(area!));
   }
 
   /// Finds a position to measure distances from.
@@ -139,8 +191,8 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     );
   }
 
-  /// A tap on bare map. There is no reverse-geocode endpoint, so the pin keeps
-  /// the coordinates and says as much rather than inventing a name for them.
+  /// A tap on bare map. The pin lands on its coordinates at once and is named
+  /// a moment later, once [_nameCurrentPin] has something to call it.
   void _pinPoint(double latitude, double longitude) {
     _select(
       PickedLocation(
@@ -151,6 +203,7 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
         longitude: longitude,
       ),
     );
+    _nameCurrentPin();
   }
 
   void _select(PickedLocation place) {
@@ -167,7 +220,20 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     final place = _picked;
     if (place == null) return;
 
-    ref.read(paigunOriginProvider.notifier).state = place.toOrigin();
+    final origin = place.toOrigin();
+    ref.read(paigunOriginProvider.notifier).state = origin;
+    // Kept on the device so the next launch opens here rather than back on
+    // the default district. Not awaited: the board is what the traveller
+    // asked for, and a preferences write that fails only costs them the
+    // memory of it, not this trip.
+    ref.read(paigunOriginStoreProvider).write(origin);
+    // And onto the account, so the same point follows them to another device.
+    // Also not awaited, for the same reason — and it is skipped outright when
+    // signed out, which is why the local copy above is the one that matters.
+    ref.read(locationSyncProvider).pushChosen(
+          latitude: origin.latitude,
+          longitude: origin.longitude,
+        );
     context.goNamed(AppRoute.paigun.name);
   }
 

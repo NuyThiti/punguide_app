@@ -40,6 +40,18 @@ class PickedLocation {
   String get subtitle =>
       [distanceLabel, address].whereType<String>().join(' • ');
 
+  /// The same point under a name found for it later.
+  ///
+  /// The coordinates and any distance already measured stay as they are — only
+  /// the label changes, because the point itself never moved. The address line
+  /// is dropped: what replaces it is the area, which is the address.
+  PickedLocation named(String name) => PickedLocation(
+        name: name,
+        latitude: latitude,
+        longitude: longitude,
+        distanceKm: distanceKm,
+      );
+
   /// The same place measured from somewhere else. Used when a fix arrives
   /// after the picker has already drawn a pin.
   PickedLocation measuredFrom(LocationFixPoint? origin) {
@@ -59,8 +71,14 @@ class PickedLocation {
   }
 
   /// What the ไปกัน board measures "near me" from once this is confirmed.
+  ///
+  /// The board's header prints the label as a caption over the address in
+  /// bold, so a place with both gives "Wat Pho" over "Bangkok 10200". A point
+  /// named by its area alone has nothing to caption it with — repeating the
+  /// same line twice would look like a bug — so it falls back to the header's
+  /// own wording.
   PaigunOrigin toOrigin() => PaigunOrigin(
-        label: name,
+        label: address == null ? 'ตำแหน่งของฉัน' : name,
         address: address ?? name,
         latitude: latitude,
         longitude: longitude,

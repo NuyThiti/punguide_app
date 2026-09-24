@@ -79,10 +79,10 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
     if (status == LocationPermissionStatus.granted) {
       final fix = await ref.read(locationServiceProvider).currentFix();
       if (!mounted) return;
-      if (fix != null) {
-        await ref.read(locationFixProvider.notifier).capture(fix);
-        if (!mounted) return;
-      }
+      // observe, not capture: this reading is only to centre the map and
+      // find spots nearby, not the traveller reporting where they are, so it
+      // must not be mirrored onto the account's `/users/me/location`.
+      if (fix != null) ref.read(locationFixProvider.notifier).observe(fix);
     }
     setState(() => _asking = false);
 

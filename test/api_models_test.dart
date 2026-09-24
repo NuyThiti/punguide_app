@@ -353,6 +353,59 @@ void main() {
     });
   });
 
+  group('TripListItem.distanceKm', () {
+    Map<String, dynamic> row({Map<String, dynamic>? place}) =>
+        <String, dynamic>{
+          'id': 't1',
+          'title': 'ทริป',
+          'destination': 'พระนคร กรุงเทพฯ',
+          if (place != null) 'destinationPlace': place,
+          'status': 'draft',
+          'schedule': <String, dynamic>{},
+          'totalBudget': 0,
+          'tags': <String>[],
+          'isSaved': false,
+          'isLiked': false,
+          'likeCount': 0,
+          'remixCount': 0,
+          'createdAt': '2026-09-23T00:00:00.000Z',
+          'updatedAt': '2026-09-23T00:00:00.000Z',
+        };
+
+    test('is kept for a destination the server resolved', () {
+      final trip = TripListItem.fromJson(
+        row(place: <String, dynamic>{
+          'name': 'น่าน',
+          'latitude': 18.684809,
+          'longitude': 100.800005,
+        })
+          ..['distanceKm'] = 549,
+      );
+
+      expect(trip.distanceKm, 549);
+    });
+
+    test('is dropped for a row with no resolved destination', () {
+      // What posts actually come back as: no `destinationPlace`, and a
+      // distance of 20015 km — π × the Earth's radius, the farthest a great
+      // circle can reach, which is what a null pair measures to rather than
+      // anywhere real.
+      final trip = TripListItem.fromJson(row()..['distanceKm'] = 20015);
+
+      expect(trip.destinationPlace, isNull);
+      expect(trip.distanceKm, isNull);
+    });
+
+    test('is dropped for a place the server has not located', () {
+      final trip = TripListItem.fromJson(
+        row(place: <String, dynamic>{'name': 'พระนคร'})..['distanceKm'] = 20015,
+      );
+
+      expect(trip.destinationPlace?.hasCoordinates, isFalse);
+      expect(trip.distanceKm, isNull);
+    });
+  });
+
   group('AuthTokenStore.parseExpiresIn', () {
     test('reads the API spellings', () {
       expect(AuthTokenStore.parseExpiresIn('15m'), const Duration(minutes: 15));

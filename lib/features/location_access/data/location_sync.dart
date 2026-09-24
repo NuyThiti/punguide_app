@@ -68,6 +68,41 @@ class LocationSync {
     }
   }
 
+  /// Mirrors a place the traveller pinned by hand onto the account.
+  ///
+  /// Three things separate this from [push], all of them following from the
+  /// fact that a person chose this point rather than a sensor reporting it:
+  ///
+  /// * the move threshold does not apply — confirming a spot two streets away
+  ///   is a deliberate act, and ignoring it would look broken;
+  /// * no `accuracyM` goes up, because a pinned point has no error radius, and
+  ///   leaving the field out clears whatever the last reading left behind —
+  ///   that radius described a different point;
+  /// * no `capturedAt` either: nothing captured this, so the server stamps its
+  ///   own arrival time rather than the app inventing one.
+  Future<bool> pushChosen({
+    required double latitude,
+    required double longitude,
+  }) async {
+    if (!_ref.read(isSignedInProvider)) return false;
+
+    try {
+      await (await _ref.read(plunoApiProvider.future)).users.saveLocation(
+            UserLocation(latitude: latitude, longitude: longitude),
+          );
+      // Counts as the last thing sent, so the next device reading has to have
+      // moved a kilometre from *here* to be worth a write.
+      _lastPushed = LocationFixPoint(
+        latitude: latitude,
+        longitude: longitude,
+      );
+      return true;
+    } on ApiException catch (failure) {
+      debugPrint('chosen location push failed: ${failure.statusCode} $failure');
+      return false;
+    }
+  }
+
   /// The position the account already holds, or null when it holds none.
   Future<UserLocation?> pull() async {
     if (!_ref.read(isSignedInProvider)) return null;

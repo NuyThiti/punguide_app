@@ -30,6 +30,22 @@ String _planStream({int revision = 1}) => ''
     '"suggestedReplies":[],"warnings":["เวลาเดินทางเป็นค่าประมาณ"],'
     '"draftId":"draft-7","draftRevision":$revision,"error":null}\n';
 
+/// A "find places" turn: §5.2 has the server fold published trips in above the
+/// places, and the order is the server's to choose — never the model's.
+const _placesTurn = ''
+    'event: accepted\n'
+    'data: {"conversationId":"room-1","messageId":"msg-2"}\n'
+    '\n'
+    'event: complete\n'
+    'data: {"schemaVersion":1,"conversationId":"room-1","messageId":"msg-2",'
+    '"status":"complete","text":"มีทริปที่คนอื่นแชร์ไว้ด้วยครับ","blocks":['
+    '{"type":"trip_results","totalMatches":9,"trips":['
+    '{"tripId":"t1","title":"เชียงใหม่ชิล ๆ"},'
+    '{"tripId":"t2","title":"คาเฟ่ฮอปปิ้งเชียงใหม่"}]},'
+    '{"type":"place_results","nearLabel":"นิมมานเหมินท์","totalMatches":6,'
+    '"places":[{"placeId":"p1","name":"ร้านกาแฟริมคลอง"}]}],'
+    '"suggestedReplies":[],"warnings":[],"error":null}\n';
+
 FakeAdapter _adapter({String? stream, Map<String, List<FakeReply>>? extra}) =>
     FakeAdapter(<String, List<FakeReply>>{
       'POST /chat/conversations': [
@@ -182,5 +198,44 @@ void main() {
       adapter.paths.where((p) => p == 'POST /chat/conversations'),
       hasLength(1),
     );
+  });
+
+  testWidgets('published trips sit above places, in the order the server sent',
+      (tester) async {
+    await _pumpChat(tester, _adapter(stream: _placesTurn));
+    await _send(tester, 'หาคาเฟ่ใกล้ ๆ หน่อย');
+
+    final trips = find.text('ทริปที่คนอื่นแชร์ไว้');
+    final places = find.text('ใกล้ นิมมานเหมินท์');
+    expect(trips, findsOneWidget);
+    expect(places, findsOneWidget);
+
+    // Ordering is the server's contract — the app must not re-sort.
+    expect(
+      tester.getTopLeft(trips).dy,
+      lessThan(tester.getTopLeft(places).dy),
+    );
+
+    // Only a slice was sent, and the card says so rather than implying it is
+    // the whole answer.
+    expect(find.text('2 จาก 9'), findsOneWidget);
+    expect(find.text('เชียงใหม่ชิล ๆ'), findsOneWidget);
+    expect(find.text('ร้านกาแฟริมคลอง'), findsOneWidget);
+  });
+
+  testWidgets('a trips turn that found nothing shows no empty rail',
+      (tester) async {
+    const emptyTrips = ''
+        'event: complete\n'
+        'data: {"schemaVersion":1,"conversationId":"room-1","messageId":"msg-2",'
+        '"status":"complete","text":"ยังไม่มีใครแชร์ทริปน่านไว้เลยครับ",'
+        '"blocks":[{"type":"trip_results","totalMatches":0,"trips":[]}],'
+        '"suggestedReplies":[],"warnings":[],"error":null}\n';
+
+    await _pumpChat(tester, _adapter(stream: emptyTrips));
+    await _send(tester, 'ทริปน่าน');
+
+    expect(find.text('ยังไม่มีใครแชร์ทริปน่านไว้เลยครับ'), findsOneWidget);
+    expect(find.text('ทริปที่คนอื่นแชร์ไว้'), findsNothing);
   });
 }

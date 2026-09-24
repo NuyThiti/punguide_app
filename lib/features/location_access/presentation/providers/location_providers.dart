@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
+import '../../../paigun/domain/nearby_trip.dart';
 import '../../data/location_permission_store.dart';
 import '../../data/location_sync.dart';
 import '../../domain/location_service.dart';
@@ -75,12 +76,27 @@ class LocationFixController extends Notifier<LocationFixPoint?> {
   LocationFixPoint? build() => null;
 
   /// Takes a fresh reading from the device and sends it up.
+  ///
+  /// This is specifically for "my location" — the account's own fix at
+  /// `/users/me/location` — so a caller reading the device only to centre a
+  /// map or find a place nearby should use [observe] instead.
   Future<void> capture(LocationFix fix) async {
     state = LocationFixPoint(
       latitude: fix.latitude,
       longitude: fix.longitude,
     );
     await ref.read(locationSyncProvider).push(fix);
+  }
+
+  /// Keeps a fresh reading for this run — search origin, map centring — but
+  /// never mirrors it onto the account. For a caller that asks the device for
+  /// a position on behalf of something else, such as pinning a spot on a post,
+  /// not to report where the traveller is.
+  void observe(LocationFix fix) {
+    state = LocationFixPoint(
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+    );
   }
 
   /// Makes sure there is *some* position to measure from, without insisting on
@@ -156,6 +172,85 @@ class LocationResultsNotifier
         .map((place) => _toPicked(place).measuredFrom(origin))
         .toList(growable: false);
   }
+}
+
+/// Puts a name to a bare coordinate — the account's stored fix, or a point
+/// tapped on the map.
+final placeNamerProvider = Provider<PlaceNamer>(
+  (ref) => PlaceNamer(() => ref.read(plunoApiProvider.future)),
+);
+
+/// Names a point by what sits around it.
+///
+/// `/places/suggest` is the only route that takes coordinates — there is no
+/// reverse-geocode endpoint — so the nearest place it knows about stands in
+/// for the address. What is kept is that place's *area*, never its own name:
+/// a cafe 80 m away is a landmark, not where the traveller is standing.
+///
+/// A seam like [DestinationLookup], so a test can answer without a server.
+class PlaceNamer {
+  const PlaceNamer(this._api);
+
+  final Future<PlunoApi> Function() _api;
+
+  /// Widened once. A quiet street can come back empty at close range while
+  /// the district it sits in is perfectly nameable.
+  static const _radiiMeters = <int>[300, 2000];
+
+  /// The area around [latitude]/[longitude], or null when nothing nearby can
+  /// name it — in which case the caller keeps the coordinates it already has.
+  ///
+  /// One Google call per radius tried, so this is for a pin the traveller has
+  /// actually dropped, not for every frame of a drag.
+  Future<String?> describe({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final api = await _api();
+
+    for (final radius in _radiiMeters) {
+      final places = await api.places.suggest(
+        latitude: latitude,
+        longitude: longitude,
+        radiusMeters: radius,
+        limit: 10,
+      );
+      final area = _areaAround(places, latitude, longitude);
+      if (area != null) return area;
+    }
+    return null;
+  }
+}
+
+/// The address of the nearest place that carries one.
+///
+/// Walking outwards rather than taking the first row: `/places/suggest` orders
+/// by what is popular, and a landmark two streets away would name the point
+/// worse than the shop across the road.
+String? _areaAround(List<Place> places, double latitude, double longitude) {
+  final located = places
+      .where((place) => place.latitude != null && place.longitude != null)
+      .toList()
+    ..sort(
+      (a, b) =>
+          distanceKmBetween(latitude, longitude, a.latitude!, a.longitude!)
+              .compareTo(
+        distanceKmBetween(latitude, longitude, b.latitude!, b.longitude!),
+      ),
+    );
+
+  for (final place in located) {
+    final area = _shortAddress(place.address);
+    if (area != null) return area;
+  }
+
+  // Nothing carried an address: the nearest landmark's own name still reads
+  // better than a pair of coordinates.
+  final fallback = located.isNotEmpty
+      ? located.first
+      : (places.isEmpty ? null : places.first);
+  final name = fallback?.name.trim();
+  return name == null || name.isEmpty ? null : name;
 }
 
 PickedLocation _toPicked(Place place) => PickedLocation(

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../shared/extensions/currency_extensions.dart';
+import '../../../../shared/models/trip_facts.dart';
 import '../../../../shared/widgets/cover_image.dart';
 
 /// One row of ทริปฉัน: cover, title, where it goes, and how it stands.
@@ -121,7 +121,7 @@ class _Details extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                _facts(trip),
+                tripFactsLine(trip),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -136,20 +136,6 @@ class _Details extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Duration and per-head budget for a plan, places for a post. Anything the
-/// row did not come back with is left out rather than printed as zero.
-String _facts(TripListItem trip) {
-  if (trip.type == TripType.content) {
-    return trip.placeCount > 0 ? '${trip.placeCount} สถานที่' : '';
-  }
-
-  final days = trip.schedule.durationDays;
-  return <String>[
-    if (days != null && days > 0) '$days วัน',
-    if (trip.totalBudget > 0) '${trip.totalBudget.asApproxBaht} /คน',
-  ].join(' • ');
 }
 
 /// Where the trip stands — the one thing a feed card never shows, because the
