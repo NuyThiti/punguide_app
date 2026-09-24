@@ -287,17 +287,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       block.listen(_refresh);
     }
 
-    _loadCurrentPlace();
-  }
-
-  /// Checks the account's own record — `GET /users/me/location` — for
-  /// somewhere to fill a blank post in with. Read once on open rather than
-  /// watched: this is a one-time offer for a new post, not something that
-  /// should keep nudging the place while the traveller is writing.
-  Future<void> _loadCurrentPlace() async {
-    final place = await ref.read(currentPlaceProvider.future);
-    if (!mounted || place == null) return;
-    _adoptNearbyPlace(place);
+    // Deliberately nothing fetched here. An earlier version read the
+    // account's stored fix on open and spent a Places lookup turning it into
+    // a name before the traveller had asked for anything — see
+    // _adoptNearbyPlace below for the one autofill that remains: the
+    // assistant's own currentArea, which the server already resolves as part
+    // of a photo draft, at no extra client cost.
   }
 
   @override
