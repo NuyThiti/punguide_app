@@ -1669,10 +1669,10 @@ void main() {
   });
 
   testWidgets(
-      'opening the composer never spends a location or Places request on its own',
+      'opening the composer reads the account fix but spends no Places request',
       (tester) async {
     // Signed in, and the account has a real fix — the strongest case for
-    // autofilling, and still nothing should be spent on one unasked.
+    // autofilling, and still nothing beyond the one GET should be spent.
     final adapter = FakeAdapter({
       'GET /users/me/location': [
         const FakeReply(200, {
@@ -1687,24 +1687,42 @@ void main() {
     );
     await _settleNearby(tester);
 
+    // Read, but not resolved to a name and not written into the post — see
+    // _loadAccountFix's own comment for why the second call was removed.
     expect(_cardPlace(tester), isNull);
+    expect(adapter.paths, ['GET /users/me/location']);
+  });
+
+  testWidgets('signed out, the account fix is never fetched', (tester) async {
+    // No auth override: LocationSync.pull() checks isSignedInProvider before
+    // it ever reaches the network, same as every other route through it.
+    final adapter = FakeAdapter({});
+    await _pumpComposer(tester, adapter: adapter);
+    await _settleNearby(tester);
+
     expect(adapter.paths, isEmpty);
   });
 
   testWidgets('a post opened for editing keeps its own place', (tester) async {
     // Written up at home a week later: the destination it already carries is
-    // the answer, and nothing should be reaching for another one.
-    final adapter = FakeAdapter({});
+    // the answer, and nothing should be reaching for another one — the
+    // account fix is still read (every open reads it), just never applied.
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {'location': null}),
+      ],
+    });
     await _pumpComposer(
       tester,
       adapter: adapter,
+      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
       initialTrip: ApiTrip.fromJson(
           {...createdTripJson(), 'destination': 'ดานัง, เวียดนาม'}),
     );
     await _settleNearby(tester);
 
     expect(_cardPlace(tester), isNull);
-    expect(adapter.paths, isEmpty);
+    expect(adapter.paths, ['GET /users/me/location']);
   });
 
   testWidgets('the Title sheet sets where the post is about', (tester) async {

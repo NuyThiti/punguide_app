@@ -15,6 +15,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../location_access/data/location_sync.dart';
 import '../domain/models/post_draft.dart';
 import 'providers/place_pin_providers.dart';
 import 'widgets/create_post_header.dart';
@@ -131,6 +132,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// True once the traveller has had a say about the post's place — they chose
   /// one, or they took one off. After that the app never fills it in again.
   bool _placeIsTheirs = false;
+
+  /// The account's stored fix, read once on open. Not shown anywhere and not
+  /// resolved to a name yet — that used to mean a second, billed Places call
+  /// on every open (see the removed currentPlaceProvider), which this
+  /// deliberately does not repeat until there is a next step for it to feed.
+  UserLocation? _accountFix;
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
       _unavailablePaths = {};
@@ -287,12 +294,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       block.listen(_refresh);
     }
 
-    // Deliberately nothing fetched here. An earlier version read the
-    // account's stored fix on open and spent a Places lookup turning it into
-    // a name before the traveller had asked for anything — see
-    // _adoptNearbyPlace below for the one autofill that remains: the
-    // assistant's own currentArea, which the server already resolves as part
-    // of a photo draft, at no extra client cost.
+    _loadAccountFix();
+  }
+
+  /// `GET /users/me/location` only — no follow-up Places lookup. An earlier
+  /// version chained a Places call onto this to turn the fix into a name for
+  /// autofill; that second, billed call on every open was removed. This one
+  /// remains because the fix itself is still wanted, just not resolved to a
+  /// place client-side any more.
+  Future<void> _loadAccountFix() async {
+    final fix = await ref.read(locationSyncProvider).pull();
+    if (!mounted) return;
+    setState(() => _accountFix = fix);
   }
 
   @override
