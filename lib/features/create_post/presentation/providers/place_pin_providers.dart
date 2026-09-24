@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../location_access/presentation/providers/location_providers.dart';
+import '../../../location_access/data/location_sync.dart';
 import '../../../paigun/domain/nearby_trip.dart';
 import '../../../paigun/presentation/providers/paigun_providers.dart';
 import '../../domain/models/post_draft.dart';
@@ -184,15 +185,30 @@ final _plusCode = RegExp(
 
 /// Where the traveller is right now, named.
 ///
-/// The account's own fix (`GET /users/me/location`, pulled at startup into
-/// [locationFixProvider]) is a pair of coordinates, which says nothing to a
-/// reader — so the nearest place from `/places/suggest` stands in for it.
+/// Reads `GET /users/me/location` directly rather than through
+/// [placePinOriginProvider] — that provider prefers whatever the device just
+/// measured and falls back to the ไปกัน board's own default when nothing has
+/// been asked for yet, which is a real place on the map but not necessarily
+/// where the account's stored fix says the traveller is. Composer autofill is
+/// the one caller that has to answer only from the account's own record, or
+/// not at all.
 ///
-/// Null while there is no fix, no nearby place, or the lookup failed: this is
-/// a nicety beside the post's own place, never a reason to show an error.
-final currentPlaceProvider = Provider<PostPlace?>((ref) {
-  if (ref.watch(placePinOriginProvider) == null) return null;
-  final nearby = ref.watch(nearbyPlacePinsProvider).valueOrNull;
-  if (nearby == null || nearby.isEmpty) return null;
-  return nearby.first;
+/// A stored fix is a pair of coordinates, which says nothing to a reader — so
+/// the nearest place from `/places/suggest` stands in for it. Null while
+/// there is nothing stored, nothing sits near it, or either call failed: this
+/// is a nicety beside the post's own place, never a reason to show an error.
+final currentPlaceProvider = FutureProvider.autoDispose<PostPlace?>((ref) async {
+  final stored = await ref.read(locationSyncProvider).pull();
+  if (stored == null) return null;
+
+  final origin = (lat: stored.latitude, lng: stored.longitude);
+  final api = await ref.read(plunoApiProvider.future);
+  final places = await api.places.suggest(
+    latitude: origin.lat,
+    longitude: origin.lng,
+    radiusMeters: _nearbyRadiusMeters,
+    limit: 1,
+  );
+  if (places.isEmpty) return null;
+  return _toPostPlace(places.first, origin);
 });

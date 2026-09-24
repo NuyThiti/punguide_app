@@ -14,6 +14,8 @@ import 'package:pluno/features/create_post/presentation/widgets/post_block.dart'
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
+import 'package:pluno/features/auth/domain/auth_session.dart';
+import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 
 import 'support/fake_api.dart';
 
@@ -94,12 +96,25 @@ Widget _harness(
 }
 
 /// Grants location, which is what gives `placePinOriginProvider` a point to
-/// measure from — without it the composer has no idea where the traveller is
-/// and never fills the place in.
+/// measure from — the assistant's own currentLocation (see the camera tests)
+/// still runs off this, not off the account.
 final _located = [
   storedLocationPermissionProvider
       .overrideWithValue(LocationPermissionStatus.granted),
 ];
+
+/// Signs a session in and stubs the account's own stored fix — what
+/// `currentPlaceProvider` reads directly from `GET /users/me/location`,
+/// independent of device permission or `placePinOriginProvider`.
+List<Override> _withAccountFix(FakeAdapter adapter,
+    {double lat = 13.7563, double lng = 100.493}) {
+  adapter.replies['GET /users/me/location'] = [
+    FakeReply(200, {
+      'location': {'lat': lat, 'lng': lng},
+    }),
+  ];
+  return [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))];
+}
 
 Future<void> _pumpComposer(WidgetTester tester,
     {FakeAdapter? adapter,
@@ -1679,7 +1694,7 @@ void main() {
         ]),
       ],
     });
-    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await _pumpComposer(tester, adapter: adapter, extra: _withAccountFix(adapter));
     await _settleNearby(tester);
 
     expect(_cardPlace(tester)?.name, 'สนามหลวง');
@@ -1687,6 +1702,40 @@ void main() {
     // The old wording only told the traveller where they were, which is not
     // the same as the post having a place.
     expect(find.textContaining('ตอนนี้อยู่แถว'), findsNothing);
+  });
+
+  testWidgets(
+      'a signed-out composer never calls Places to fill in the place',
+      (tester) async {
+    // No auth override: signed out by default, so LocationSync.pull() must
+    // short-circuit before it ever reaches the account endpoint.
+    final adapter = FakeAdapter({});
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await _settleNearby(tester);
+
+    expect(_cardPlace(tester), isNull);
+    expect(adapter.paths, isEmpty);
+  });
+
+  testWidgets(
+      "an account with nothing stored never calls Places either",
+      (tester) async {
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {'location': null}),
+      ],
+    });
+    await _pumpComposer(
+      tester,
+      adapter: adapter,
+      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+    );
+    await _settleNearby(tester);
+
+    expect(_cardPlace(tester), isNull);
+    // The account answered with nothing, so there is no point measured near
+    // and no reason to spend a Places request finding out.
+    expect(adapter.paths, ['GET /users/me/location']);
   });
 
   testWidgets('a Plus Code never becomes what the post says it was about',
@@ -1710,7 +1759,7 @@ void main() {
         ]),
       ],
     });
-    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await _pumpComposer(tester, adapter: adapter, extra: _withAccountFix(adapter));
     await _settleNearby(tester);
 
     expect(_cardPlace(tester)?.area, 'กรุงเทพมหานคร');
@@ -1730,7 +1779,7 @@ void main() {
     await _pumpComposer(
       tester,
       adapter: adapter,
-      extra: _located,
+      extra: _withAccountFix(adapter),
       initialTrip: ApiTrip.fromJson(
           {...createdTripJson(), 'destination': 'ดานัง, เวียดนาม'}),
     );

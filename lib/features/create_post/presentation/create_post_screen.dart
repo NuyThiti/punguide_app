@@ -287,16 +287,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       block.listen(_refresh);
     }
 
-    // Listened to rather than read: the nearby lookup is a request, so it has
-    // no answer yet on the first frame, and subscribing is also what keeps it
-    // alive long enough to make one.
-    ref.listenManual(
-      currentPlaceProvider,
-      fireImmediately: true,
-      (_, place) {
-        if (place != null) _adoptNearbyPlace(place);
-      },
-    );
+    _loadCurrentPlace();
+  }
+
+  /// Checks the account's own record — `GET /users/me/location` — for
+  /// somewhere to fill a blank post in with. Read once on open rather than
+  /// watched: this is a one-time offer for a new post, not something that
+  /// should keep nudging the place while the traveller is writing.
+  Future<void> _loadCurrentPlace() async {
+    final place = await ref.read(currentPlaceProvider.future);
+    if (!mounted || place == null) return;
+    _adoptNearbyPlace(place);
   }
 
   @override
