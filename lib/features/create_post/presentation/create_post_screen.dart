@@ -133,10 +133,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// one, or they took one off. After that the app never fills it in again.
   bool _placeIsTheirs = false;
 
-  /// The account's stored fix, read once on open. Not shown anywhere and not
-  /// resolved to a name yet — that used to mean a second, billed Places call
-  /// on every open (see the removed currentPlaceProvider), which this
-  /// deliberately does not repeat until there is a next step for it to feed.
+  /// The account's stored fix, read once on open. Raw coordinates only — no
+  /// Places lookup runs on it (that used to mean a second, billed call on
+  /// every open; see the removed currentPlaceProvider). Only ever shown as a
+  /// hint in the Title sheet's Add Location row while nothing has been
+  /// picked; never resolved to a name and never written into the post.
   UserLocation? _accountFix;
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
@@ -380,6 +381,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       customStyles: _customStyles,
       about: _about,
       place: _postPlace,
+      accountFix: _accountFix,
     );
     if (result == null || !mounted) return;
     setState(() {

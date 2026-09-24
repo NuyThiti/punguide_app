@@ -269,6 +269,7 @@ Future<PostTitleResult?> showPostTitleSheet(
   List<String> customStyles = const [],
   PostAboutTrip about = const PostAboutTrip(),
   PostPlace? place,
+  UserLocation? accountFix,
 }) {
   return showModalBottomSheet<PostTitleResult>(
     context: context,
@@ -281,6 +282,7 @@ Future<PostTitleResult?> showPostTitleSheet(
       customStyles: customStyles,
       about: about,
       place: place,
+      accountFix: accountFix,
     ),
   );
 }
@@ -292,6 +294,7 @@ class _PostTitleSheet extends StatefulWidget {
     required this.customStyles,
     required this.about,
     required this.place,
+    this.accountFix,
   });
 
   final String title;
@@ -299,6 +302,12 @@ class _PostTitleSheet extends StatefulWidget {
   final List<String> customStyles;
   final PostAboutTrip about;
   final PostPlace? place;
+
+  /// The account's stored fix — raw coordinates, no reverse geocode. Shown
+  /// only as a hint under the row while nothing has been picked yet; it is
+  /// never written into the post itself. A name-only place still beats a
+  /// coordinate, so this never overrides `place`.
+  final UserLocation? accountFix;
 
   @override
   State<_PostTitleSheet> createState() => _PostTitleSheetState();
@@ -504,6 +513,32 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
                             ),
                           ),
                         ),
+                        if (_place == null && widget.accountFix != null) ...[
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.my_location,
+                                    size: 12, color: AppColors.muted),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    'ตำแหน่งของคุณตอนนี้: '
+                                    '${widget.accountFix!.latitude.toStringAsFixed(4)}, '
+                                    '${widget.accountFix!.longitude.toStringAsFixed(4)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.muted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 18),
                         const Align(
                           alignment: Alignment.centerLeft,

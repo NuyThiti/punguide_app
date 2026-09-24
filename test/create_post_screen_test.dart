@@ -1790,6 +1790,51 @@ void main() {
         'กรุงเทพมหานคร');
   });
 
+  testWidgets(
+      'the Title sheet hints at the account fix until a place is picked',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {
+          'location': {'lat': 13.7563, 'lng': 100.493},
+        }),
+      ],
+      'GET /places/search': [
+        const FakeReply(200, [
+          {'id': 'place-1', 'mapId': 'map-1', 'name': 'เชียงใหม่'}
+        ])
+      ],
+    });
+    await _pumpComposer(
+      tester,
+      adapter: adapter,
+      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+    );
+    await _settleNearby(tester);
+
+    await tester.tap(find.text('Title..'));
+    await tester.pumpAndSettle();
+
+    // A hint, never a value: coordinates, not a name, and it says "your
+    // position now" rather than claiming to be the post's place.
+    expect(find.textContaining('ตำแหน่งของคุณตอนนี้: 13.7563, 100.4930'),
+        findsOneWidget);
+
+    await tester.ensureVisible(find.text('Add Location'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Location'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'เชียงใหม่');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เชียงใหม่').last);
+    await tester.pumpAndSettle();
+
+    // A real, named place always outranks the raw fix — the hint is gone
+    // once there is an actual answer to show instead.
+    expect(find.textContaining('ตำแหน่งของคุณตอนนี้'), findsNothing);
+  });
+
   testWidgets('About trip is written in the Title sheet', (tester) async {
     await _pumpComposer(tester);
 
