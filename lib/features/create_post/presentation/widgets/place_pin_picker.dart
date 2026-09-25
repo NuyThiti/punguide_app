@@ -111,7 +111,8 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
         options: widget.suggestions!,
         onPick: (place) =>
             Navigator.of(context).pop(postPlaceFromSuggestion(place)),
-        nearby: origin == null
+        nearby: origin == null ||
+                widget.suggestions?.source == PlaceSource.confirmedPlace
             ? null
             : _Results(
                 searching: false,
@@ -141,7 +142,9 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
     final searching = query.length >= minPlaceQueryLength;
     final results = searching
         ? ref.watch(placePinResultsProvider)
-        : ref.watch(nearbyPlacePinsProvider);
+        : widget.suggestions?.source == PlaceSource.confirmedPlace
+            ? const AsyncData<List<PostPlace>>([])
+            : ref.watch(nearbyPlacePinsProvider);
     final rows = results.valueOrNull ?? const <PostPlace>[];
     final origin = ref.watch(placePinOriginProvider);
     final suggested = widget.suggestions?.options ?? const <SuggestedPlace>[];
@@ -540,6 +543,7 @@ class _SuggestedList extends StatelessWidget {
   String? get _sourceNote => switch (options.source) {
         PlaceSource.photo => 'จากพิกัดที่ติดมากับรูป',
         PlaceSource.locationName => 'จากสถานที่ที่คุณระบุไว้เอง',
+        PlaceSource.confirmedPlace => 'จากสถานที่ที่คุณเลือก',
         PlaceSource.currentLocation =>
           'รูปไม่มีพิกัด จึงหาจากตำแหน่งของคุณตอนนี้ ไม่ใช่ที่ที่ถ่ายรูป',
         PlaceSource.image =>
@@ -600,6 +604,27 @@ class _SuggestedList extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        if (options.openingHours case final hours?)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            leading: const Icon(Icons.schedule, color: AppColors.postPurple),
+            title: const Text('เวลาเปิด–ปิดที่แนบมากับคำแนะนำ'),
+            subtitle: Text(hours.closedToday
+                ? 'วันนี้ปิด'
+                : hours.openAllDay
+                    ? 'เปิด 24 ชั่วโมง'
+                    : [hours.opensAt, hours.closesAt]
+                        .whereType<String>()
+                        .join('–')),
+            children: [
+              for (final day in hours.weekdayDescriptions)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child:
+                      Align(alignment: Alignment.centerLeft, child: Text(day)),
+                ),
+            ],
           ),
         for (final place in options.options)
           _SuggestedRow(place: place, onTap: () => onPick(place)),

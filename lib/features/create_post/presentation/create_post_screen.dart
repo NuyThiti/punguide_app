@@ -19,6 +19,7 @@ import '../../location_access/data/location_sync.dart';
 import '../domain/models/post_draft.dart';
 import 'providers/place_pin_providers.dart';
 import 'widgets/create_post_header.dart';
+import 'widgets/create_from_photos_sheet.dart';
 import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
 import 'widgets/post_audience_chip.dart';
@@ -95,7 +96,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   /// One key per draft attempt: replaying it inside five minutes returns the
   /// same draft without paying for the model again. "ร่างใหม่" mints a new one.
-  String _assistKey = uuidV4();
 
   PostTripLink? _trip;
   String? _tripDestination;
@@ -602,11 +602,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// [fromCamera] says the photos were taken just now, which is the only case
   /// where where the traveller is standing describes where the photos are of.
   Future<bool> _draftWithAssistant(List<TripPhoto> photos, int token,
-      {required bool fromCamera}) async {
+      {required bool fromCamera, PostPlace? selectedPlace}) async {
     // A fresh key per attempt. Replaying one returns the draft it returned
     // before, which is right for a retry and wrong for a different set of
     // photos — and the traveller may well have picked different photos.
-    _assistKey = uuidV4();
+    final assistKey = uuidV4();
     try {
       final api = await ref.read(plunoApiProvider.future);
       if (!mounted || token != _arrangement) return false;
@@ -637,17 +637,37 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // the traveller is; one picked from the library could be last year's,
       // from a city they are not in, and guessing places near the desk they
       // are writing at would be worse than offering none.
-      final origin = fromCamera ? ref.read(placePinOriginProvider) : null;
-      final draft = await api.trips.generateContents(
-        _draftId!,
-        photos: uploaded,
-        language: 'th',
-        notes: notes.isEmpty ? null : notes,
-        locationName: _confirmedPlaceName(),
-        currentLat: origin?.lat,
-        currentLng: origin?.lng,
-        idempotencyKey: _assistKey,
+      final selectedId = selectedPlace?.id;
+      // Search/nearby rows carry internal UUIDs; AI/map pins may instead
+      // carry a Google ID and must stay on the legacy name-based path.
+      final selectedPlaceId = selectedId != null &&
+              RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+                  .hasMatch(selectedId)
+          ? selectedId
+          : null;
+      final origin = fromCamera && selectedPlaceId == null
+          ? ref.read(placePinOriginProvider)
+          : null;
+      final locationName = selectedPlaceId == null
+          ? selectedPlace?.name ?? _confirmedPlaceName()
+          : null;
+      final tripId = _draftId!;
+      final requestPhotos = List<PostAssistantPhoto>.unmodifiable(uploaded);
+      final draft = await _generateWithRetry(
+        () => api.trips.generateContents(
+          tripId,
+          photos: requestPhotos,
+          language: 'th',
+          notes: notes.isEmpty ? null : notes,
+          selectedPlaceId: selectedPlaceId,
+          locationName: locationName,
+          currentLat: origin?.lat,
+          currentLng: origin?.lng,
+          idempotencyKey: assistKey,
+        ),
+        token,
       );
+      if (draft == null) return false;
       if (!mounted || token != _arrangement) return false;
 
       _applyAssistantDraft(draft, sent, extra);
@@ -661,6 +681,61 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Retries a frozen request. A retry never re-reads the form or uploads.
+  Future<GeneratedPostDraft?> _generateWithRetry(
+    Future<GeneratedPostDraft> Function() request,
+    int token,
+  ) async {
+    var conflictRetries = 0;
+    while (mounted && token == _arrangement) {
+      try {
+        return await request();
+      } on ApiException catch (error) {
+        if (!mounted || token != _arrangement) return null;
+        if (error.statusCode == 409 && conflictRetries < 4) {
+          await Future<void>.delayed(Duration(seconds: 1 << conflictRetries));
+          conflictRetries++;
+          continue;
+        }
+        final retryable = error.isNetworkFailure ||
+            error.statusCode == 409 ||
+            (error.statusCode ?? 0) >= 500;
+        if (!retryable) rethrow;
+        final retry = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(error.statusCode == 409
+                ? 'กำลังสร้างร่างอยู่'
+                : 'ยังรับร่างไม่สำเร็จ'),
+            content: Text(error.statusCode == 409
+                ? 'ระบบยังทำงานกับคำขอนี้อยู่ ลองตรวจอีกครั้งได้โดยไม่เริ่มสร้างร่างใหม่'
+                : '${error.message}\nลองอีกครั้งด้วยรูปและสถานที่เดิม หรือใช้รูปเขียนโพสต์ต่อเอง'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('ใช้รูปเขียนต่อเอง')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('ลองอีกครั้ง')),
+            ],
+          ),
+        );
+        if (!mounted || token != _arrangement) return null;
+        if (retry != true) {
+          _noteAssistantFailure(_assistantFailure(error), token);
+          return null;
+        }
+        // Another bounded polling cycle, with the same key and body.
+        if (error.statusCode == 409) {
+          conflictRetries = 0;
+          await Future<void>.delayed(const Duration(seconds: 1));
+        }
+      }
+    }
+    return null;
   }
 
   /// Puts one photo in the trip's gallery, reusing anything already uploaded
@@ -699,6 +774,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   String _assistantFailure(ApiException error) {
     final status = error.statusCode ?? 0;
+    if (status == 404) {
+      return 'ไม่พบทริปหรือสถานที่ที่เลือก กรุณาเลือกสถานที่ใหม่แล้วสร้างร่างอีกครั้ง';
+    }
+    if (status == 400) {
+      return 'ข้อมูลสร้างร่างไม่ถูกต้อง: ${error.message}';
+    }
     if (status == 503) {
       return 'ผู้ช่วยเขียนโพสต์ยังไม่เปิดใช้งาน จัดรูปให้ตามเวลาและสถานที่แทน';
     }
@@ -736,6 +817,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
       final block = _BlockFields()
         ..title.text = section.title
+        ..details = PostSpotDetails(
+          visitedAt: _timeOfDay(section.visitedAt),
+          opensAt: _timeOfDay(section.opensAt),
+          closesAt: _timeOfDay(section.closesAt),
+          transportModes: section.transportModes,
+          transportCost: section.transportCost,
+          tripHack: section.tripHack ?? '',
+          contactInfo: section.contactInfo ?? '',
+        )
         ..items.first.body.text = section.content
         ..items.first.imagePaths.addAll(paths)
         ..items.first.location = section.location;
@@ -808,24 +898,23 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// [_draftWithAssistant].
   Future<void> _createFromPhotos() async {
     if (_arranging) return;
-    // Asked before the spinner starts: the sheet can sit open for a while, and
-    // dismissing it should leave the page exactly as it was.
-    final source = await showPhotoSourceSheet(context);
-    if (source == null || !mounted) return;
-    final fromCamera = source == ImageSource.camera;
-
+    final selection = await showCreateFromPhotosSheet(
+      context,
+      picker: _picker,
+      remaining: 200 - _photoCount(),
+    );
+    if (selection == null || !mounted) return;
+    final fromCamera = selection.fromCamera;
     final token = ++_arrangement;
-    setState(() => _arranging = true);
+    setState(() {
+      _arranging = true;
+      if (selection.place != null) {
+        _placeIsTheirs = true;
+        _fillPlace(selection.place!);
+      }
+    });
     try {
-      // Original files preserve metadata; the system picker supports limited access.
-      // The camera hands back one frame at a time, which is the whole of this
-      // batch; the library hands back the whole selection.
-      final files = fromCamera
-          ? [await _picker.pickImage(source: ImageSource.camera)]
-              .whereType<XFile>()
-              .toList()
-          : await _picker.pickMultiImage();
-      if (!mounted || token != _arrangement || files.isEmpty) return;
+      final files = selection.files;
       final photos = <TripPhoto>[];
       for (final file in files) {
         if (!mounted || token != _arrangement) return;
@@ -846,7 +935,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // The assistant writes the draft when it can. It needs the trip and the
       // uploaded photos first, so anything short of a working endpoint falls
       // back to grouping them here, which is what this button did before.
-      if (await _draftWithAssistant(photos, token, fromCamera: fromCamera)) {
+      if (await _draftWithAssistant(photos, token,
+          fromCamera: fromCamera, selectedPlace: selection.place)) {
         return;
       }
       if (!mounted || token != _arrangement) return;
@@ -863,6 +953,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         for (final group in groups) {
           _blocks.add(_BlockFields()
             ..items.first.imagePaths.addAll(group.map((p) => p.path))
+            ..items.first.place = selection.place
             ..listen(_refresh));
         }
         _syncCover();

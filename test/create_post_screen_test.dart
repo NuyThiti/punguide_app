@@ -1,3 +1,4 @@
+import 'package:pluno/core/api/models/trip_content.dart';
 import 'package:pluno/core/api/models/trip.dart';
 import 'dart:async';
 import 'dart:typed_data';
@@ -170,6 +171,8 @@ Future<void> _confirmPlace(WidgetTester tester) async {
 Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
   await tester.tap(find.text('Create from Photos'));
   await tester.pumpAndSettle();
+  await tester.tap(find.text('Add Photos'));
+  await tester.pumpAndSettle();
   await tester.tap(find.text(camera ? 'ถ่ายรูป' : 'เลือกจากคลังภาพ'));
 }
 
@@ -178,6 +181,15 @@ Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
 /// spinner keeps `pumpAndSettle` from ever settling on its own.
 Future<void> _settleImport(WidgetTester tester) async {
   for (var i = 0; i < 40; i++) {
+    final create = find.widgetWithText(FilledButton, 'สร้างโพสต์จากรูป');
+    if (create.evaluate().isNotEmpty &&
+        tester.widget<FilledButton>(create).onPressed != null) {
+      await tester.ensureVisible(create);
+      await tester.tap(create);
+    }
+    if (find.text('ใช้รูปเขียนต่อเอง').evaluate().isNotEmpty) {
+      await tester.tap(find.text('ใช้รูปเขียนต่อเอง'));
+    }
     await tester.pump(const Duration(milliseconds: 50));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
@@ -363,6 +375,9 @@ void main() {
           'contents': [
             {
               'content': 'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า',
+              'opensAt': '09:00',
+              'closesAt': '20:00',
+              'tripHack': 'ไปช่วงเช้า',
               'mediaIds': [_a],
               'location': {
                 'status': 'suggested',
@@ -410,6 +425,9 @@ void main() {
     final blocks =
         tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
     expect(blocks, hasLength(2));
+    expect(blocks.first.details.opensAt, const TimeOfDay(hour: 9, minute: 0));
+    expect(blocks.first.details.closesAt, const TimeOfDay(hour: 20, minute: 0));
+    expect(blocks.first.details.tripHack, 'ไปช่วงเช้า');
     expect(blocks.first.items!.first.bodyController.text,
         'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
     expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
@@ -436,6 +454,105 @@ void main() {
     final request = adapter.requests
         .lastWhere((r) => r.path == '/trips/trip-new/contents/generate');
     expect(request.headers['Idempotency-Key'], isNotEmpty);
+  });
+
+  testWidgets('selected nearby UUID survives 409 retry without another lookup', (tester) async {
+    const selectedId = 'c541e08c-32c4-417d-bba8-a2373e48a696';
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+    final adapter = FakeAdapter({
+      'GET /places/suggest': [const FakeReply(200, [
+        {'id': selectedId, 'name': 'สนามหลวง', 'latitude': 13.75, 'longitude': 100.49},
+      ])],
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [FakeReply(201, _image(_a, 'https://example.com/a.jpg'))],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(409, {'message': 'still running'}),
+        const FakeReply(200, {
+          'title': 'สนามหลวง',
+          'contents': [{'content': 'เดินเล่น', 'mediaIds': [_a],
+            'location': {'status': 'suggested', 'name': 'สนามหลวง', 'placeId': 'ChIJ-selected'}}],
+          'locationOptions': [{'sectionIndex': 0, 'source': 'confirmedPlace', 'confidence': 'high',
+            'options': [{'name': 'สนามหลวง', 'placeId': 'ChIJ-selected'}]}],
+          'currentArea': null,
+        }),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    await tester.tap(find.text('Create from Photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Location'));
+    await _settleNearby(tester);
+    await tester.tap(find.text('สนามหลวง').last);
+    await tester.pumpAndSettle();
+    // Opening again uses the cached list, without selecting a different row.
+    await tester.tap(find.text('สนามหลวง').last);
+    await _settleNearby(tester);
+    await tester.tap(find.text('สนามหลวง').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await _settleImport(tester);
+    await _settleImport(tester);
+    final requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
+    expect(requests, hasLength(2));
+    expect(requests[0].data['selectedPlaceId'], selectedId);
+    expect(requests[1].data, requests[0].data);
+    expect(requests[1].headers['Idempotency-Key'], requests[0].headers['Idempotency-Key']);
+    expect(requests[0].data.containsKey('currentLocation'), isFalse);
+    expect(requests[0].data.containsKey('locationName'), isFalse);
+    expect(adapter.paths.where((p) => p.startsWith('GET /places/suggest')), hasLength(1));
+    final block = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(block.items!.first.location!.placeId, 'ChIJ-selected');
+    expect(block.items!.first.location!.status, ContentLocationStatus.suggested);
+    block.onPickPlace();
+    await tester.pumpAndSettle();
+    expect(find.text('จากสถานที่ที่คุณเลือก'), findsOneWidget);
+    expect(adapter.paths.where((p) => p.startsWith('GET /places/suggest')), hasLength(1));
+    expect(adapter.paths.any((p) => p.contains('/details')), isFalse);
+  });
+
+  testWidgets('manual retry freezes the body and a new import gets a new key', (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [FakeReply(201, _image(_a, 'https://example.com/a.jpg'))],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(500, {'message': 'temporary failure'}),
+        const FakeReply(200, {'contents': [{'content': 'ร่างสำเร็จ', 'mediaIds': [_a]}]}),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('สร้างโพสต์จากรูป'));
+    for (var i = 0; i < 60 && find.text('ลองอีกครั้ง').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    expect(find.text('ลองอีกครั้ง'), findsOneWidget);
+    expect(adapter.requests.where((r) => r.path.endsWith('/contents/generate')), hasLength(1));
+    await tester.tap(find.text('ลองอีกครั้ง'));
+    await _settleImport(tester);
+    var requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
+    expect(requests, hasLength(2));
+    expect(requests[1].data, requests[0].data);
+    expect(requests[1].headers['Idempotency-Key'], requests[0].headers['Idempotency-Key']);
+    expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'), hasLength(1));
+    await _tapImport(tester);
+    await _settleImport(tester);
+    requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
+    expect(requests, hasLength(3));
+    expect(requests.last.headers['Idempotency-Key'], isNot(requests.first.headers['Idempotency-Key']));
+    expect(requests.last.data.containsKey('selectedPlaceId'), isFalse);
   });
 
   testWidgets('a photo taken now sends where the traveller is standing',
@@ -919,6 +1036,31 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('photo setup previews images without changing the draft', (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+    final adapter = FakeAdapter({});
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Add Location'), findsOneWidget);
+    expect(find.text('1 รูป'), findsOneWidget);
+    expect(adapter.paths, isNot(contains('POST /trips')));
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
+    final create = find.widgetWithText(FilledButton, 'สร้างโพสต์จากรูป');
+    expect(tester.widget<FilledButton>(create).onPressed, isNotNull);
+    await tester.tap(find.byTooltip('ลบรูปที่ 1'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(create).onPressed, isNull);
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create from Photos'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('cancel ignores a late picker result and preserves writing',
       (tester) async {
     final pending = Completer<List<XFile>>();
@@ -929,7 +1071,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'ยังอยู่');
     await _tapImport(tester);
     await tester.pump();
-    expect(find.text('กำลังจัดรูปเป็นเรื่องราว…'), findsOneWidget);
+    expect(find.text('กำลังเลือกรูป…'), findsOneWidget);
     await tester.tap(find.text('ยกเลิก'));
     pending.complete([_UnreadablePhoto('late.jpg')]);
     await tester.pumpAndSettle();
@@ -948,6 +1090,8 @@ void main() {
     final router = GoRouter.of(tester.element(find.byType(CreatePostScreen)));
     await _tapImport(tester);
     await tester.pump();
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('ปิด'));
     await tester.pumpAndSettle();
     // The picker answers after the page is gone; it must not resurrect it.

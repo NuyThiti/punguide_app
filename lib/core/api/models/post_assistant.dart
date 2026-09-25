@@ -106,6 +106,9 @@ enum PlaceSource {
   /// The place the traveller had already confirmed themselves.
   locationName('locationName'),
 
+  /// The internal place explicitly chosen by the traveller.
+  confirmedPlace('confirmedPlace'),
+
   /// Where the traveller is standing, used when the photo carried no
   /// coordinates — near them now, not near the picture.
   currentLocation('currentLocation'),
@@ -128,6 +131,30 @@ enum PlaceSource {
       );
 }
 
+/// Opening hours supplied for the section's suggested location.
+@immutable
+class SuggestedOpeningHours {
+  const SuggestedOpeningHours(
+      {this.opensAt,
+      this.closesAt,
+      this.openAllDay = false,
+      this.closedToday = false,
+      this.weekdayDescriptions = const []});
+
+  factory SuggestedOpeningHours.fromJson(Map<String, dynamic> json) =>
+      SuggestedOpeningHours(
+        opensAt: Json.string(json, 'opensAt'),
+        closesAt: Json.string(json, 'closesAt'),
+        openAllDay: json['openAllDay'] == true,
+        closedToday: json['closedToday'] == true,
+        weekdayDescriptions: Json.stringList(json, 'weekdayDescriptions'),
+      );
+
+  final String? opensAt, closesAt;
+  final bool openAllDay, closedToday;
+  final List<String> weekdayDescriptions;
+}
+
 /// The candidates for one section, in the order the assistant ranked them.
 ///
 /// Review-screen data only: [sectionIndex] points into the draft's `contents`,
@@ -140,6 +167,7 @@ class SectionPlaceOptions {
     required this.confidence,
     required this.options,
     this.source = PlaceSource.none,
+    this.openingHours,
   });
 
   factory SectionPlaceOptions.fromJson(Map<String, dynamic> json) =>
@@ -147,6 +175,9 @@ class SectionPlaceOptions {
         sectionIndex: Json.number(json, 'sectionIndex')?.toInt() ?? 0,
         confidence: PlaceConfidence.from(json['confidence']),
         source: PlaceSource.from(json['source']),
+        openingHours: json['openingHours'] is Map
+            ? SuggestedOpeningHours.fromJson(Json.asMap(json['openingHours']))
+            : null,
         options: (json['options'] is List
                 ? Json.asMapList(json['options'])
                 : const <Map<String, dynamic>>[])
@@ -154,6 +185,7 @@ class SectionPlaceOptions {
             .toList(growable: false),
       );
 
+  final SuggestedOpeningHours? openingHours;
   final int sectionIndex;
   final PlaceConfidence confidence;
 

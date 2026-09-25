@@ -132,6 +132,7 @@ class TripsApi {
     String? language,
     String? notes,
     String? locationName,
+    String? selectedPlaceId,
     double? currentLat,
     double? currentLng,
     String? idempotencyKey,
@@ -140,6 +141,12 @@ class TripsApi {
     // nothing itself, so this is a mistake worth catching before the request.
     if (photos.isEmpty || photos.length > 20) {
       throw const FormatException('ร่างโพสต์ได้ครั้งละ 1-20 รูป');
+    }
+    if (selectedPlaceId != null &&
+        !RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+            .hasMatch(selectedPlaceId)) {
+      throw const FormatException(
+          'selectedPlaceId ต้องเป็น UUID ของสถานที่ที่เลือก');
     }
     final ids = photos.map((photo) => photo.mediaId).toList();
     if (ids.toSet().length != ids.length) {
@@ -172,8 +179,9 @@ class TripsApi {
         'photos': photos.map((photo) => photo.toJson()).toList(),
         'language': language,
         'notes': notes,
-        'locationName': locationName,
-        if (currentLat != null)
+        'selectedPlaceId': selectedPlaceId,
+        if (selectedPlaceId == null) 'locationName': locationName,
+        if (selectedPlaceId == null && currentLat != null)
           'currentLocation': <String, dynamic>{
             'lat': currentLat,
             'lng': currentLng,

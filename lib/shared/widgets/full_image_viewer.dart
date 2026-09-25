@@ -63,9 +63,14 @@ class _FullImageViewerState extends State<_FullImageViewer> {
 
     return Scaffold(
       backgroundColor: Colors.black,
+      // `StackFit.expand` with the pages as the one unpositioned child: a Stack
+      // takes its size from its unpositioned children, so a Stack of nothing
+      // but `Positioned.fill` collapses to the height of the bar above and
+      // squashes the photo into it.
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          Positioned.fill(
+          SizedBox.expand(
             child: PageView.builder(
               controller: _pages,
               physics: _zoomed
@@ -84,37 +89,42 @@ class _FullImageViewerState extends State<_FullImageViewer> {
               ),
             ),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                children: [
-                  _ViewerButton(
-                    icon: Icons.close,
-                    tooltip: 'ปิด',
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const Spacer(),
-                  if (many)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        '${_index + 1} / ${widget.urls.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  children: [
+                    _ViewerButton(
+                      icon: Icons.close,
+                      tooltip: 'ปิด',
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                    const Spacer(),
+                    if (many)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          '${_index + 1} / ${widget.urls.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -154,7 +164,12 @@ class _ZoomablePhotoState extends State<_ZoomablePhoto> {
         // resting size, which is when the page may scroll again.
         widget.onZoomChanged(_transform.value.getMaxScaleOnAxis() > 1.01);
       },
-      child: Center(
+      // `SizedBox.expand`, not `Center`: Center hands the image loose
+      // constraints, so it lays out at its own pixel size and `BoxFit.contain`
+      // has nothing to fit against — the photo ends up unscaled and pinned to
+      // the top. Filling the viewport first is what lets `contain` letterbox
+      // it into the middle.
+      child: SizedBox.expand(
         child: CoverImage(source: widget.url, fit: BoxFit.contain),
       ),
     );

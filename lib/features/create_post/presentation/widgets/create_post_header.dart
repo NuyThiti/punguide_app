@@ -28,12 +28,10 @@ class CreatePostHeader extends StatelessWidget {
   /// The round action opposite the back button: the post's cover photo.
   final VoidCallback onPickCover;
 
-  /// Takes the cover off again. The action is the only place it shows, so it
-  /// has to be the place it can be undone.
+  /// Removes the cover from both the header background and its action.
   final VoidCallback onClearCover;
 
-  /// What is on the cover now, shown in the action itself so choosing one is
-  /// not a tap that appears to do nothing.
+  /// The selected photo, displayed across the header and in the cover action.
   final String? coverPath;
 
   /// "Creates post from Photos" — reads the picked photos' EXIF and groups
@@ -48,60 +46,79 @@ class CreatePostHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        MediaQuery.paddingOf(context).top + 8,
-        16,
-        18,
-      ),
-      decoration: const BoxDecoration(
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+      child: ColoredBox(
         color: AppColors.postHeader,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(24),
-          bottomRight: Radius.circular(24),
-        ),
-      ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 44,
-            child: Row(
-              children: [
-                _RoundBackButton(onTap: onClose),
-                const Expanded(
-                  child: Text(
-                    'PunGuide',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
+        child: Stack(
+          children: [
+            if (coverPath != null && coverPath!.trim().isNotEmpty) ...[
+              Positioned.fill(
+                child: CoverImage(source: coverPath!),
+              ),
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0x26000000), Color(0xF2000000)],
                     ),
                   ),
                 ),
-                if (coverPath == null)
-                  _RoundAction(
-                    icon: Icons.add_photo_alternate_outlined,
-                    tooltip: 'รูปหน้าปก',
-                    onTap: onPickCover,
-                  )
-                else
-                  _CoverAction(
-                    path: coverPath!,
-                    onTap: onPickCover,
-                    onClear: onClearCover,
+              ),
+            ],
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                MediaQuery.paddingOf(context).top + 8,
+                16,
+                18,
+              ),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 44,
+                    child: Row(
+                      children: [
+                        _RoundBackButton(onTap: onClose),
+                        const Expanded(
+                          child: Text(
+                            'PunGuide',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (coverPath == null)
+                          _RoundAction(
+                            icon: Icons.add_photo_alternate_outlined,
+                            tooltip: 'รูปหน้าปก',
+                            onTap: onPickCover,
+                          )
+                        else
+                          _CoverAction(
+                            path: coverPath!,
+                            onTap: onPickCover,
+                            onClear: onClearCover,
+                          ),
+                      ],
+                    ),
                   ),
-              ],
+                  const SizedBox(height: 14),
+                  _ImportButton(
+                    importing: importing,
+                    onTap: onImportPhotos,
+                    onCancel: onCancelImport,
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          _ImportButton(
-            importing: importing,
-            onTap: onImportPhotos,
-            onCancel: onCancelImport,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

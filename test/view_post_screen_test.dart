@@ -9,6 +9,7 @@ import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
 import 'package:pluno/features/trips/presentation/providers/trip_providers.dart';
+import 'package:pluno/shared/widgets/cover_image.dart';
 
 import 'support/fake_api.dart';
 
@@ -162,14 +163,12 @@ void main() {
     expect(find.text('ที่เที่ยวระยอง'), findsOneWidget);
     expect(find.text('เทศบาลนครระยอง · ระยอง'), findsOneWidget);
     expect(find.text('Thitichaya Butsala'), findsOneWidget);
+    expect(find.text('ติดตาม'), findsOneWidget);
     expect(
       find.text('ระยองเป็นจังหวัดที่มีสถานที่ท่องเที่ยวมากมาย'),
       findsOneWidget,
     );
-    // Trip Activity, in the composer's own labels.
-    expect(find.text('ภูเขา'), findsOneWidget);
-    expect(find.text('คาเฟ่'), findsOneWidget);
-    expect(find.text('เข้าถึงท้องถิ่น'), findsOneWidget);
+    expect(find.text('Trip Overview'), findsOneWidget);
   });
 
   testWidgets('the cover is not repeated above the spot it came from',
@@ -196,18 +195,34 @@ void main() {
       },
     );
 
-    // The photo appears once — in its spot — not again as a header.
-    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
+    // The cover backs the hero; the only openable photo is the spot's own.
+    expect(find.bySemanticsLabel('ดูรูปเต็ม'), findsOneWidget);
   });
 
-  testWidgets('spots are numbered and titled', (tester) async {
+  testWidgets('each spot is a heading over a card naming its place',
+      (tester) async {
     phone(tester);
     await _pumpPost(tester);
 
-    expect(find.text('จุด 1'), findsOneWidget);
-    expect(find.text('จุด 2'), findsOneWidget);
+    // The heading is the section's title…
     expect(find.text('วัดป่าประดู่ – ระยอง'), findsOneWidget);
-    expect(find.text('พิพิธภัณฑ์เมืองระยอง'), findsWidgets);
+    // …and the card names the place, once, not the title again.
+    expect(find.text('วัดป่าประดู่ พระอารามหลวง'), findsOneWidget);
+    expect(find.text('พิพิธภัณฑ์เมืองระยอง'), findsNWidgets(2));
+  });
+
+  testWidgets('a heading collapses the cards under it', (tester) async {
+    phone(tester);
+    await _pumpPost(tester);
+
+    expect(find.text('วัดป่าประดู่ พระอารามหลวง'), findsOneWidget);
+
+    await tester.tap(find.text('วัดป่าประดู่ – ระยอง'));
+    await tester.pumpAndSettle();
+
+    // The heading stays; its card is gone.
+    expect(find.text('วัดป่าประดู่ – ระยอง'), findsOneWidget);
+    expect(find.text('วัดป่าประดู่ พระอารามหลวง'), findsNothing);
   });
 
   testWidgets('a spot shows the extras the composer collected',
@@ -216,10 +231,33 @@ void main() {
     await _pumpPost(tester);
 
     // Hours read the way the composer writes them.
-    expect(find.text('08.00 - 17.00 น.'), findsOneWidget);
-    expect(find.text('09.00 - 18.00 น.'), findsOneWidget);
+    expect(find.text('เปิด/ปิด 08.00 - 17.00 น.'), findsOneWidget);
+    expect(find.text('เปิด/ปิด 09.00 - 18.00 น.'), findsOneWidget);
     expect(find.text('084-945-3939'), findsOneWidget);
     expect(find.text('MRT · เดิน ฿100'), findsOneWidget);
+  });
+
+  testWidgets('a spot that names both hours prints them on one line',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [
+        <String, dynamic>{
+          'title': 'จุดเดียว',
+          'content': 'เนื้อหา',
+          'visitedAt': '06:00',
+          'opensAt': '06:00',
+          'closesAt': '14:30',
+        },
+      ]),
+    );
+
+    // The design shows both halves; the composer's chip had room for one.
+    expect(
+      find.text('ไปตอน 06.00 น. | เปิด/ปิด 06.00 - 14.30 น.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a trip hack is shown in full, not clipped into a chip',
@@ -245,6 +283,23 @@ void main() {
     expect(find.text('จุดเงียบ ๆ'), findsOneWidget);
     expect(find.textContaining(' น.'), findsNothing);
     expect(find.text('Trip Hack'), findsNothing);
+  });
+
+  testWidgets('a post with no headings still shows its cards', (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [
+        <String, dynamic>{
+          'content': 'เนื้อหาไม่มีหัวข้อ',
+          'location': {'status': 'confirmed', 'name': 'ร้านลับ'},
+        },
+      ]),
+    );
+
+    // "case ไม่มีหัวข้อ": no heading to collapse, the card is simply open.
+    expect(find.text('ร้านลับ'), findsOneWidget);
+    expect(find.text('เนื้อหาไม่มีหัวข้อ'), findsOneWidget);
   });
 
   testWidgets('only a hand-pinned place is shown', (tester) async {
@@ -344,53 +399,103 @@ void main() {
 
     expect(tester.takeException(), isNull, reason: 'on load');
 
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull, reason: 'after scrolling');
   });
 
-  testWidgets('a photo says how many there are and opens full size',
+  testWidgets('photos run to the screen edge while the text keeps the gutter',
       (tester) async {
     phone(tester);
     await _pumpPost(tester, trip: _postJson(contents: _photoSpot()));
 
-    // Three loadable photos of four: the dead one is not counted.
-    expect(find.text('1/3'), findsOneWidget);
-    expect(find.text('2/3'), findsOneWidget);
-    expect(find.text('3/3'), findsOneWidget);
-    // The one that failed holds its place but offers nothing to open.
-    expect(find.text('รูปนี้ไม่พร้อมใช้งาน'), findsOneWidget);
+    // The photo breaks out of the column…
+    final photo = tester.getRect(find.byType(PageView).first);
+    expect(photo.left, 0);
+    expect(photo.width, 393);
 
-    await tester.tap(find.text('2/3'));
-    await tester.pumpAndSettle();
-
-    // Full screen, on the photo that was tapped.
-    expect(find.text('2 / 3'), findsOneWidget);
-    expect(find.byTooltip('ปิด'), findsOneWidget);
+    // …while everything written lines up with Trip Overview above it.
+    final overview = tester.getTopLeft(find.text('Trip Overview')).dx;
+    expect(tester.getTopLeft(find.text('พิพิธภัณฑ์เมืองระยอง')).dx, overview);
+    expect(overview, greaterThan(0));
   });
 
-  testWidgets('the full-size viewer swipes through the spot and closes',
+  testWidgets('a spot with several photos swipes through them in place',
       (tester) async {
     phone(tester);
     await _pumpPost(tester, trip: _postJson(contents: _photoSpot()));
 
-    await tester.tap(find.text('1/3'));
+    // One counter for the card, not one per photo: the photos are a carousel.
+    expect(find.text('1/4'), findsOneWidget);
+    expect(find.text('2/4'), findsNothing);
+
+    await tester.drag(find.byType(PageView).first, const Offset(-400, 0));
     await tester.pumpAndSettle();
+
+    expect(find.text('2/4'), findsOneWidget);
+  });
+
+  testWidgets('a photo that failed still holds its place in the carousel',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(tester, trip: _postJson(contents: _photoSpot()));
+
+    // Four pages, three of them openable.
+    expect(find.text('1/4'), findsOneWidget);
+    expect(find.bySemanticsLabel('ดูรูปเต็ม'), findsWidgets);
+
+    await tester.drag(find.byType(PageView).first, const Offset(-400, 0));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(PageView).first, const Offset(-400, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('3/4'), findsOneWidget);
+    expect(find.text('รูปนี้ไม่พร้อมใช้งาน'), findsOneWidget);
+  });
+
+  testWidgets('tapping a photo opens the spot full size and closes',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(tester, trip: _postJson(contents: _photoSpot()));
+
+    await tester.tap(find.bySemanticsLabel('ดูรูปเต็ม').first);
+    await tester.pumpAndSettle();
+
+    // The gallery holds only the photos a reader can actually see.
     expect(find.text('1 / 3'), findsOneWidget);
 
-    await tester.drag(find.byType(PageView), const Offset(-400, 0));
+    await tester.drag(find.byType(PageView).last, const Offset(-400, 0));
     await tester.pumpAndSettle();
     expect(find.text('2 / 3'), findsOneWidget);
 
     await tester.tap(find.byTooltip('ปิด'));
     await tester.pumpAndSettle();
 
-    // Back on the post.
     expect(find.text('ที่เที่ยวระยอง'), findsOneWidget);
-    expect(find.byType(PageView), findsNothing);
   });
 
-  testWidgets('a lone photo opens without a counter', (tester) async {
+  testWidgets('the full-size photo fills the screen rather than its own size',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(tester, trip: _postJson(contents: _photoSpot()));
+
+    await tester.tap(find.bySemanticsLabel('ดูรูปเต็ม').first);
+    await tester.pumpAndSettle();
+
+    // The photo's box is the viewport, which is what lets BoxFit.contain
+    // letterbox it into the middle. Sized to the image instead, it lays out at
+    // its own pixel size and sits pinned to the top of a black screen.
+    final box = tester.getSize(
+      find.descendant(
+        of: find.byType(InteractiveViewer),
+        matching: find.byType(CoverImage),
+      ).first,
+    );
+    expect(box.width, 393);
+    expect(box.height, 1400);
+  });
+
+  testWidgets('a lone photo gets no counter and no dots', (tester) async {
     phone(tester);
     await _pumpPost(
       tester,
@@ -403,11 +508,10 @@ void main() {
       ]),
     );
 
-    // No "1/1" — a count means nothing when there is one.
+    // A count means nothing when there is one.
     expect(find.textContaining('/'), findsNothing);
-    expect(find.byIcon(Icons.fullscreen), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.fullscreen));
+    await tester.tap(find.bySemanticsLabel('ดูรูปเต็ม'));
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('ปิด'), findsOneWidget);

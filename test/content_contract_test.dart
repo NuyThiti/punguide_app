@@ -342,7 +342,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: SingleChildScrollView(
-                child: TripContentSections(sections: [
+                child: TripContentSections(gutter: 16, sections: [
       TripContent.fromJson({
         'content': 'first',
         'mediaIds': [a],
@@ -359,8 +359,10 @@ void main() {
     ])))));
     expect(find.text('รูปนี้ไม่พร้อมใช้งาน'), findsOneWidget);
     expect(find.text('hidden'), findsNothing);
+    // A confirmed place is the card's name now (Figma 2183-21784), where it
+    // used to be a pinned row — the pin belongs to the address line, and a
+    // stored ContentLocation has no address.
     expect(find.text('ร้านที่ยืนยัน'), findsOneWidget);
-    expect(find.byIcon(Icons.location_on_outlined), findsOneWidget);
     expect(tester.getTopLeft(find.text('first')).dy,
         lessThan(tester.getTopLeft(find.text('second')).dy));
   });

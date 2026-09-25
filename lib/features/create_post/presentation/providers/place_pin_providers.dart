@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_providers.dart';
@@ -95,6 +97,12 @@ class NearbyPlacePinsNotifier
       limit: 20,
     );
 
+    // Reopening the picker reuses these rows; a changed origin still
+    // invalidates the provider and gets its own result.
+    final cache = ref.keepAlive();
+    final expiry = Timer(const Duration(minutes: 5), cache.close);
+    ref.onDispose(expiry.cancel);
+
     final pins = places
         .map((place) => _toPostPlace(place, origin))
         .toList(growable: false);
@@ -181,5 +189,3 @@ final _postcode = RegExp(r'\b\d{4,6}\b');
 final _plusCode = RegExp(
     r'^\s*[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\b',
     caseSensitive: false);
-
-
