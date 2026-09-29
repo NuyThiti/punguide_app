@@ -23,6 +23,34 @@ void main() {
     expect(GeneratedPostDraft.fromJson({}).optionsFor(0), isNull);
   });
 
+  test('assistant preserves the suggested place\'s contact info', () {
+    final draft = GeneratedPostDraft.fromJson({
+      'locationOptions': [
+        {
+          'sectionIndex': 0,
+          'confidence': 'high',
+          'source': 'confirmedPlace',
+          'options': [],
+          'contactInfo': {
+            'phoneNumber': '+66 94 691 4253',
+            'website': 'http://www.naiuanyentafo.com/',
+          },
+        }
+      ],
+    });
+    final contact = draft.optionsFor(0)!.contactInfo!;
+    expect(contact.phoneNumber, '+66 94 691 4253');
+    expect(contact.website, 'http://www.naiuanyentafo.com/');
+    expect(contact.isEmpty, isFalse);
+    expect(
+        GeneratedPostDraft.fromJson({
+          'locationOptions': [
+            {'sectionIndex': 0, 'confidence': 'low', 'options': []}
+          ],
+        }).optionsFor(0)!.contactInfo,
+        isNull);
+  });
+
   group('Json', () {
     test('reads an empty string as absent', () {
       // Day.date and Activity.time both use '' for "not set".

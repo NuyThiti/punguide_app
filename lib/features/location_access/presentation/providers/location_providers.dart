@@ -165,7 +165,9 @@ class LocationResultsNotifier
 
     final origin = ref.read(locationFixProvider);
     final api = await ref.read(plunoApiProvider.future);
-    final places = await api.places.search(query, limit: 12);
+    // The picker's rows are a name and an address, never a photo.
+    final places =
+        await api.places.search(query, limit: 12, resolvePhotos: false);
 
     return places
         .where((place) => place.latitude != null && place.longitude != null)

@@ -626,6 +626,26 @@ class _SuggestedList extends StatelessWidget {
                 ),
             ],
           ),
+        if (options.contactInfo case final contact?
+            when !contact.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading:
+                  const Icon(Icons.call_outlined, color: AppColors.postPurple),
+              title: const Text('ข้อมูลติดต่อที่แนบมากับคำแนะนำ'),
+              subtitle: Text([
+                if (contact.phoneNumber?.trim().isNotEmpty ?? false)
+                  contact.phoneNumber!.trim(),
+                if (contact.website?.trim().isNotEmpty ?? false)
+                  contact.website!.trim(),
+              ].join('\n')),
+              isThreeLine:
+                  (contact.phoneNumber?.trim().isNotEmpty ?? false) &&
+                      (contact.website?.trim().isNotEmpty ?? false),
+            ),
+          ),
         for (final place in options.options)
           _SuggestedRow(place: place, onTap: () => onPick(place)),
         if (nearby != null) ...[

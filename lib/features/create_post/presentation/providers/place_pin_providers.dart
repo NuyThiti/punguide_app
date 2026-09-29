@@ -66,7 +66,9 @@ class PlacePinResultsNotifier
 
     final origin = ref.read(placePinOriginProvider);
     final api = await ref.read(plunoApiProvider.future);
-    final places = await api.places.search(query, limit: 20);
+    // This picker only ever shows a name and an address — never a photo.
+    final places =
+        await api.places.search(query, limit: 20, resolvePhotos: false);
     return places
         .map((place) => _toPostPlace(place, origin))
         .toList(growable: false);
@@ -114,6 +116,12 @@ class NearbyPlacePinsNotifier
           .compareTo(b.distanceKm ?? double.infinity));
   }
 }
+
+/// The same conversion a search row gets, for a caller outside this picker —
+/// the assistant resolving its own `area` guess into a real place, in
+/// particular. There is no origin to measure from, so [PostPlace.distanceKm]
+/// is always null.
+PostPlace postPlaceFromSearchResult(Place place) => _toPostPlace(place, null);
 
 /// Keeps what the picker rows show. [origin] measures the distance; without
 /// one the row prints its address alone rather than a made-up "0 m.".

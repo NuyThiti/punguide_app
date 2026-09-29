@@ -100,10 +100,11 @@ class CreatePostHeader extends StatelessWidget {
                             onTap: onPickCover,
                           )
                         else
-                          _CoverAction(
-                            path: coverPath!,
+                          _RoundAction(
+                            icon: Icons.add_photo_alternate_outlined,
+                            tooltip: 'เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)',
                             onTap: onPickCover,
-                            onClear: onClearCover,
+                            onLongPress: onClearCover,
                           ),
                       ],
                     ),
@@ -160,11 +161,13 @@ class _RoundAction extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    this.onLongPress,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +178,7 @@ class _RoundAction extends StatelessWidget {
         shape: const CircleBorder(),
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           customBorder: const CircleBorder(),
           child: SizedBox(
             width: 40,
@@ -343,69 +347,3 @@ class PostAuthorRow extends StatelessWidget {
   }
 }
 
-/// The cover once there is one: the picture itself, with the way to take it
-/// off sitting on its corner.
-class _CoverAction extends StatelessWidget {
-  const _CoverAction(
-      {required this.path, required this.onTap, required this.onClear});
-
-  final String path;
-  final VoidCallback onTap, onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 44,
-      height: 44,
-      // The clear badge is allowed past the corner, which is the only way it
-      // fits without eating the picture it belongs to.
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: Tooltip(
-              message: 'เปลี่ยนรูปหน้าปก',
-              child: GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: CoverImage(source: path),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: -6,
-            right: -6,
-            child: Tooltip(
-              message: 'เอารูปหน้าปกออก',
-              child: GestureDetector(
-                onTap: onClear,
-                // A 20pt dot is under the comfortable tap size, so the target
-                // is padded out around it rather than drawn bigger.
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: const BoxDecoration(
-                      color: AppColors.postHeader,
-                      shape: BoxShape.circle,
-                    ),
-                    child:
-                        const Icon(Icons.close, size: 13, color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

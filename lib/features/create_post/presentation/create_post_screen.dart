@@ -35,6 +35,11 @@ import 'widgets/trip_link_picker.dart';
 /// billed per photo, not a limit on the post, which still holds 200.
 const _assistantPhotoLimit = 20;
 
+/// The stand-in title `_ensureDraftTrip` sends when nothing else names the
+/// post yet. It is not the traveller's own words, so the assistant is still
+/// free to overwrite it later — unlike anything they typed themselves.
+const _placeholderPostTitle = 'ร่างจากรูป';
+
 final _localDraftProvider =
     StateProvider.family<PostDraft?, String>((ref, id) => null);
 final _localCoverProvider =
@@ -132,6 +137,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// True once the traveller has had a say about the post's place — they chose
   /// one, or they took one off. After that the app never fills it in again.
   bool _placeIsTheirs = false;
+
+  /// True while `_postPlace` is only the assistant's own guess — never the
+  /// traveller's. A guess is fair game for the next "Create from Photos" to
+  /// replace; the traveller's own answer never is.
+  bool _placeSuggestedByDraft = false;
 
   /// The account's stored fix, read once on open. Raw coordinates only — no
   /// Places lookup runs on it (that used to mean a second, billed call on
@@ -513,7 +523,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     // stand-in destination is the photos' own coordinates, never a place name
     // the app would be making up.
     final derivedTitle = _titleForPublish(_draft);
-    final title = derivedTitle.isEmpty ? 'ร่างจากรูป' : derivedTitle;
+    final title = derivedTitle.isEmpty ? _placeholderPostTitle : derivedTitle;
     final derivedDestination = _destinationForPublish(_draft);
     final destination = derivedDestination.isEmpty
         ? _coordinatesOfFirstPhoto() ?? 'ยังไม่ระบุ'
@@ -543,6 +553,26 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     if (_postDestination.text.trim().isNotEmpty) return;
 
     _fillPlace(place);
+    if (!mounted) return;
+    setState(() {});
+    _saveLocal();
+  }
+
+  /// Fills the post's place in from the assistant's own draft — the place and
+  /// area it just wrote the post about.
+  ///
+  /// Unlike [_adoptNearbyPlace], this replaces a guess already sitting there:
+  /// running "Create from Photos" again means a newer suggestion, and an old
+  /// one the traveller never confirmed should not survive it. It still never
+  /// touches a place the traveller picked or removed themselves.
+  void _adoptDraftPlace(PostPlace place) {
+    if (_placeIsTheirs) return;
+    if (!_placeSuggestedByDraft && _postDestination.text.trim().isNotEmpty) {
+      return;
+    }
+
+    _fillPlace(place);
+    _placeSuggestedByDraft = true;
     if (!mounted) return;
     setState(() {});
     _saveLocal();
@@ -670,7 +700,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       if (draft == null) return false;
       if (!mounted || token != _arrangement) return false;
 
-      _applyAssistantDraft(draft, sent, extra);
+      await _applyAssistantDraft(api, draft, sent, extra);
       return true;
     } on ApiException catch (error) {
       _noteAssistantFailure(_assistantFailure(error), token);
@@ -794,11 +824,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// Every photo that was sent comes back in some section — the server
   /// guarantees it — but anything it left out is appended rather than trusted
   /// away, and so are the photos past the per-call limit.
-  void _applyAssistantDraft(
+  Future<void> _applyAssistantDraft(
+    PlunoApi api,
     GeneratedPostDraft draft,
     List<TripPhoto> sent,
     List<TripPhoto> extra,
-  ) {
+  ) async {
     final pathOf = <String, String>{
       for (final entry in _uploaded.entries) entry.value.mediaId: entry.key,
     };
@@ -815,6 +846,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         paths.add(path);
       }
 
+      final options = draft.optionsFor(index);
+      // The traveller's own words, if the section already carries any, always
+      // win — this is only ever a starting point, the same way opensAt and
+      // closesAt already arrive pre-filled from the same lookup.
+      final contactInfo = (section.contactInfo?.trim().isNotEmpty ?? false)
+          ? section.contactInfo!
+          : _contactInfoText(options?.contactInfo);
       final block = _BlockFields()
         ..title.text = section.title
         ..details = PostSpotDetails(
@@ -824,7 +862,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           transportModes: section.transportModes,
           transportCost: section.transportCost,
           tripHack: section.tripHack ?? '',
-          contactInfo: section.contactInfo ?? '',
+          contactInfo: contactInfo,
         )
         ..items.first.body.text = section.content
         ..items.first.imagePaths.addAll(paths)
@@ -832,7 +870,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       block.listen(_refresh);
       blocks.add(block);
 
-      final options = draft.optionsFor(index);
       if (options != null && options.options.isNotEmpty) {
         _placeOptions[block] = options;
       }
@@ -867,12 +904,33 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         spare.dispose(_refresh);
       }
       _blocks.addAll(blocks);
-      if (_postTitle.text.trim().isEmpty && draft.title.trim().isNotEmpty) {
+      // A blank field or the app's own placeholder are both fair game; only
+      // words the traveller actually typed are left alone.
+      final currentTitle = _postTitle.text.trim();
+      if ((currentTitle.isEmpty || currentTitle == _placeholderPostTitle) &&
+          draft.title.trim().isNotEmpty) {
         _postTitle.text = draft.title.trim();
       }
       _warnings = List.unmodifiable(warnings);
       _syncCover();
     });
+    // The draft's own destination — what the post is actually about — beats a
+    // guess at where the traveller was standing, so it gets first refusal on
+    // the identity card's pin. Resolved through a real search, the same way
+    // a traveller's own pick is, so the card reads an actual place — name and
+    // locality — rather than the bare label the model wrote.
+    final draftArea = draft.area?.trim();
+    if (draftArea != null && draftArea.isNotEmpty) {
+      try {
+        final results =
+            await api.places.search(draftArea, limit: 1, resolvePhotos: false);
+        if (mounted && results.isNotEmpty) {
+          _adoptDraftPlace(postPlaceFromSearchResult(results.first));
+        }
+      } catch (_) {
+        // A failed lookup just leaves the pin as whatever it already was.
+      }
+    }
     // The server ranked this by distance, which beats the nearest row of
     // whatever `/places/suggest` happened to return, so it is worth adopting
     // even when the client already filled the blank.
@@ -909,8 +967,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     setState(() {
       _arranging = true;
       if (selection.place != null) {
-        _placeIsTheirs = true;
+        // Only a hint for the assistant, shown here for immediate feedback —
+        // not the traveller's final answer, so the draft's own resolved area
+        // is still free to replace it once generation comes back.
         _fillPlace(selection.place!);
+        _placeSuggestedByDraft = true;
       }
     });
     try {
@@ -1122,6 +1183,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     if (hour == null || minute == null) return null;
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
     return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  /// A phone number and a website on one line, the way the spot's contact
+  /// chip reads it back. Empty when Google gave neither.
+  static String _contactInfoText(SuggestedContactInfo? contact) {
+    if (contact == null) return '';
+    return [
+      if (contact.phoneNumber?.trim().isNotEmpty ?? false)
+        contact.phoneNumber!.trim(),
+      if (contact.website?.trim().isNotEmpty ?? false) contact.website!.trim(),
+    ].join(' · ');
   }
 
   String _trimForTripField(String value) {

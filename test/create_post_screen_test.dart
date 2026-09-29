@@ -456,6 +456,273 @@ void main() {
     expect(request.headers['Idempotency-Key'], isNotEmpty);
   });
 
+  testWidgets(
+      "the suggested place's contact info fills the spot's own chip and "
+      'shows in its picker sheet',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'ชามเดียวที่อยากซ้ำ',
+          'contents': [
+            {
+              'content': 'ชามนี้สีจัดมาก',
+              'mediaIds': [_a],
+              'location': {
+                'status': 'suggested',
+                'name': 'นายอ้วนเย็นตาโฟเสาชิงช้า',
+                'placeId': 'ChIJ-yentafo',
+              },
+            },
+          ],
+          'locationOptions': [
+            {
+              'sectionIndex': 0,
+              'confidence': 'high',
+              'source': 'confirmedPlace',
+              'options': [
+                {
+                  'name': 'นายอ้วนเย็นตาโฟเสาชิงช้า',
+                  'placeId': 'ChIJ-yentafo',
+                },
+              ],
+              'contactInfo': {
+                'phoneNumber': '+66 94 691 4253',
+                'website': 'http://www.naiuanyentafo.com/',
+              },
+            },
+          ],
+          'currentArea': null,
+        }),
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    // Pre-filled onto the spot itself, same as opensAt/closesAt already were —
+    // visible without ever opening the location picker.
+    expect(
+        find.text('+66 94 691 4253 · http://www.naiuanyentafo.com/'),
+        findsOneWidget);
+
+    tester.widget<PostBlock>(find.byType(PostBlock)).onPickPlace();
+    await tester.pumpAndSettle();
+
+    expect(find.text('ข้อมูลติดต่อที่แนบมากับคำแนะนำ'), findsOneWidget);
+    expect(find.text('+66 94 691 4253\nhttp://www.naiuanyentafo.com/'),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'the draft\'s own area lands on the identity card, next to its place',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'เกาเหลาชามนี้ที่อยากถ่ายก่อนกิน',
+          'area': 'ลาดพร้าว กรุงเทพ',
+          'contents': [
+            {
+              'content': 'ชามนี้สีจัดมาก',
+              'mediaIds': [_a],
+              'location': {
+                'status': 'suggested',
+                'name': 'นายอ้วนเย็นตาโฟเสาชิงช้า',
+                'placeId': 'ChIJ-yentafo',
+              },
+            },
+          ],
+          'locationOptions': [
+            {'sectionIndex': 0, 'confidence': 'high', 'options': []},
+          ],
+          'currentArea': null,
+        }),
+        const FakeReply(200, {
+          'title': 'บ่ายนี้ไปทะเล',
+          'area': 'หัวหิน ประจวบคีรีขันธ์',
+          'contents': [
+            {
+              'content': 'ลมทะเลดีมาก',
+              'mediaIds': [_b],
+              'location': {
+                'status': 'suggested',
+                'name': 'หาดหัวหิน',
+                'placeId': 'ChIJ-huahin',
+              },
+            },
+          ],
+          'locationOptions': [
+            {'sectionIndex': 0, 'confidence': 'high', 'options': []},
+          ],
+          'currentArea': null,
+        }),
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    // `_pumpComposer` stubs `GET /places/search` for the destination-picker
+    // path it always needs; this replaces it with the draft's own `area`
+    // label getting resolved through the same endpoint.
+    adapter.replies['GET /places/search'] = [
+      const FakeReply(200, [
+        {
+          'id': 'place-ladprao',
+          'name': 'ลาดพร้าว',
+          'address': 'ลาดพร้าว, กรุงเทพมหานคร 10230, ประเทศไทย',
+        },
+      ]),
+      const FakeReply(200, [
+        {
+          'id': 'place-huahin',
+          'name': 'หัวหิน',
+          'address': 'หัวหิน, ประจวบคีรีขันธ์ 77110, ประเทศไทย',
+        },
+      ]),
+    ];
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    // The pin below the title reads the searched place — name and locality —
+    // not the model's own bare `area` label, and not a guess at where the
+    // traveller is standing.
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('ลาดพร้าว · กรุงเทพมหานคร')),
+        findsOneWidget);
+    expect(adapter.bodyOf('POST /trips/trip-new/contents/generate'), isNotNull);
+    expect(
+        adapter.requests
+            .where((r) => r.path == '/places/search')
+            .first
+            .queryParameters['q'],
+        'ลาดพร้าว กรุงเทพ');
+
+    // Running it again — nothing has been confirmed yet, so the newer
+    // suggestion replaces the old one instead of being silently dropped.
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('ลาดพร้าว · กรุงเทพมหานคร')),
+        findsNothing);
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('หัวหิน · ประจวบคีรีขันธ์')),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'a place picked as a hint before generating still yields to the '
+      "draft's own area", (tester) async {
+    const hintId = 'c541e08c-32c4-417d-bba8-a2373e48a696';
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+    final adapter = FakeAdapter({
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': hintId,
+            'name': 'สนามหลวง',
+            'latitude': 13.75,
+            'longitude': 100.49,
+          },
+        ])
+      ],
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'ชามเดียวที่อยากซ้ำ',
+          'area': 'ลาดพร้าว กรุงเทพ',
+          'contents': [
+            {
+              'content': 'ชามนี้สีจัดมาก',
+              'mediaIds': [_a],
+              'location': {
+                'status': 'suggested',
+                'name': 'นายอ้วนเย็นตาโฟเสาชิงช้า',
+                'placeId': 'ChIJ-yentafo',
+              },
+            },
+          ],
+          'locationOptions': [
+            {'sectionIndex': 0, 'confidence': 'high', 'options': []},
+          ],
+          'currentArea': null,
+        }),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter, extra: _located);
+    // `GET /places/search` is stubbed after the pump, same as `_pumpComposer`
+    // itself does for its own default — this is the draft's `area`, resolved.
+    adapter.replies['GET /places/search'] = [
+      const FakeReply(200, [
+        {
+          'id': 'place-ladprao',
+          'name': 'ลาดพร้าว',
+          'address': 'ลาดพร้าว กรุงเทพมหานคร 10230',
+        },
+      ]),
+    ];
+    await tester.tap(find.text('Create from Photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Location'));
+    await _settleNearby(tester);
+    await tester.tap(find.text('สนามหลวง').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add Photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await _settleImport(tester);
+
+    final request = adapter.requests
+        .lastWhere((r) => r.path == '/trips/trip-new/contents/generate');
+    expect(request.data['selectedPlaceId'], hintId);
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('สนามหลวง')),
+        findsNothing);
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard),
+            matching: find.text('ลาดพร้าว · กรุงเทพมหานคร')),
+        findsOneWidget);
+  });
+
   testWidgets('selected nearby UUID survives 409 retry without another lookup', (tester) async {
     const selectedId = 'c541e08c-32c4-417d-bba8-a2373e48a696';
     final previous = ImagePickerPlatform.instance;
@@ -1262,9 +1529,10 @@ void main() {
     // traveller never put in the story must not appear in it.
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
-    // Shown where it was chosen, with the way to undo it.
-    expect(find.byTooltip('เปลี่ยนรูปหน้าปก'), findsOneWidget);
-    expect(find.byTooltip('เอารูปหน้าปกออก'), findsOneWidget);
+    // Shown where it was chosen, with the way to undo it (a long press).
+    expect(
+        find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'),
+        findsOneWidget);
 
     // Give the post something to actually say, then publish.
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
@@ -1301,14 +1569,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('เปลี่ยนรูปหน้าปก'), findsOneWidget);
+    expect(
+        find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'),
+        findsOneWidget);
 
-    await tester.tap(find.byTooltip('เอารูปหน้าปกออก'));
+    await tester.longPress(
+        find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'));
     await tester.pumpAndSettle();
 
     // Back to the offer, and nothing was left behind in a spot.
     expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
-    expect(find.byTooltip('เปลี่ยนรูปหน้าปก'), findsNothing);
+    expect(find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'),
+        findsNothing);
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
   });

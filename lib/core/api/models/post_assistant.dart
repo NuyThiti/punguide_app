@@ -155,6 +155,26 @@ class SuggestedOpeningHours {
   final List<String> weekdayDescriptions;
 }
 
+/// How to reach the section's suggested location, as Google has it on file —
+/// display only, the same as [SuggestedOpeningHours].
+@immutable
+class SuggestedContactInfo {
+  const SuggestedContactInfo({this.phoneNumber, this.website});
+
+  factory SuggestedContactInfo.fromJson(Map<String, dynamic> json) =>
+      SuggestedContactInfo(
+        phoneNumber: Json.string(json, 'phoneNumber'),
+        website: Json.string(json, 'website'),
+      );
+
+  final String? phoneNumber;
+  final String? website;
+
+  bool get isEmpty =>
+      (phoneNumber?.trim().isEmpty ?? true) &&
+      (website?.trim().isEmpty ?? true);
+}
+
 /// The candidates for one section, in the order the assistant ranked them.
 ///
 /// Review-screen data only: [sectionIndex] points into the draft's `contents`,
@@ -168,6 +188,7 @@ class SectionPlaceOptions {
     required this.options,
     this.source = PlaceSource.none,
     this.openingHours,
+    this.contactInfo,
   });
 
   factory SectionPlaceOptions.fromJson(Map<String, dynamic> json) =>
@@ -178,6 +199,9 @@ class SectionPlaceOptions {
         openingHours: json['openingHours'] is Map
             ? SuggestedOpeningHours.fromJson(Json.asMap(json['openingHours']))
             : null,
+        contactInfo: json['contactInfo'] is Map
+            ? SuggestedContactInfo.fromJson(Json.asMap(json['contactInfo']))
+            : null,
         options: (json['options'] is List
                 ? Json.asMapList(json['options'])
                 : const <Map<String, dynamic>>[])
@@ -186,6 +210,7 @@ class SectionPlaceOptions {
       );
 
   final SuggestedOpeningHours? openingHours;
+  final SuggestedContactInfo? contactInfo;
   final int sectionIndex;
   final PlaceConfidence confidence;
 
@@ -257,6 +282,7 @@ class NearbyArea {
 class GeneratedPostDraft {
   const GeneratedPostDraft({
     this.title = '',
+    this.area,
     this.contents = const [],
     this.locationOptions = const [],
     this.warnings = const [],
@@ -266,6 +292,7 @@ class GeneratedPostDraft {
   factory GeneratedPostDraft.fromJson(Map<String, dynamic> json) =>
       GeneratedPostDraft(
         title: Json.string(json, 'title') ?? '',
+        area: Json.string(json, 'area'),
         contents: (json['contents'] is List
                 ? Json.asMapList(json['contents'])
                 : const <Map<String, dynamic>>[])
@@ -282,6 +309,11 @@ class GeneratedPostDraft {
 
   /// The headline it suggests. Empty when it had nothing to go on.
   final String title;
+
+  /// The neighbourhood/district label for the post's confirmed or suggested
+  /// place — null unless one of [contents] actually named one. Meant to sit
+  /// next to that place's name, the same way `PostPlace.area` does.
+  final String? area;
 
   /// Sections in the shape `PATCH /trips/:id` accepts, so a reviewed draft
   /// goes back untouched.
