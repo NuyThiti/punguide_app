@@ -457,6 +457,52 @@ void main() {
   });
 
   testWidgets(
+      'library photos with no EXIF GPS fall back to the account fix',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {
+          'location': {'lat': 13.7563, 'lng': 100.493},
+        }),
+      ],
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'เที่ยวไปเรื่อย',
+          'contents': [
+            {
+              'content': 'สวยมาก',
+              'mediaIds': [_a],
+              'location': {'status': 'none'},
+            },
+          ],
+        }),
+      ],
+    });
+    await _pumpComposer(
+      tester,
+      adapter: adapter,
+      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+    );
+    // The account fix seeds the identity card too — irrelevant here, and left
+    // unstubbed on purpose: a failed lookup must not stop the draft below.
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    final body = adapter.bodyOf('POST /trips/trip-new/contents/generate')!;
+    expect(body['currentLocation'], {'lat': 13.7563, 'lng': 100.493});
+  });
+
+  testWidgets(
       "the suggested place's contact info fills the spot's own chip and "
       'shows in its picker sheet',
       (tester) async {
@@ -2085,10 +2131,48 @@ void main() {
   });
 
   testWidgets(
-      'opening the composer reads the account fix but spends no Places request',
+      'opening the composer seeds the identity card from the account fix',
       (tester) async {
     // Signed in, and the account has a real fix — the strongest case for
-    // autofilling, and still nothing beyond the one GET should be spent.
+    // autofilling.
+    final adapter = FakeAdapter({
+      'GET /users/me/location': [
+        const FakeReply(200, {
+          'location': {'lat': 13.7563, 'lng': 100.493},
+        }),
+      ],
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': 'place-1',
+            'name': 'สนามหลวง',
+            'address': 'สนามหลวง กรุงเทพมหานคร 10200',
+          },
+        ]),
+      ],
+    });
+    await _pumpComposer(
+      tester,
+      adapter: adapter,
+      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+    );
+    await _settleNearby(tester);
+
+    // Resolved through a real lookup — a name and a locality, never the raw
+    // fix standing in for one — and only ever a starting point: nothing has
+    // answered "where is this post about" itself yet.
+    expect(_cardPlace(tester)?.name, 'สนามหลวง');
+    expect(_cardPlace(tester)?.area, 'กรุงเทพมหานคร');
+    expect(adapter.paths,
+        containsAll(['GET /users/me/location', 'GET /places/suggest']));
+  });
+
+  testWidgets(
+      'a trip reopened for editing never spends the account-fix lookup',
+      (tester) async {
+    // Already has a destination, so nothing about "where is this post about"
+    // is left to guess — the fix is still read (every open reads it), but
+    // seeding the pin from it would only replace a real answer with a guess.
     final adapter = FakeAdapter({
       'GET /users/me/location': [
         const FakeReply(200, {
@@ -2100,11 +2184,11 @@ void main() {
       tester,
       adapter: adapter,
       extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      initialTrip: ApiTrip.fromJson(
+          {...createdTripJson(), 'destination': 'ดานัง, เวียดนาม'}),
     );
     await _settleNearby(tester);
 
-    // Read, but not resolved to a name and not written into the post — see
-    // _loadAccountFix's own comment for why the second call was removed.
     expect(_cardPlace(tester), isNull);
     expect(adapter.paths, ['GET /users/me/location']);
   });

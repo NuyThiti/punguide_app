@@ -143,11 +143,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// replace; the traveller's own answer never is.
   bool _placeSuggestedByDraft = false;
 
-  /// The account's stored fix, read once on open. Raw coordinates only — no
-  /// Places lookup runs on it (that used to mean a second, billed call on
-  /// every open; see the removed currentPlaceProvider). Only ever shown as a
-  /// hint in the Title sheet's Add Location row while nothing has been
-  /// picked; never resolved to a name and never written into the post.
+  /// The account's stored fix, read once on open. Raw coordinates only — kept
+  /// for the Title sheet's Add Location row, which shows it as a hint and
+  /// never resolves or writes it anywhere itself. `_loadAccountFix` separately
+  /// resolves it through `/places/suggest` to seed the identity card's pin —
+  /// see that method — but that resolved place lives in `_postPlace`, not
+  /// here.
   UserLocation? _accountFix;
   final Set<String> _uncertainUploads = {},
       _legacyUrls = {},
@@ -308,16 +309,46 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _loadAccountFix();
   }
 
-  /// `GET /users/me/location` only — no follow-up Places lookup. An earlier
-  /// version chained a Places call onto this to turn the fix into a name for
-  /// autofill; that second, billed call on every open was removed. This one
-  /// remains because the fix itself is still wanted, just not resolved to a
-  /// place client-side any more.
+  /// `GET /users/me/location`, read once on open.
+  ///
+  /// When nothing has answered "where is this post about" yet, the fix also
+  /// seeds the identity card's pin — one `/places/suggest` lookup, so it is a
+  /// real named place and not raw coordinates standing in for one. It goes in
+  /// through `_adoptDraftPlace`, so it stays a suggestion: the traveller's own
+  /// pick, or a "Create from Photos" draft's own place, still replaces it
+  /// freely. [_placeAnswered] is the same "has this already been answered"
+  /// check `_adoptDraftPlace` makes, checked here first too so a trip that
+  /// already has a destination — reopened for editing — never spends the
+  /// lookup at all.
   Future<void> _loadAccountFix() async {
     final fix = await ref.read(locationSyncProvider).pull();
     if (!mounted) return;
     setState(() => _accountFix = fix);
+    if (fix == null || _placeAnswered) return;
+
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final nearby = await api.places.suggest(
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        radiusMeters: 3000,
+        limit: 1,
+      );
+      if (!mounted || _placeAnswered) return;
+      if (nearby.isNotEmpty) {
+        _adoptDraftPlace(postPlaceFromSearchResult(nearby.first));
+      }
+    } catch (_) {
+      // No worse than the fix never having answered at all.
+    }
   }
+
+  /// True once nothing more should be guessed about the post's place: the
+  /// traveller answered it themselves, or a trip opened for editing already
+  /// carries a destination and no suggestion has offered anything better yet.
+  bool get _placeAnswered =>
+      _placeIsTheirs ||
+      (!_placeSuggestedByDraft && _postDestination.text.trim().isNotEmpty);
 
   @override
   void dispose() {
@@ -566,10 +597,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// one the traveller never confirmed should not survive it. It still never
   /// touches a place the traveller picked or removed themselves.
   void _adoptDraftPlace(PostPlace place) {
-    if (_placeIsTheirs) return;
-    if (!_placeSuggestedByDraft && _postDestination.text.trim().isNotEmpty) {
-      return;
-    }
+    if (_placeAnswered) return;
 
     _fillPlace(place);
     _placeSuggestedByDraft = true;
@@ -631,6 +659,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// rather than sending the same files twice.
   /// [fromCamera] says the photos were taken just now, which is the only case
   /// where where the traveller is standing describes where the photos are of.
+  /// A library photo instead falls back to the account's own fix, but only
+  /// once every photo sent has turned up with no EXIF GPS of its own — see
+  /// the `origin` note below.
   Future<bool> _draftWithAssistant(List<TripPhoto> photos, int token,
       {required bool fromCamera, PostPlace? selectedPlace}) async {
     // A fresh key per attempt. Replaying one returns the draft it returned
@@ -663,10 +694,14 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       if (!mounted || token != _arrangement) return false;
 
       final notes = _postTitle.text.trim();
-      // Withheld for anything out of the library. A photo just taken is where
-      // the traveller is; one picked from the library could be last year's,
-      // from a city they are not in, and guessing places near the desk they
-      // are writing at would be worse than offering none.
+      // Withheld for anything out of the library that says where it was
+      // taken. A photo just taken is where the traveller is; one picked from
+      // the library could be last year's, from a city they are not in, and
+      // guessing places near the desk they are writing at would be worse than
+      // offering none — but that only holds while some photo still answers
+      // for itself. When none of them do, and the traveller has not either,
+      // the account's own fix is the last fallback: still only a hint the
+      // assistant may suggest, never one it may confirm.
       final selectedId = selectedPlace?.id;
       // Search/nearby rows carry internal UUIDs; AI/map pins may instead
       // carry a Google ID and must stay on the legacy name-based path.
@@ -675,9 +710,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   .hasMatch(selectedId)
           ? selectedId
           : null;
-      final origin = fromCamera && selectedPlaceId == null
-          ? ref.read(placePinOriginProvider)
-          : null;
+      ({double lat, double lng})? origin;
+      if (selectedPlaceId == null) {
+        if (fromCamera) {
+          origin = ref.read(placePinOriginProvider);
+        } else if (!sent.any((photo) => photo.hasLocation)) {
+          final fix = _accountFix;
+          if (fix != null) origin = (lat: fix.latitude, lng: fix.longitude);
+        }
+      }
       final locationName = selectedPlaceId == null
           ? selectedPlace?.name ?? _confirmedPlaceName()
           : null;
