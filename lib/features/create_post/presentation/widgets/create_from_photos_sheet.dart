@@ -329,84 +329,87 @@ class _PhotoImportHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipRRect(
-          borderRadius:
-              const BorderRadius.vertical(bottom: Radius.circular(24)),
-          child: ColoredBox(
-            color: AppColors.postImportHeroBg,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-                child: SizedBox(
-                  height: 44,
-                  child: Row(
-                    children: [
-                      Material(
-                        color: Colors.white,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          onTap: onBack,
-                          customBorder: const CircleBorder(),
-                          child: const SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: Icon(Icons.chevron_left,
-                                color: AppColors.postImportHeroBg),
+    // One rounded-bottom shape, not two stacked ones: the strip is this
+    // shape's own gradient background, left uncovered for the last 6px so
+    // the header's corner curve carries straight into it instead of butting
+    // a second, separately-rounded bar underneath.
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              AppColors.postImportStart,
+              AppColors.postImportMid,
+              AppColors.postImportMid2,
+              AppColors.postImportEnd,
+            ],
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ColoredBox(
+              color: AppColors.postImportHeroBg,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+                  child: SizedBox(
+                    height: 44,
+                    child: Row(
+                      children: [
+                        Material(
+                          color: Colors.white,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            onTap: onBack,
+                            customBorder: const CircleBorder(),
+                            child: const SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: Icon(Icons.chevron_left,
+                                  color: AppColors.postImportHeroBg),
+                            ),
                           ),
                         ),
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'AI สร้างโพสจากรูป',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
+                        const Expanded(
+                          child: Text(
+                            'AI สร้างโพสจากรูป',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
-                      ),
-                      Material(
-                        color: Colors.white24,
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          onTap: onAddPhotos,
-                          customBorder: const CircleBorder(),
-                          child: const SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: Icon(Icons.add_photo_alternate_outlined,
-                                size: 21, color: Colors.white),
+                        Material(
+                          color: Colors.white24,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            onTap: onAddPhotos,
+                            customBorder: const CircleBorder(),
+                            child: const SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: Icon(Icons.add_photo_alternate_outlined,
+                                  size: 21, color: Colors.white),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+            const SizedBox(height: 6),
+          ],
         ),
-        Container(
-          height: 6,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                AppColors.postImportStart,
-                AppColors.postImportMid,
-                AppColors.postImportMid2,
-                AppColors.postImportEnd,
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

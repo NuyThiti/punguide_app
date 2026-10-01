@@ -78,6 +78,13 @@ class AppColors {
   /// The Create from Photos page's own dark cap (Figma 2480-80792's
   /// "AI-Hero-Card") — a shade lighter than [postHeader], not reused from it.
   static const postImportHeroBg = Color(0xFF2C2C2C);
+
+  /// A sheet's own close chip, beside its title (Figma 2480-80871).
+  static const postCloseChip = Color(0xFFE0E0E0);
+  /// The "เพิ่มรูป" sheet's icon wells: a plain one for ถ่ายรูป/Video, and the
+  /// same purple that highlights เลือกจากคลังภาพ's whole row.
+  static const postSourceIconWell = Color(0xFFF0E9FF);
+  static const postSourceSelectedRow = Color(0xFFFCF7FF);
   static const postDashed = Color(0xFFD6CDEC);
   static const postRowIcon = Color(0xFF2B2B2E);
 
