@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
@@ -207,19 +208,26 @@ class _ImportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
+      constraints: const BoxConstraints(minHeight: 51),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(999),
         gradient: const LinearGradient(
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
           colors: [
             AppColors.postImportStart,
             AppColors.postImportMid,
+            AppColors.postImportMid2,
             AppColors.postImportEnd,
           ],
-          stops: [0, 0.62, 1],
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            offset: const Offset(0, 3),
+            blurRadius: 16,
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
@@ -227,7 +235,7 @@ class _ImportButton extends StatelessWidget {
         child: InkWell(
           onTap: importing ? null : onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: importing
                 ? Row(
                     children: [
@@ -260,24 +268,24 @@ class _ImportButton extends StatelessWidget {
                       ),
                     ],
                   )
-                : const Row(
+                : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.add_photo_alternate_outlined,
-                        size: 22,
-                        color: Colors.white,
+                      SvgPicture.asset(
+                        'assets/icons/ai_photo.svg',
+                        width: 26,
+                        height: 26,
                       ),
-                      SizedBox(width: 10),
-                      Flexible(
+                      const SizedBox(width: 8),
+                      const Flexible(
                         child: Text(
-                          'Create from Photos',
+                          'AI สร้างโพสจากรูป',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),

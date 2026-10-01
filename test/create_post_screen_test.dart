@@ -39,6 +39,61 @@ class _UnreadablePhoto extends XFile {
       throw const FormatException('no metadata');
 }
 
+/// A photo whose bytes carry real EXIF GPS — the same hand-built TIFF layout
+/// `trip_photo_grouper_test.dart` uses, reading back as (-13.5, 100.25).
+class _LocatedPhoto extends XFile {
+  _LocatedPhoto(super.path);
+
+  @override
+  Future<Uint8List> readAsBytes() async {
+    final bytes = Uint8List(178);
+    final data = ByteData.sublistView(bytes);
+    void u16(int offset, int value) =>
+        data.setUint16(offset, value, Endian.little);
+    void u32(int offset, int value) =>
+        data.setUint32(offset, value, Endian.little);
+    void tag(int offset, int id, int type, int count, int value) {
+      u16(offset, id);
+      u16(offset + 2, type);
+      u32(offset + 4, count);
+      u32(offset + 8, value);
+    }
+
+    bytes[0] = bytes[1] = 73;
+    u16(2, 42);
+    u32(4, 8);
+    u16(8, 2);
+    tag(10, 0x8769, 4, 1, 38);
+    tag(22, 0x8825, 4, 1, 56);
+    u16(38, 1);
+    tag(40, 0x9003, 2, 20, 110);
+    u16(56, 4);
+    tag(58, 1, 2, 2, 83); // South.
+    tag(70, 2, 5, 3, 130);
+    tag(82, 3, 2, 2, 69); // East.
+    tag(94, 4, 5, 3, 154);
+    bytes.setRange(110, 129, '2026:09:12 10:30:00'.codeUnits);
+    for (final offset in [130, 138, 146, 154, 162, 170]) {
+      u32(offset + 4, 1);
+    }
+    u32(130, 13);
+    u32(138, 30);
+    u32(154, 100);
+    u32(162, 15);
+    return bytes;
+  }
+}
+
+class _SinglePhotoPicker extends ImagePickerPlatform {
+  _SinglePhotoPicker(this.photo);
+  final XFile photo;
+  @override
+  Future<XFile?> getImageFromSource(
+          {required ImageSource source,
+          ImagePickerOptions options = const ImagePickerOptions()}) async =>
+      photo;
+}
+
 class _TripPicker extends ImagePickerPlatform {
   _TripPicker(this.result, {this.shot});
   final Future<List<XFile>> result;
@@ -169,9 +224,9 @@ Future<void> _confirmPlace(WidgetTester tester) async {
 /// Settling here waits only for the sheet to arrive; the picker has not been
 /// asked for anything yet, so nothing is off in the background to hang on.
 Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
-  await tester.tap(find.text('Create from Photos'));
+  await tester.tap(find.text('AI สร้างโพสจากรูป'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Add Photos'));
+  await tester.tap(find.text('เพิ่มรูป').last);
   await tester.pumpAndSettle();
   await tester.tap(find.text(camera ? 'ถ่ายรูป' : 'เลือกจากคลังภาพ'));
 }
@@ -181,20 +236,29 @@ Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
 /// spinner keeps `pumpAndSettle` from ever settling on its own.
 Future<void> _settleImport(WidgetTester tester) async {
   for (var i = 0; i < 40; i++) {
-    final create = find.widgetWithText(FilledButton, 'สร้างโพสต์จากรูป');
-    if (create.evaluate().isNotEmpty &&
-        tester.widget<FilledButton>(create).onPressed != null) {
+    // `hitTestable()` matters once the page has been popped: its content
+    // keeps building while its exit transition plays, wrapped in an
+    // IgnorePointer the Navigator adds for a route that is no longer
+    // current — a plain `find.text` would still "find" it, and tapping that
+    // offset would fall straight through to whatever the composer draws at
+    // the same spot underneath.
+    final create = find.text('สร้างโพสเลย').hitTestable();
+    if (create.evaluate().isNotEmpty) {
       await tester.ensureVisible(create);
-      await tester.tap(create);
+      await tester.tap(create, warnIfMissed: false);
     }
-    if (find.text('ใช้รูปเขียนต่อเอง').evaluate().isNotEmpty) {
-      await tester.tap(find.text('ใช้รูปเขียนต่อเอง'));
+    if (find.text('ใช้รูปเขียนต่อเอง').hitTestable().evaluate().isNotEmpty) {
+      await tester.tap(find.text('ใช้รูปเขียนต่อเอง').hitTestable());
     }
     await tester.pump(const Duration(milliseconds: 50));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
   }
-  await tester.pump(const Duration(milliseconds: 50));
+  // A successful publish pops this page back to the composer — a real route
+  // transition now that it is a full page, not a sheet — so settle that too
+  // before a caller goes looking for anything on the screen underneath.
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pumpAndSettle();
 }
 
 /// Scrolls the composer until [target] is built and on screen. The page is a
@@ -742,16 +806,19 @@ void main() {
         },
       ]),
     ];
-    await tester.tap(find.text('Create from Photos'));
+    await tester.tap(find.text('AI สร้างโพสจากรูป'));
+    await tester.pumpAndSettle();
+    // The location prompt only shows up once a photo exists — picking the
+    // hint is done after, not before.
+    await tester.tap(find.text('เพิ่มรูป').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Location'));
     await _settleNearby(tester);
     await tester.tap(find.text('สนามหลวง').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add Photos'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('เลือกจากคลังภาพ'));
     await _settleImport(tester);
 
     final request = adapter.requests
@@ -795,7 +862,12 @@ void main() {
       ],
     });
     await _pumpComposer(tester, adapter: adapter, extra: _located);
-    await tester.tap(find.text('Create from Photos'));
+    await tester.tap(find.text('AI สร้างโพสจากรูป'));
+    await tester.pumpAndSettle();
+    // The location prompt only shows up once a photo exists.
+    await tester.tap(find.text('เพิ่มรูป').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Location'));
     await _settleNearby(tester);
@@ -806,9 +878,6 @@ void main() {
     await _settleNearby(tester);
     await tester.tap(find.text('สนามหลวง').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Photos'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('เลือกจากคลังภาพ'));
     await _settleImport(tester);
     await _settleImport(tester);
     final requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
@@ -846,7 +915,7 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await _tapImport(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('สร้างโพสต์จากรูป'));
+    await tester.tap(find.text('สร้างโพสเลย'));
     for (var i = 0; i < 60 && find.text('ลองอีกครั้ง').evaluate().isEmpty; i++) {
       await tester.pump(const Duration(milliseconds: 50));
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
@@ -1360,17 +1429,23 @@ void main() {
     await _tapImport(tester);
     await tester.pumpAndSettle();
     expect(find.text('Add Location'), findsOneWidget);
-    expect(find.text('1 รูป'), findsOneWidget);
     expect(adapter.paths, isNot(contains('POST /trips')));
-    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
-    final create = find.widgetWithText(FilledButton, 'สร้างโพสต์จากรูป');
-    expect(tester.widget<FilledButton>(create).onPressed, isNotNull);
+    Opacity ctaOpacity() => tester.widget<Opacity>(find
+        .ancestor(
+            of: find.text('สร้างโพสเลย'), matching: find.byType(Opacity))
+        .first);
+    expect(ctaOpacity().opacity, 1);
     await tester.tap(find.byTooltip('ลบรูปที่ 1'));
     await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(create).onPressed, isNull);
+    expect(ctaOpacity().opacity, lessThan(1));
     await tester.tap(find.text('ยกเลิก'));
     await tester.pumpAndSettle();
-    expect(find.text('Create from Photos'), findsOneWidget);
+    expect(find.text('AI สร้างโพสจากรูป'), findsOneWidget);
+    // The page is a full page now, not a sheet over the composer, so the
+    // draft underneath was never reachable to assert on until it is the only
+    // thing left on screen again — but that silence is exactly the point:
+    // nothing about the picked-then-removed photo should have touched it.
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -1477,6 +1552,10 @@ void main() {
       } else {
         pending.complete([]);
       }
+      await tester.pumpAndSettle();
+      // Nothing came back, so the page stays put rather than closing itself —
+      // backing out by hand is what returns to the untouched draft.
+      await tester.tap(find.text('ยกเลิก'));
       await tester.pumpAndSettle();
       expect(find.text('ร่างเดิม'), findsOneWidget);
       expect(find.text('กำลังจัดรูปเป็นเรื่องราว…'), findsNothing);
@@ -1719,7 +1798,7 @@ void main() {
 
     // The dark cap: back, title, and the cover action opposite it.
     expect(find.text('PunGuide'), findsOneWidget);
-    expect(find.text('Create from Photos'), findsOneWidget);
+    expect(find.text('AI สร้างโพสจากรูป'), findsOneWidget);
     expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
 
     // One card says what the post is and who it is by. The plan link is not
@@ -1899,6 +1978,85 @@ void main() {
     await tester.tap(find.text('Tell us about your trip..'));
     await tester.pumpAndSettle();
     expect(find.text('ร้านอาหารที่ต้องแวะ'), findsOneWidget);
+  });
+
+  testWidgets(
+      'a photo added by hand offers a nearby place when its GPS says where',
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _SinglePhotoPicker(
+        _LocatedPhoto('assets/images/puntok_osaka.jpg'));
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    final adapter = FakeAdapter({
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': 'place-1',
+            'name': 'ร้านกาแฟริมนา',
+            'latitude': -13.5,
+            'longitude': 100.25,
+          },
+        ]),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    final block = tester.widget<PostBlock>(find.byType(PostBlock));
+    block.onPickImageInItem!(0);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+    await _settleNearby(tester);
+
+    final request =
+        adapter.requests.lastWhere((r) => r.path == '/places/suggest');
+    expect(request.queryParameters['lat'], -13.5);
+    expect(request.queryParameters['lng'], 100.25);
+    expect(request.queryParameters['radius'], 150);
+    expect(request.queryParameters['limit'], 1);
+    final updated = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(updated.items!.first.location?.status,
+        ContentLocationStatus.suggested);
+    expect(updated.items!.first.location?.name, 'ร้านกาแฟริมนา');
+    expect(find.text('ร้านกาแฟริมนา'), findsOneWidget);
+    expect(find.text('ผู้ช่วยแนะนำ ยังไม่ยืนยัน'), findsOneWidget);
+  });
+
+  testWidgets(
+      "the Create from Photos sheet resolves a picked photo's own GPS into a place row",
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _LocatedPhoto('assets/images/puntok_osaka.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    final adapter = FakeAdapter({
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': 'place-1',
+            'name': 'ตลาดน้อย',
+            'latitude': -13.5,
+            'longitude': 100.25,
+          },
+        ]),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.tap(find.text('AI สร้างโพสจากรูป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เพิ่มรูป').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+    await _settleNearby(tester);
+
+    final request =
+        adapter.requests.lastWhere((r) => r.path == '/places/suggest');
+    expect(request.queryParameters['lat'], -13.5);
+    expect(request.queryParameters['lng'], 100.25);
+    expect(request.queryParameters['radius'], 150);
+    expect(find.text('ตลาดน้อย'), findsOneWidget);
   });
 
   testWidgets('a titled section can publish multiple photo description sets',

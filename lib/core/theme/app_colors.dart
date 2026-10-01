@@ -69,11 +69,23 @@ class AppColors {
   static const postShare = Color(0xFF6D28D9);
   static const postPurpleSoft = Color(0xFFEDE4FF);
   static const postPurpleWell = Color(0xFFF4EEFF);
-  static const postImportStart = Color(0xFF6D3BF5);
-  static const postImportMid = Color(0xFFB05CF6);
-  static const postImportEnd = Color(0xFFD8F25E);
+  /// "AI สร้างโพสจากรูป" (Figma 2502-39595), deepest to lightest — the last
+  /// stop is the one the button's own glow leans toward.
+  static const postImportStart = Color(0xFF5927FF);
+  static const postImportMid = Color(0xFF7C46FA);
+  static const postImportMid2 = Color(0xFFCC74FF);
+  static const postImportEnd = Color(0xFFD8FF54);
+  /// The Create from Photos page's own dark cap (Figma 2480-80792's
+  /// "AI-Hero-Card") — a shade lighter than [postHeader], not reused from it.
+  static const postImportHeroBg = Color(0xFF2C2C2C);
   static const postDashed = Color(0xFFD6CDEC);
   static const postRowIcon = Color(0xFF2B2B2E);
+
+  /// The "เพิ่มรูป" empty state (Figma 2480-80673): the illustrated pile of
+  /// photos above a heading and a plain, solid pill — no gradient, unlike the
+  /// AI button above it.
+  static const postEmptyHeading = Color(0xFF2C2C2C);
+  static const postEmptySubtitle = Color(0xFF6E7570);
   static const postDraftBg = Color(0xFFF2F1EE);
   static const postToggleBg = Color(0xFFF4F3F1);
 

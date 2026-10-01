@@ -480,9 +480,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           !block.items.contains(item)) {
         return;
       }
+      TripPhoto? metadata;
       try {
-        _photoMetadata[image.path] =
+        final read =
             await compute(_readPhoto, (await image.readAsBytes(), image.path));
+        _photoMetadata[image.path] = read;
+        metadata = read;
       } catch (_) {}
       if (!mounted || !_blocks.contains(block) || !block.items.contains(item)) {
         return;
@@ -491,9 +494,59 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         item.imagePaths.add(image.path);
         _syncCover();
       });
+      if (metadata != null && metadata.hasLocation) {
+        await _suggestPlaceFromPhoto(block, item, metadata);
+      }
     } catch (_) {
       // A denied permission, or no camera on the device.
       _message('เลือกรูปไม่สำเร็จ ลองอีกครั้ง');
+    }
+  }
+
+  /// Offers a nearby place for a spot that has nothing to say about where it
+  /// is yet, the moment a photo added to it turns out to carry GPS — the same
+  /// lookup "Create from Photos" already runs, just reached through this door
+  /// too. Still only ever `suggested`: the traveller confirms it themselves.
+  Future<void> _suggestPlaceFromPhoto(
+      _BlockFields block, _BlockItemFields item, TripPhoto metadata) async {
+    final hasPlace = item.place != null ||
+        (item.location != null &&
+            item.location!.status != ContentLocationStatus.none) ||
+        item.legacyMapId != null;
+    if (hasPlace) return;
+
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final nearby = await api.places.suggest(
+        latitude: metadata.latitude!,
+        longitude: metadata.longitude!,
+        radiusMeters: 150,
+        limit: 1,
+      );
+      if (!mounted || !_blocks.contains(block) || !block.items.contains(item)) {
+        return;
+      }
+      // Nothing must have answered this in the meantime — another photo's
+      // own GPS, or the traveller picking one by hand while this was in
+      // flight — either already beats a guess from a single picture.
+      final stillUnanswered = item.place == null &&
+          (item.location == null ||
+              item.location!.status == ContentLocationStatus.none) &&
+          item.legacyMapId == null;
+      if (stillUnanswered && nearby.isNotEmpty) {
+        final place = nearby.first;
+        setState(() {
+          item.location = ContentLocation(
+            status: ContentLocationStatus.suggested,
+            name: place.name,
+            latitude: place.latitude,
+            longitude: place.longitude,
+          );
+        });
+        _saveLocal();
+      }
+    } catch (_) {
+      // No worse than the photo carrying no location at all.
     }
   }
 
@@ -1001,6 +1054,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       context,
       picker: _picker,
       remaining: 200 - _photoCount(),
+      session: ref.read(authSessionProvider),
+      audience: _audience,
+      onAudienceChanged: (value) => setState(() => _audience = value),
+      titleController: _postTitle,
+      onEditTitle: _editTitle,
     );
     if (selection == null || !mounted) return;
     final fromCamera = selection.fromCamera;
