@@ -303,10 +303,9 @@ class _PostTitleSheet extends StatefulWidget {
   final PostAboutTrip about;
   final PostPlace? place;
 
-  /// The account's stored fix — raw coordinates, no reverse geocode. Shown
-  /// only as a hint under the row while nothing has been picked yet; it is
-  /// never written into the post itself. A name-only place still beats a
-  /// coordinate, so this never overrides `place`.
+  /// The account's stored place, shown by name only as a hint under the row
+  /// while nothing has been picked yet; it is never written into the post
+  /// itself, and never overrides `place`.
   final UserLocation? accountFix;
 
   @override
@@ -525,8 +524,7 @@ class _PostTitleSheetState extends State<_PostTitleSheet> {
                                 Expanded(
                                   child: Text(
                                     'ตำแหน่งของคุณตอนนี้: '
-                                    '${widget.accountFix!.latitude.toStringAsFixed(4)}, '
-                                    '${widget.accountFix!.longitude.toStringAsFixed(4)}',
+                                    '${widget.accountFix!.name}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(

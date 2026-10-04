@@ -117,7 +117,8 @@ class TripsApi {
   /// ever a fallback: a photo that carries its own coordinates always wins,
   /// because a trip is usually written up at home days later. They also decide
   /// [GeneratedPostDraft.currentArea]. Omitted, the server falls back to the
-  /// fix stored by `PUT /users/me/location`, and then to nothing at all.
+  /// coordinates of the place stored by `PUT /users/me/location`, and then to
+  /// nothing at all.
   ///
   /// When the suggestions did come from here the answer carries a warning
   /// saying so — those mean "near you now", not "near the photo", so they have

@@ -23,6 +23,7 @@ import 'json.dart';
 @immutable
 class TripFeedQuery {
   const TripFeedQuery({
+    this.q,
     this.destination,
     this.type,
     this.styles = const <TravelStyle>[],
@@ -50,7 +51,16 @@ class TripFeedQuery {
     this.offset,
   });
 
-  /// Case-insensitive partial match on the trip's destination text.
+  /// Free text, matched case-insensitively against everything a trip shows as
+  /// words: title, destination, description, its resolved place, its creator,
+  /// a post's sections and a plan's stops.
+  ///
+  /// Words separated by spaces are AND'd — "คาเฟ่ เชียงใหม่" needs both, and
+  /// not in the same field. Capped at the 200 characters the endpoint takes.
+  final String? q;
+
+  /// Case-insensitive partial match on the trip's destination text alone.
+  /// [q] is the broader search; this one narrows to where a trip goes.
   final String? destination;
 
   /// Plan trips or photo posts. Absent returns both.
@@ -116,6 +126,7 @@ class TripFeedQuery {
   /// key, and one string per row is easier to read in a log. An empty list is
   /// dropped rather than sent as `?styles=`, which means the same thing.
   Map<String, dynamic> toQuery() => <String, dynamic>{
+        'q': _limited(_text(q), 200),
         'destination': _text(destination),
         'type': type?.wire,
         'styles': _joinWire(styles.map((style) => style.wire)),
@@ -152,6 +163,7 @@ class TripFeedQuery {
     int? offset,
   }) =>
       TripFeedQuery(
+        q: q,
         destination: destination,
         type: type,
         styles: styles,
@@ -184,6 +196,11 @@ String? _text(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
+
+/// Trims to what the endpoint accepts rather than letting it answer 400 for a
+/// field the traveller can type into freely.
+String? _limited(String? value, int max) =>
+    value == null || value.length <= max ? value : value.substring(0, max);
 
 String? _joinWire(Iterable<String> wires) =>
     wires.isEmpty ? null : wires.join(',');

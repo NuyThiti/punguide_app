@@ -418,10 +418,10 @@ void main() {
           'likeCount': 0,
           'remixCount': 0,
           'createdAt': '2026-09-23T00:00:00.000Z',
-          'updatedAt': '2026-09-23T00:00:00.000Z',
+          'updatedAt': '2026-10-04T00:00:00.000Z',
         };
 
-    test('is kept for a destination the server resolved', () {
+    test('is read for a destination the server resolved', () {
       final trip = TripListItem.fromJson(
         row(place: <String, dynamic>{
           'name': 'น่าน',
@@ -434,24 +434,20 @@ void main() {
       expect(trip.distanceKm, 549);
     });
 
-    test('is dropped for a row with no resolved destination', () {
-      // What posts actually come back as: no `destinationPlace`, and a
-      // distance of 20015 km — π × the Earth's radius, the farthest a great
-      // circle can reach, which is what a null pair measures to rather than
-      // anywhere real.
-      final trip = TripListItem.fromJson(row()..['distanceKm'] = 20015);
+    test('is read on a post, which carries no resolved place of its own', () {
+      // The server measures a post from the nearest located section of its
+      // `contents`, so a row with no `destinationPlace` still has a real
+      // figure — the client must not second-guess it.
+      final trip = TripListItem.fromJson(row()..['distanceKm'] = 8);
 
       expect(trip.destinationPlace, isNull);
-      expect(trip.distanceKm, isNull);
+      expect(trip.distanceKm, 8);
     });
 
-    test('is dropped for a place the server has not located', () {
-      final trip = TripListItem.fromJson(
-        row(place: <String, dynamic>{'name': 'พระนคร'})..['distanceKm'] = 20015,
-      );
-
-      expect(trip.destinationPlace?.hasCoordinates, isFalse);
-      expect(trip.distanceKm, isNull);
+    test('is null when the server sent none', () {
+      // Absent is "unknown" — the request carried no coordinates, or nothing
+      // about the trip can be placed. Never 0, which would read as "here".
+      expect(TripListItem.fromJson(row()).distanceKm, isNull);
     });
   });
 

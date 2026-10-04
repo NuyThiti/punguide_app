@@ -14,11 +14,10 @@ enum LocationPermissionStatus {
 
 /// A position read from the device.
 ///
-/// [accuracyMeters] and [capturedAt] exist for `PUT /users/me/location`, which
-/// stores both alongside the coordinates. [capturedAt] is when the *device*
-/// took the reading — the API rejects one more than a day old or more than
-/// five minutes into the future, so a cached fix has to be aged before it is
-/// sent anywhere.
+/// [capturedAt] is when the *device* took the reading. A cached fix can be
+/// days old, so `LocationSync` ages it before treating it as where the
+/// traveller is. The account itself stores neither field any more — it keeps
+/// the nearest place, not the reading.
 @immutable
 class LocationFix {
   const LocationFix({

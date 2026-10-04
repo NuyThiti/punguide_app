@@ -9,15 +9,11 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../../../shared/widgets/full_image_viewer.dart';
-import '../../../auth/domain/auth_session.dart';
 import '../../domain/models/post_draft.dart';
 import '../../domain/services/trip_photo_grouper.dart';
 import '../providers/place_pin_providers.dart';
 import 'photo_source_sheet.dart';
 import 'place_pin_picker.dart';
-import 'post_about_trip.dart';
-import 'post_audience_chip.dart';
-import 'post_title_field.dart';
 
 class PhotoImportSelection {
   const PhotoImportSelection(this.files, this.place, this.fromCamera);
@@ -30,31 +26,22 @@ class PhotoImportSelection {
 /// screen, its own dark cap in place of the composer's) — pushed the same
 /// way any other composer step is.
 ///
-/// It still carries the post's own identity card (Figma keeps "who's
-/// posting" and "Title.." on screen here too), so the title and audience
-/// edited from this page are the composer's own state, not a copy: that is
-/// why they arrive as the controller and the callbacks the composer already
-/// owns, rather than as a one-shot value.
+/// The title is the composer's own `TextEditingController`, so typing here
+/// writes straight into the same draft rather than a copy that would need
+/// copying back. Who's posting and the audience stay off this screen —
+/// there is nothing here for either to do.
 Future<PhotoImportSelection?> showCreateFromPhotosSheet(
   BuildContext context, {
   required ImagePicker picker,
   required int remaining,
-  required AuthSession? session,
-  required PostAudience audience,
-  required ValueChanged<PostAudience> onAudienceChanged,
   required TextEditingController titleController,
-  required VoidCallback onEditTitle,
 }) =>
     Navigator.of(context).push<PhotoImportSelection>(
       MaterialPageRoute(
         builder: (_) => _PhotoImportPage(
           picker: picker,
           remaining: remaining,
-          session: session,
-          audience: audience,
-          onAudienceChanged: onAudienceChanged,
           titleController: titleController,
-          onEditTitle: onEditTitle,
         ),
       ),
     );
@@ -63,26 +50,17 @@ class _PhotoImportPage extends ConsumerStatefulWidget {
   const _PhotoImportPage({
     required this.picker,
     required this.remaining,
-    required this.session,
-    required this.audience,
-    required this.onAudienceChanged,
     required this.titleController,
-    required this.onEditTitle,
   });
   final ImagePicker picker;
   final int remaining;
-  final AuthSession? session;
-  final PostAudience audience;
-  final ValueChanged<PostAudience> onAudienceChanged;
   final TextEditingController titleController;
-  final VoidCallback onEditTitle;
 
   @override
   ConsumerState<_PhotoImportPage> createState() => _PhotoImportPageState();
 }
 
 class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
-  late PostAudience _audience = widget.audience;
   final _photos = <({XFile file, bool camera})>[];
   final Map<String, TripPhoto> _metadata = {};
   PostPlace? _place;
@@ -168,16 +146,6 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
     setState(() => _place = place == clearedPlacePin ? null : place);
   }
 
-  /// Mirrors the composer's own `_pickAudience`: this page keeps its own copy
-  /// so the chip reflects a change instantly, and reports it back so the
-  /// composer is not left behind once this page closes.
-  Future<void> _pickAudience() async {
-    final picked = await showAudiencePicker(context, _audience);
-    if (picked == null || !mounted) return;
-    setState(() => _audience = picked);
-    widget.onAudienceChanged(picked);
-  }
-
   void _removePhoto(int index) {
     setState(() {
       final removed = _photos.removeAt(index);
@@ -209,30 +177,15 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
                   18,
                   18,
                   18,
-                  18 +
-                      MediaQuery.viewInsetsOf(context).bottom +
-                      MediaQuery.paddingOf(context).bottom,
+                  18 + MediaQuery.viewInsetsOf(context).bottom,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // "Who's posting" and "Title.." stay on screen here too
-                    // (Figma 2480-80792) — the same card the composer shows,
-                    // reading and writing its own title and audience state.
-                    AnimatedBuilder(
-                      animation: widget.titleController,
-                      builder: (context, _) => PostIdentityCard(
-                        session: widget.session,
-                        audience: _audience,
-                        onChangeAudience: _pickAudience,
-                        title: widget.titleController.text,
-                        styles: const [],
-                        customStyles: const [],
-                        onEditTitle: widget.onEditTitle,
-                        about: const PostAboutTrip(),
-                        onEditAbout: () {},
-                      ),
-                    ),
+                    // Just the title here — no account row, no audience
+                    // chip: the composer's own identity card already owns
+                    // those, and this page has nothing new to say about them.
+                    _TitleField(controller: widget.titleController),
                     const SizedBox(height: 20),
                     if (_photos.isEmpty) ...[
                       const _EmptyPhotosIllustration(),
@@ -256,13 +209,11 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const SizedBox(height: 24),
                       // Figma 2480-80792 has no location prompt before a
                       // photo is even picked — the place only ever shows up
                       // afterward, in `_ResolvedPlaceRow`, auto-suggested or
-                      // picked by hand.
-                      _AddPhotosButton(
-                          busy: _picking, onTap: _picking ? null : _addPhotos),
+                      // picked by hand. The one "add a photo" action lives in
+                      // the pinned bar now, so it is not repeated here too.
                     ] else ...[
                       _ResolvedPlaceRow(place: _place, onTap: _pickLocation),
                       const SizedBox(height: 12),
@@ -292,24 +243,24 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(_error!,
                               style: const TextStyle(color: Colors.red))),
-                    const SizedBox(height: 20),
-                    // _PublishCta(
-                    //   enabled: _photos.isNotEmpty && !_picking,
-                    //   onTap: () => Navigator.pop(
-                    //       context,
-                    //       PhotoImportSelection(
-                    //         _photos.map((p) => p.file).toList(),
-                    //         _place,
-                    //         _photos.every((p) => p.camera),
-                    //       )),
-                    // ),
-                    // const SizedBox(height: 4),
-                    // TextButton(
-                    //     onPressed: () => Navigator.pop(context),
-                    //     child: const Text('ยกเลิก')),
                   ],
                 ),
               ),
+            ),
+            _PublishBar(
+              // Nothing to submit yet without a photo — rather than a CTA
+              // sitting there disabled, the bar offers the one action that's
+              // actually available until that changes.
+              hasPhotos: _photos.isNotEmpty,
+              busy: _picking,
+              onAddPhotos: _addPhotos,
+              onPublish: () => Navigator.pop(
+                  context,
+                  PhotoImportSelection(
+                    _photos.map((p) => p.file).toList(),
+                    _place,
+                    _photos.every((p) => p.camera),
+                  )),
             ),
           ],
         ),
@@ -361,17 +312,20 @@ class _PhotoImportHeader extends StatelessWidget {
                     height: 44,
                     child: Row(
                       children: [
-                        Material(
-                          color: Colors.white,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            onTap: onBack,
-                            customBorder: const CircleBorder(),
-                            child: const SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Icon(Icons.chevron_left,
-                                  color: AppColors.postImportHeroBg),
+                        Tooltip(
+                          message: 'ย้อนกลับ',
+                          child: Material(
+                            color: Colors.white,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              onTap: onBack,
+                              customBorder: const CircleBorder(),
+                              child: const SizedBox(
+                                width: 40,
+                                height: 40,
+                                child: Icon(Icons.chevron_left,
+                                    color: AppColors.postImportHeroBg),
+                              ),
                             ),
                           ),
                         ),
@@ -416,6 +370,56 @@ class _PhotoImportHeader extends StatelessWidget {
 
 Future<TripPhoto> _readPhoto((Uint8List, String) input) =>
     readTripPhoto(input.$1, input.$2);
+
+/// A plain title input — the same field style the Title sheet uses, minus
+/// everything that sheet also does (activities, about, place). Bound
+/// directly to the composer's own controller, so typing here needs no
+/// separate save step to reach the draft.
+class _TitleField extends StatelessWidget {
+  const _TitleField({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      maxLength: 200,
+      textInputAction: TextInputAction.done,
+      style: const TextStyle(
+        color: AppColors.foreground,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        counterText: '',
+        hintText: 'Title..',
+        hintStyle: const TextStyle(
+          color: AppColors.postFieldHint,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+        suffixIcon: const Icon(Icons.edit_outlined,
+            size: 20, color: AppColors.postPurple),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.chipBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.chipBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide:
+              const BorderSide(color: AppColors.postPurple, width: 1.3),
+        ),
+      ),
+    );
+  }
+}
 
 /// The place row once photos exist — a plain row over a divider, reading
 /// whatever `_place` currently holds (auto-suggested from a photo's GPS, or
@@ -470,7 +474,7 @@ class _ResolvedPlaceRow extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Container(height: 2, color: Colors.black),
+        // Container(height: 2, color: Colors.black),
       ],
     );
   }
@@ -700,6 +704,47 @@ class _DashedAddPhotosButton extends StatelessWidget {
         style: const TextStyle(
             color: AppColors.postPurple, fontWeight: FontWeight.w700),
       ),
+    );
+  }
+}
+
+/// The bar pinned to the bottom of the page — the same shell the composer's
+/// own Save Draft/Next bar uses, so the CTA stays put as the body scrolls
+/// underneath it rather than trailing off at the end of the content.
+///
+/// It is one button, not a CTA that merely dims: with nothing picked yet,
+/// "add a photo" is the only action that does anything, so that is what
+/// shows. The gradient "สร้างโพสเลย" only takes its place once a photo exists
+/// — past the only thing it actually does blocking it.
+class _PublishBar extends StatelessWidget {
+  const _PublishBar({
+    required this.hasPhotos,
+    required this.busy,
+    required this.onAddPhotos,
+    required this.onPublish,
+  });
+
+  final bool hasPhotos;
+  final bool busy;
+  final VoidCallback onAddPhotos;
+  final VoidCallback onPublish;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        18,
+        12,
+        18,
+        12 + MediaQuery.paddingOf(context).bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.screen,
+        border: Border(top: BorderSide(color: AppColors.line)),
+      ),
+      child: hasPhotos
+          ? _PublishCta(enabled: !busy, onTap: onPublish)
+          : _AddPhotosButton(busy: busy, onTap: busy ? null : onAddPhotos),
     );
   }
 }

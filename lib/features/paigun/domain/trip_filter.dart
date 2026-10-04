@@ -134,8 +134,16 @@ class TripFilter {
   ///  * a **typed budget** overrides the bracket rather than narrowing it
   ///    further, the way ระบุเอง does in the create wizard, so the tier is left
   ///    off when there is a figure.
+  ///
+  /// [type] and [query] are the board's own controls — the chip row and the
+  /// search box — rather than the wizard's, and ride along here because one
+  /// request carries the lot. The search goes up as `q`, which reads every
+  /// word a trip shows, not as `destination`, which only reads where it goes:
+  /// someone typing "คาเฟ่" means the cafés in it, not a place called that.
   TripFeedQuery toFeedQuery({
     required FeedSort sort,
+    TripType? type,
+    String? query,
     PaigunOrigin? origin,
     int? limit,
   }) {
@@ -166,6 +174,10 @@ class TripFilter {
     final span = lengthInDays;
 
     return TripFeedQuery(
+      // The chip row and the search box, which belong to the board rather than
+      // to the wizard — they narrow the same request all the same.
+      type: type,
+      q: query,
       styles: styleEnums,
       customStyles: freeStyles,
       constraints: constraintEnums,

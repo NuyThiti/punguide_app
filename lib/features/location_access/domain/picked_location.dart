@@ -15,6 +15,7 @@ class PickedLocation {
     required this.longitude,
     this.address,
     this.distanceKm,
+    this.placeId,
   });
 
   /// What the sheet headlines — "เขตพระนคร".
@@ -27,6 +28,10 @@ class PickedLocation {
   final double latitude;
   final double longitude;
   final double? distanceKm;
+
+  /// Our own `places.id`, when the pin is one of our places — a search row or
+  /// the account's stored location. Null for a point tapped on the map.
+  final String? placeId;
 
   /// "0.1km" — always one decimal under 10 km, whole kilometres beyond that,
   /// which is the design's own precision.
@@ -50,6 +55,7 @@ class PickedLocation {
         latitude: latitude,
         longitude: longitude,
         distanceKm: distanceKm,
+        placeId: placeId,
       );
 
   /// The same place measured from somewhere else. Used when a fix arrives
@@ -61,6 +67,7 @@ class PickedLocation {
       address: address,
       latitude: latitude,
       longitude: longitude,
+      placeId: placeId,
       distanceKm: distanceKmBetween(
         origin.latitude,
         origin.longitude,

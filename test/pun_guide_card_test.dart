@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/api/pluno_api.dart';
+import 'package:pluno/core/theme/app_colors.dart';
 import 'package:pluno/features/home/presentation/widgets/pun_guide_card.dart';
 
 import 'support/home_feed_fixtures.dart';
+
+/// The colour of the pill wrapped round [label].
+Color chipColourOf(WidgetTester tester, String label) {
+  final box = tester.widget<Container>(
+    find
+        .ancestor(of: find.text(label), matching: find.byType(Container))
+        .first,
+  );
+  return (box.decoration! as BoxDecoration).color!;
+}
 
 Widget _card(
   TripListItem trip, {
@@ -53,8 +64,12 @@ void main() {
     expect(find.text('2.3 Km'), findsOneWidget);
     expect(find.text('Top PunGuide'), findsOneWidget);
     expect(find.text('Phra Nakhon, Thai'), findsOneWidget);
-    // Budget reads as an estimate, and the counts are abbreviated.
-    expect(find.text('1 วัน • ฿ ~200 /คน'), findsOneWidget);
+    // The facts line is rich text so its separator can be violet.
+    expect(find.textContaining('1 วัน', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('฿ 200 /คน', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text('3.5K'), findsOneWidget);
     expect(find.text('2K'), findsOneWidget);
   });
@@ -87,7 +102,61 @@ void main() {
     expect(find.text('ทริปที่ยังไม่มีข้อมูลครบ'), findsOneWidget);
     expect(find.text('ผู้ใช้ที่ถูกลบ'), findsOneWidget);
     // Neither fact is known, so the line is empty rather than showing zeroes.
-    expect(find.textContaining('วัน'), findsNothing);
-    expect(find.textContaining('฿'), findsNothing);
+    expect(find.textContaining('วัน', findRichText: true), findsNothing);
+    expect(find.textContaining('฿', findRichText: true), findsNothing);
+  });
+
+  testWidgets('a plan wears the violet accent and says แผนทริป',
+      (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(durationDays: 2, totalBudget: 2000),
+          distanceLabel: '1 Km'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('แผนทริป'), findsOneWidget);
+    expect(find.text('คู่มือ'), findsNothing);
+    expect(chipColourOf(tester, '1 Km'), AppColors.cardPlanAccent);
+    // Rendered as rich text so the bullet can be violet.
+    expect(
+      find.textContaining('2 วัน', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('฿ 2,000 /คน', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a guide wears the lime accent and says คู่มือ', (tester) async {
+    await tester.pumpWidget(
+      _card(
+        TripListItem.fromJson(
+          feedTripJson(type: 'content', placeCount: 7),
+        ),
+        distanceLabel: '8.5 Km',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('คู่มือ'), findsOneWidget);
+    expect(find.text('แผนทริป'), findsNothing);
+    expect(chipColourOf(tester, '8.5 Km'), AppColors.cardGuideAccent);
+    // A guide is measured in places, not days and money.
+    expect(find.textContaining('7 สถานที่', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('a plan that costs nothing reads ฟรี, not a blank', (tester) async {
+    await tester.pumpWidget(_card(feedTrip(durationDays: 0, totalBudget: 0)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('ครึ่งวัน', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('ฟรี / คน', findRichText: true),
+      findsOneWidget,
+    );
   });
 }

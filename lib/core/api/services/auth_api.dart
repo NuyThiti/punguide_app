@@ -130,15 +130,16 @@ class UsersApi {
     return UserLocation.fromEnvelope(body);
   }
 
-  /// Saves the position, replacing whatever was there.
+  /// Stores one of our places as where the traveller is, replacing whatever
+  /// was there.
   ///
-  /// 400 when the coordinates are out of range, or when `capturedAt` is more
-  /// than five minutes ahead of the server or more than a day behind it — so
-  /// never hand this a cached reading without checking its age first.
-  Future<UserLocation?> saveLocation(UserLocation location) async {
+  /// [placeId] is a `places.id` from a search or suggest result — not a
+  /// Google place id. Anything but a UUID, or any extra field (the old
+  /// `lat`/`lng` body), is a 400; a UUID with no such place is a 404.
+  Future<UserLocation?> saveLocation(String placeId) async {
     final body = await _client.put<Map<String, dynamic>>(
       '/users/me/location',
-      body: location.toJson(),
+      body: <String, dynamic>{'placeId': placeId},
     );
     return UserLocation.fromEnvelope(body);
   }

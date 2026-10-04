@@ -67,18 +67,47 @@ final _rows = <Map<String, dynamic>>[
     type: 'content',
     title: 'เดินเล่นเมืองเก่าภูเก็ต',
     destination: 'ภูเก็ต',
-    country: 'ไทย',
-    latitude: 7.8804,
-    longitude: 98.3923,
+    country: null,
     // A post carries neither of these, and the card must not print the trip
     // it describes as if they were the post's own.
     durationDays: 2,
     totalBudget: 4000,
     placeCount: 5,
     creatorName: 'BKKwalker',
+    // A post has no resolved place of its own; the server measures it from
+    // the nearest located section of its contents.
     distanceKm: 680,
   ),
 ];
+
+/// A chip in the filter bar, not the same word printed on a card.
+Finder _chip(String label) => find.descendant(
+      of: find.byType(PaigunFilterBar),
+      matching: find.text(label),
+    );
+
+/// Brings a chip into the row's viewport.
+///
+/// The row is a lazy horizontal list, so the last chip has no element at all
+/// until it is scrolled to — `ensureVisible` would throw on nothing, and a tap
+/// on a clipped chip lands on whatever is under it.
+Future<void> _revealChip(WidgetTester tester, String label) async {
+  for (var attempt = 0; attempt < 5; attempt++) {
+    if (_chip(label).evaluate().isNotEmpty) {
+      await tester.ensureVisible(_chip(label));
+      await tester.pumpAndSettle();
+      return;
+    }
+    await tester.drag(find.byType(PaigunFilterBar), const Offset(-160, 0));
+    await tester.pumpAndSettle();
+  }
+}
+
+Future<void> _tapChip(WidgetTester tester, String label) async {
+  await _revealChip(tester, label);
+  await tester.tap(_chip(label));
+  await tester.pumpAndSettle();
+}
 
 void _phone(WidgetTester tester, {double height = 852}) {
   tester.view.physicalSize = Size(393 * 3, height * 3);
@@ -95,17 +124,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ไปกัน'), findsOneWidget);
-    expect(find.text('ตำแหน่งของฉัน'), findsOneWidget);
+    // One line for the origin now — the caption above it said nothing the pin
+    // did not already say — and the search box under it.
     expect(find.text('เขตพระนคร, กรุงเทพ 10200'), findsOneWidget);
-    expect(find.text('ทั้งหมด'), findsOneWidget);
-    // Each appears twice with ทั้งหมด selected: once as a chip, once as a
-    // section heading.
-    expect(find.text('Near Me'), findsNWidgets(2));
-    expect(find.text('Top PunGuide'), findsAtLeastNWidgets(2));
+    expect(find.text('ตำแหน่งของฉัน'), findsNothing);
+    expect(find.text('สถานที่ใกล้คุณ'), findsOneWidget);
+
+    // Four chips over one wall, with ตัวกรอง at the head of the row. Scoped
+    // to the bar: a card wears its own type pill reading "คู่มือ" too.
+    for (final label in const ['ทั้งหมด', 'คู่มือ', 'แผนทริป']) {
+      expect(_chip(label), findsOneWidget, reason: label);
+    }
+    expect(find.byIcon(Icons.tune), findsOneWidget);
     expect(find.text('Paigun'), findsOneWidget);
-    // The Top PunGuide wall sits below the fold; its heading builds once the
-    // list is scrolled to it.
-    expect(find.byType(PaigunSectionHeader), findsOneWidget);
+    // The fourth chip sits past the fold of a scrolling row — asserted last,
+    // because reaching it carries ตัวกรอง off the other end.
+    await _revealChip(tester, 'Top PunGuide');
+    expect(_chip('Top PunGuide'), findsOneWidget);
+    // One wall under one row of chips — the headings the two walls used to
+    // carry are gone with them.
+    expect(find.text('Near Me'), findsNothing);
   });
 
   testWidgets('the sort chips stay put while the wall scrolls', (tester) async {
@@ -118,15 +156,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // "ทั้งหมด" belongs to the chip row alone; "Near Me" is also a heading.
     final chip = find.text('ทั้งหมด');
-    final heading = find.text('Near Me').last;
+    final heading = find.text('หลวงพระบาง 3 วัน 2 คืน').first;
     expect(chip, findsOneWidget);
     final chipBefore = tester.getTopLeft(chip);
     final headingBefore = tester.getTopLeft(heading);
 
-    // Drag the wall itself: the chip row is a horizontal ListView too, and
-    // dragging that one vertically would scroll nothing.
+    // Drag a card, not the chips: the chip row is a horizontal ListView too,
+    // and dragging that one vertically would scroll nothing.
     await tester.drag(heading, const Offset(0, -450));
     await tester.pumpAndSettle();
 
@@ -151,7 +188,10 @@ void main() {
     // Exact, not `textContaining`: a genuine "680 Km" contains "0 Km" too.
     expect(find.text('0 Km'), findsNothing);
     // Duration and budget share one run of text under the divider.
-    expect(find.textContaining('฿ ~200 /คน'), findsWidgets);
+    expect(
+      find.textContaining('฿ 200 /คน', findRichText: true),
+      findsWidgets,
+    );
   });
 
   testWidgets('a post prints its places where a plan prints days and budget',
@@ -163,50 +203,92 @@ void main() {
 
     // The post's own fact, not the schedule or budget of the trip it is about.
     expect(find.text('5 สถานที่'), findsWidgets);
-    expect(find.textContaining('฿ ~4,000'), findsNothing);
+    expect(
+      find.textContaining('฿ 4,000', findRichText: true),
+      findsNothing,
+    );
     expect(find.textContaining('2 วัน'), findsNothing);
     // The plan beside it still reads as a plan.
-    expect(find.textContaining('฿ ~200 /คน'), findsWidgets);
+    expect(
+      find.textContaining('฿ 200 /คน', findRichText: true),
+      findsWidgets,
+    );
   });
 
-  testWidgets(
-      'each wall asks the server for its own sort, measured from the '
-      'traveller', (tester) async {
+  testWidgets('the board asks one question, measured from the traveller',
+      (tester) async {
     _phone(tester);
 
     final adapter = feedAdapter(_rows);
     await tester.pumpWidget(_harness(adapter));
     await tester.pumpAndSettle();
 
+    // One wall, one request — and it carries the origin, because `distanceKm`
+    // is what puts the chip on a card.
     final queries = adapter.queriesOf('GET /trips');
-    // ทั้งหมด shows both walls, so both questions go up — and both carry the
-    // origin, because `distanceKm` is what puts the chip on a card.
-    expect(
-      queries.map((query) => query['sort']),
-      containsAll(<String>['nearest', 'popular']),
-    );
-    for (final query in queries) {
-      expect(query['lat'], 13.7563);
-      expect(query['lng'], 100.4930);
-      // Nothing was answered in the wizard, so nothing else may be sent: the
-      // endpoint rejects a key it does not know.
-      expect(query.keys.toSet(), <String>{'lat', 'lng', 'sort'});
-    }
+    expect(queries, hasLength(1));
+    // Nothing was answered in the wizard and nothing typed, so nothing else
+    // may be sent: the endpoint rejects a key it does not know.
+    expect(queries.single, <String, dynamic>{
+      'lat': 13.7563,
+      'lng': 100.4930,
+      'sort': 'nearest',
+    });
   });
 
-  testWidgets('the Near Me chip leaves one wall, in the order it arrived',
+  testWidgets('a type chip asks the server for that type, still nearest first',
       (tester) async {
+    _phone(tester);
+
+    final adapter = feedAdapter(_rows);
+    await tester.pumpWidget(_harness(adapter));
+    await tester.pumpAndSettle();
+
+    await _tapChip(tester, 'คู่มือ');
+
+    final guide = adapter.queriesOf('GET /trips').last;
+    expect(guide['type'], 'content');
+    // A type chip answers a different question from a sort, so the wall stays
+    // nearest-first under it.
+    expect(guide['sort'], 'nearest');
+
+    await _tapChip(tester, 'แผนทริป');
+    expect(adapter.queriesOf('GET /trips').last['type'], 'plan_trip');
+
+    await _tapChip(tester, 'Top PunGuide');
+    final top = adapter.queriesOf('GET /trips').last;
+    expect(top['sort'], 'popular');
+    // Top PunGuide re-orders rather than narrowing, so it names no type.
+    expect(top.containsKey('type'), isFalse);
+  });
+
+  testWidgets('the search box narrows the wall by free text', (tester) async {
+    _phone(tester);
+
+    final adapter = feedAdapter(_rows);
+    await tester.pumpWidget(_harness(adapter));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '  พระนคร  ');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    // Trimmed, and sent as `q` — which reads every word a trip shows, not
+    // only where it goes — rather than taking the traveller to another screen.
+    final searched = adapter.queriesOf('GET /trips').last;
+    expect(searched['q'], 'พระนคร');
+    expect(searched.containsKey('destination'), isFalse);
+    expect(searched['sort'], 'nearest');
+    expect(find.byType(PaigunCard), findsWidgets);
+  });
+
+  testWidgets('the wall keeps the order the server sent', (tester) async {
     _phone(tester);
 
     await tester.pumpWidget(_harness(feedAdapter(_rows)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Near Me').first);
-    await tester.pumpAndSettle();
-
-    // One wall, not two: every card on the page belongs to Near Me.
     expect(find.byType(PaigunCard), findsNWidgets(_rows.length));
-    expect(find.byType(PaigunSectionHeader), findsOneWidget);
 
     // The board does not re-sort what the server ordered. The wall is two
     // columns, so the first row lands top-left.

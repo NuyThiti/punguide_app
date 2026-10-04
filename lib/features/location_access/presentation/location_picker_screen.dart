@@ -77,16 +77,12 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
 
     final stored = await ref.read(locationSyncProvider).pull();
     if (!mounted || stored == null || _picked != null) return;
+    // A place, not a point: it arrives with its own name and address, so
+    // there is nothing for [_nameCurrentPin] to look up.
     setState(
-      () => _picked = PickedLocation(
-        name: 'ตำแหน่งล่าสุดที่บันทึกไว้',
-        address: '${stored.latitude.toStringAsFixed(4)}, '
-            '${stored.longitude.toStringAsFixed(4)}',
-        latitude: stored.latitude,
-        longitude: stored.longitude,
-      ).measuredFrom(ref.read(locationFixProvider)),
+      () => _picked =
+          pickedFromStored(stored).measuredFrom(ref.read(locationFixProvider)),
     );
-    await _nameCurrentPin();
   }
 
   /// Trades a pin's coordinates for the name of the area it sits in.
@@ -231,6 +227,7 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     // Also not awaited, for the same reason — and it is skipped outright when
     // signed out, which is why the local copy above is the one that matters.
     ref.read(locationSyncProvider).pushChosen(
+          placeId: place.placeId,
           latitude: origin.latitude,
           longitude: origin.longitude,
         );

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../location_access/data/location_sync.dart';
 import '../../../location_access/domain/location_service.dart';
 import '../../../location_access/presentation/providers/location_providers.dart';
 import '../../domain/models/post_draft.dart';
@@ -58,6 +59,7 @@ class _PlacePinPicker extends ConsumerStatefulWidget {
 class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
   final _controller = TextEditingController();
   bool _asking = false;
+  bool _locating = false;
 
   @override
   void dispose() {
@@ -97,6 +99,39 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
     router.pushNamed(AppRoute.locationPicker.name);
   }
 
+  /// "Use Current location" — the account's own stored fix from
+  /// `GET /users/me/location`, not the search panel's `origin` (which can be
+  /// this run's fresher device reading, never mirrored onto the account). A
+  /// traveller choosing this row means their position on file, the same point
+  /// every other screen calls "where I am".
+  Future<void> _useCurrentLocation(List<PostPlace> nearby) async {
+    setState(() => _locating = true);
+    final stored = await ref.read(locationSyncProvider).pull();
+    if (!mounted) return;
+    setState(() => _locating = false);
+    Navigator.of(context).pop(_currentLocationPlace(stored, nearby));
+  }
+
+  /// The traveller's own position as a pin. It borrows the nearest place's
+  /// address because the API has no reverse geocode — and only when that
+  /// place is close enough to describe where they are standing. Failing
+  /// that, the stored place's own address: the account keeps a `places` row,
+  /// so there is always one to hand when anything is stored at all.
+  PostPlace _currentLocationPlace(UserLocation? stored, List<PostPlace> nearby) {
+    final closest = nearby.isEmpty ? null : nearby.first;
+    final near = (closest?.distanceKm ?? 1) < 0.15;
+    final own = stored == null ? null : postPlaceFromSearchResult(stored.place);
+    return PostPlace(
+      id: '',
+      name: 'ตำแหน่งปัจจุบัน',
+      area: near ? closest!.area : own?.area,
+      address: near ? closest!.address : own?.address,
+      latitude: stored?.latitude,
+      longitude: stored?.longitude,
+      distanceKm: stored == null ? null : 0,
+    );
+  }
+
   /// What fills the sheet: the assistant's candidates first when it drafted
   /// any, then whatever the traveller is searching for or standing near.
   Widget _body({
@@ -119,7 +154,9 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
                 results: results,
                 rows: rows,
                 showCurrent: ref.watch(hasDeviceFixProvider),
+                locating: _locating,
                 onPick: (place) => Navigator.of(context).pop(place),
+                onUseCurrentLocation: () => _useCurrentLocation(rows),
                 shrinkWrap: true,
               ),
       );
@@ -132,7 +169,9 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
       results: results,
       rows: rows,
       showCurrent: !searching && ref.watch(hasDeviceFixProvider),
+      locating: _locating,
       onPick: (place) => Navigator.of(context).pop(place),
+      onUseCurrentLocation: () => _useCurrentLocation(rows),
     );
   }
 
@@ -354,7 +393,9 @@ class _Results extends StatelessWidget {
     required this.results,
     required this.rows,
     required this.showCurrent,
+    required this.locating,
     required this.onPick,
+    required this.onUseCurrentLocation,
     this.shrinkWrap = false,
   });
 
@@ -365,7 +406,11 @@ class _Results extends StatelessWidget {
   /// The device knows where the traveller is, so the list can be led by it.
   final bool showCurrent;
 
+  /// "Use Current location" is fetching the account's stored fix.
+  final bool locating;
+
   final ValueChanged<PostPlace> onPick;
+  final VoidCallback onUseCurrentLocation;
 
   /// Nested under the suggestions, where the scroll belongs to the parent.
   final bool shrinkWrap;
@@ -398,35 +443,24 @@ class _Results extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         if (showCurrent && index == 0) {
-          return _CurrentLocationRow(onTap: () => onPick(_here(rows)));
+          return _CurrentLocationRow(
+            busy: locating,
+            onTap: locating ? null : onUseCurrentLocation,
+          );
         }
         final place = rows[index - (showCurrent ? 1 : 0)];
         return _PlaceRow(place: place, onTap: () => onPick(place));
       },
     );
   }
-
-  /// The traveller's own position as a pin. It borrows the nearest place's
-  /// address because the API has no reverse geocode — and only when that place
-  /// is close enough to describe where they are standing.
-  PostPlace _here(List<PostPlace> nearby) {
-    final closest = nearby.isEmpty ? null : nearby.first;
-    final near = (closest?.distanceKm ?? 1) < 0.15;
-    return PostPlace(
-      id: '',
-      name: 'ตำแหน่งปัจจุบัน',
-      area: near ? closest!.area : null,
-      address: near ? closest!.address : null,
-      distanceKm: 0,
-    );
-  }
 }
 
 /// "Use Current location", on its own tinted card at the head of the list.
 class _CurrentLocationRow extends StatelessWidget {
-  const _CurrentLocationRow({required this.onTap});
+  const _CurrentLocationRow({required this.onTap, this.busy = false});
 
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -450,8 +484,13 @@ class _CurrentLocationRow extends StatelessWidget {
                     color: AppColors.screen,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.my_location,
-                      size: 19, color: AppColors.locationPin),
+                  child: busy
+                      ? const Padding(
+                          padding: EdgeInsets.all(9),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.my_location,
+                          size: 19, color: AppColors.locationPin),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(

@@ -102,8 +102,10 @@ class LocationFixController extends Notifier<LocationFixPoint?> {
   /// Makes sure there is *some* position to measure from, without insisting on
   /// the GPS.
   ///
-  /// The account's stored fix lands first: it costs one request, no hardware
-  /// and no wait, which is the whole reason it is kept. The device is then
+  /// The account's stored place lands first: it costs one request, no
+  /// hardware and no wait, which is the whole reason it is kept. It is the
+  /// place's coordinates, not the reading that chose it — close enough to
+  /// measure a trip's distance from. The device is then
   /// asked for a fresher one, which replaces it and syncs back up if the
   /// traveller has moved — the "update on app open" half of the contract.
   Future<void> ensureFix() async {
@@ -260,6 +262,17 @@ PickedLocation _toPicked(Place place) => PickedLocation(
       address: _shortAddress(place.address),
       latitude: place.latitude!,
       longitude: place.longitude!,
+      placeId: place.id,
+    );
+
+/// The account's stored place as a pin — already named, so unlike a bare
+/// coordinate it needs no [PlaceNamer] lookup.
+PickedLocation pickedFromStored(UserLocation stored) => PickedLocation(
+      name: stored.name,
+      address: _shortAddress(stored.address),
+      latitude: stored.latitude,
+      longitude: stored.longitude,
+      placeId: stored.placeId,
     );
 
 /// The tail of a Google address, as the design prints it: "Bangkok 10200".

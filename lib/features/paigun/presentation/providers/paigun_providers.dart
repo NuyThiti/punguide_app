@@ -7,14 +7,37 @@ import '../../data/paigun_origin_store.dart';
 import '../../domain/nearby_trip.dart';
 import '../../domain/trip_filter.dart';
 
-/// The three chips across the top of the ไปกัน board.
-enum PaigunFilter { all, nearMe, topPunGuide }
+/// The chips across the top of the ไปกัน board (Figma 2480-67909).
+///
+/// Three of them narrow by what a trip *is* and the fourth re-orders, which is
+/// why they are one row rather than two controls: whichever is in force, the
+/// board below is a single wall.
+enum PaigunFilter {
+  all,
+  guide,
+  plan,
+  topPunGuide;
 
-extension PaigunFilterLabel on PaigunFilter {
   String get label => switch (this) {
         PaigunFilter.all => 'ทั้งหมด',
-        PaigunFilter.nearMe => 'Near Me',
+        PaigunFilter.guide => 'คู่มือ',
+        PaigunFilter.plan => 'แผนทริป',
         PaigunFilter.topPunGuide => 'Top PunGuide',
+      };
+
+  /// What the chip asks `GET /trips` for.
+  ///
+  /// Only Top PunGuide changes the ordering; the rest stay nearest-first,
+  /// because the whole board is "what is around me" and a type chip answers a
+  /// different question from a sort.
+  FeedSort get sort =>
+      this == PaigunFilter.topPunGuide ? FeedSort.popular : FeedSort.nearest;
+
+  /// Null on the chips that do not care what a trip is.
+  TripType? get type => switch (this) {
+        PaigunFilter.guide => TripType.content,
+        PaigunFilter.plan => TripType.planTrip,
+        _ => null,
       };
 }
 
@@ -58,6 +81,14 @@ final paigunOriginStoreProvider = Provider<PaigunOriginStore>(
 /// and waiting on the disk would stall the first request behind it.
 final storedPaigunOriginProvider = Provider<PaigunOrigin?>((ref) => null);
 
+/// What was typed into the header's search field and submitted.
+///
+/// Goes up as `q`, which the endpoint matches across everything a trip shows
+/// as words — title, destination, description, creator, and the sections or
+/// stops inside it — so it narrows the wall in place rather than taking the
+/// traveller to another screen.
+final paigunQueryProvider = StateProvider<String>((ref) => '');
+
 /// What the ตัวกรอง wizard last applied to the board.
 ///
 /// Empty until the traveller finishes the wizard, and it outlives the wizard's
@@ -65,63 +96,68 @@ final storedPaigunOriginProvider = Provider<PaigunOrigin?>((ref) => null);
 /// memory only — a filter is a mood, not a setting.
 final tripFilterProvider = StateProvider<TripFilter>((ref) => TripFilter.none);
 
-/// One wall of the board, straight from `GET /trips`.
+/// The board's wall, straight from `GET /trips`.
 ///
-/// Keyed by sort because the two walls are two different questions — "what is
-/// near me" and "what is popular" — and the server answers each in one
-/// request. Nothing is filtered or re-sorted here: the query carries the
-/// wizard's answers, so what comes back is already the answer.
+/// One request, not two: the chips are a single row over a single wall, so
+/// whichever is in force decides both the ordering and what type of trip the
+/// server is asked for. Nothing is filtered or re-sorted here — the query
+/// carries the wizard's answers and the search box, so what comes back is
+/// already the answer.
 ///
 /// Re-reads whenever the session changes, the way Home's feed does: `isSaved`
 /// and `isLiked` are per-viewer and come back false for an anonymous caller.
 final paigunFeedProvider =
-    FutureProvider.family<List<TripListItem>, FeedSort>((ref, sort) async {
+    FutureProvider.family<List<TripListItem>, PaigunFilter>((ref, chip) async {
   ref.watch(authSessionProvider);
   final filter = ref.watch(tripFilterProvider);
   final origin = ref.watch(paigunOriginProvider);
+  final query = ref.watch(paigunQueryProvider);
 
   final api = await ref.watch(plunoApiProvider.future);
-  return api.trips.feed(filter.toFeedQuery(sort: sort, origin: origin));
+  return api.trips.feed(
+    filter.toFeedQuery(
+      sort: chip.sort,
+      type: chip.type,
+      query: query,
+      origin: origin,
+    ),
+  );
 });
 
-/// A wall as the cards need it: distance from the server, the badge, and
+/// The wall as the cards need it: distance from the server, the badge, and
 /// whatever the traveller has bookmarked since the rows were fetched.
 final paigunWallProvider =
-    Provider.family<AsyncValue<List<NearbyTrip>>, FeedSort>((ref, sort) {
+    Provider.family<AsyncValue<List<NearbyTrip>>, PaigunFilter>((ref, chip) {
   final saved = ref.watch(paigunSavedProvider);
 
   // The badge ranks the wall it is on, not what the filter let through: a trip
   // does not stop being a Top PunGuide because someone asked for beaches.
   return ref
-      .watch(paigunFeedProvider(sort))
+      .watch(paigunFeedProvider(chip))
       .whenData((trips) => decorateTrips(trips, saved: saved));
 });
 
-/// Nearest first, as the server ordered them. Rows whose destination has no
-/// coordinates come back last rather than first — unknown is not "here".
-final nearMeTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>(
-  (ref) => ref.watch(paigunWallProvider(FeedSort.nearest)),
+/// What the board is showing right now — the chip in force, already decorated.
+final paigunTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>(
+  (ref) => ref.watch(paigunWallProvider(ref.watch(paigunFilterProvider))),
 );
 
-/// Most liked, then most remixed.
-final topPunGuideTripsProvider = Provider<AsyncValue<List<NearbyTrip>>>(
-  (ref) => ref.watch(paigunWallProvider(FeedSort.popular)),
-);
-
-/// Re-reads both walls — pull to refresh, and the retry on a failed one.
+/// Re-reads the wall — pull to refresh, and the retry on a failed one.
 ///
-/// Waits for them so the spinner lasts as long as the request does. A wall
-/// that fails is not rethrown here: it renders its own error state, and
+/// Invalidates every chip rather than only the one on screen: they are four
+/// answers to the same feed, and leaving the other three cached would show a
+/// stale wall the moment a chip is tapped.
+///
+/// Waits for the chip in force so the spinner lasts as long as its request
+/// does. A failure is not rethrown: the wall renders its own error state, and
 /// letting it escape would only crash the refresh gesture.
 Future<void> refreshPaigunFeed(WidgetRef ref) async {
+  final chip = ref.read(paigunFilterProvider);
   ref.invalidate(paigunFeedProvider);
 
-  await Future.wait(<Future<void>>[
-    for (final sort in <FeedSort>[FeedSort.nearest, FeedSort.popular])
-      ref
-          .read(paigunFeedProvider(sort).future)
-          .then<void>((_) {}, onError: (_, __) {}),
-  ]);
+  await ref
+      .read(paigunFeedProvider(chip).future)
+      .then<void>((_) {}, onError: (_, __) {});
 }
 
 /// Bookmarks the traveller has flipped on this board, by trip id.

@@ -125,12 +125,36 @@ class PlacesApi {
   /// reviews.
   ///
   /// The most expensive call in the API, cached 24 hours server-side. Pass
-  /// `reviews: false` when the screen shows none — it drops a pricing tier and
-  /// leaves the response shape unchanged.
-  Future<PlaceDetails> byId(String placeId, {bool? reviews}) async {
+  /// `reviews: false` when the screen shows none, and `photos: false` when it
+  /// already has its own image (a search result's `imageUrl`, a post's own
+  /// uploads) — each drops its own pricing tier and leaves the response shape
+  /// unchanged. Both default to `true` server-side when omitted.
+  Future<PlaceDetails> byId(
+    String placeId, {
+    bool? reviews,
+    bool? photos,
+  }) async {
     final body = await _client.get<Map<String, dynamic>>(
       '/places/$placeId',
-      query: <String, dynamic>{'reviews': reviews},
+      query: <String, dynamic>{'reviews': reviews, 'photos': photos},
+    );
+    return PlaceDetails.fromJson(Json.asMap(body));
+  }
+
+  /// The same detail sheet as [byId], looked up by Google's own place id
+  /// rather than one of ours — for a place that was never saved to the
+  /// `places` table, so there is no internal id to call [byId] with.
+  ///
+  /// Carries no internal id back either: adding this place to an itinerary
+  /// still needs one from [search] first.
+  Future<PlaceDetails> byGoogleId(
+    String externalRef, {
+    bool? reviews,
+    bool? photos,
+  }) async {
+    final body = await _client.get<Map<String, dynamic>>(
+      '/places/google/$externalRef',
+      query: <String, dynamic>{'reviews': reviews, 'photos': photos},
     );
     return PlaceDetails.fromJson(Json.asMap(body));
   }

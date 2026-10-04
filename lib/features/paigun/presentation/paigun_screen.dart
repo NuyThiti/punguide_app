@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../home/presentation/widgets/home_assistant_fab.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../domain/nearby_trip.dart';
 import 'providers/paigun_providers.dart';
@@ -25,19 +26,13 @@ class PaigunScreen extends ConsumerWidget {
 
   /// How many cards a section shows while both are on screen. Tapping the
   /// section's own chip lifts the cap.
-  static const int _previewCount = 6;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(paigunFilterProvider);
-    final query = ref.watch(tripFilterProvider);
+    final chip = ref.watch(paigunFilterProvider);
+    final wizard = ref.watch(tripFilterProvider);
     final origin = ref.watch(paigunOriginProvider);
-    final nearMe = ref.watch(nearMeTripsProvider);
-    final topPunGuide = ref.watch(topPunGuideTripsProvider);
-
-    final showNearMe = filter != PaigunFilter.topPunGuide;
-    final showTop = filter != PaigunFilter.nearMe;
-    final capped = filter == PaigunFilter.all;
+    final query = ref.watch(paigunQueryProvider);
+    final rows = ref.watch(paigunTripsProvider);
 
     return AppFrame(
       background: AppColors.screen,
@@ -48,13 +43,11 @@ class PaigunScreen extends ConsumerWidget {
               PaigunHeader(
                 origin: origin,
                 onBack: () => _close(context),
-                // Pushed rather than swapped, so finishing the wizard — or
-                // backing out of it — drops the traveller back on the board
-                // they were reading.
-                onTune: () => context.pushNamed(AppRoute.paigunFilter.name),
-                filterCount: query.answeredCount,
                 onEditLocation: () =>
                     context.goNamed(AppRoute.locationPicker.name),
+                query: query,
+                onSearch: (text) =>
+                    ref.read(paigunQueryProvider.notifier).state = text,
               ),
               // Pinned under the header: these chips re-sort the wall below,
               // so they have to stay reachable once the traveller is deep in
@@ -62,9 +55,14 @@ class PaigunScreen extends ConsumerWidget {
               // lands under the clock.
               _StickyFilterBar(
                 child: PaigunFilterBar(
-                  selected: filter,
+                  selected: chip,
                   onSelected: (next) =>
                       ref.read(paigunFilterProvider.notifier).state = next,
+                  // Pushed rather than swapped, so finishing the wizard — or
+                  // backing out of it — drops the traveller back on the board
+                  // they were reading.
+                  onTune: () => context.pushNamed(AppRoute.paigunFilter.name),
+                  filterCount: wizard.answeredCount,
                 ),
               ),
               Expanded(
@@ -78,41 +76,32 @@ class PaigunScreen extends ConsumerWidget {
                       parent: BouncingScrollPhysics(),
                     ),
                     children: [
-                      if (showNearMe) ...[
-                        const SizedBox(height: 18),
-                        const PaigunSectionHeader(title: 'Near Me'),
-                        const SizedBox(height: 12),
-                        _Section(
-                          rows: nearMe,
-                          limit: capped ? _previewCount : null,
-                          emptyMessage: query.isEmpty
-                              ? 'ยังไม่มีทริปใกล้ตำแหน่งของคุณ'
-                              : 'ไม่มีทริปที่ตรงกับตัวกรอง',
-                          onOpen: (row) => _openTrip(context, row),
-                          onSave: (row) => _toggleSaved(context, ref, row),
-                          onRetry: () => refreshPaigunFeed(ref),
+                      const SizedBox(height: 14),
+                      // One wall under one row of chips: the chip in force is
+                      // the heading, so the board does not repeat it.
+                      _Section(
+                        rows: rows,
+                        emptyMessage: _emptyMessage(
+                          chip: chip,
+                          searching: query.trim().isNotEmpty,
+                          filtered: !wizard.isEmpty,
                         ),
-                      ],
-                      if (showTop) ...[
-                        const SizedBox(height: 10),
-                        const PaigunSectionHeader(title: 'Top PunGuide'),
-                        const SizedBox(height: 12),
-                        _Section(
-                          rows: topPunGuide,
-                          limit: capped ? _previewCount : null,
-                          emptyMessage: query.isEmpty
-                              ? 'ยังไม่มีทริปปันไกด์'
-                              : 'ไม่มีทริปที่ตรงกับตัวกรอง',
-                          onOpen: (row) => _openTrip(context, row),
-                          onSave: (row) => _toggleSaved(context, ref, row),
-                          onRetry: () => refreshPaigunFeed(ref),
-                        ),
-                      ],
+                        onOpen: (row) => _openTrip(context, row),
+                        onSave: (row) => _toggleSaved(context, ref, row),
+                        onRetry: () => refreshPaigunFeed(ref),
+                      ),
                     ],
                   ),
                 ),
               ),
             ],
+          ),
+          Positioned(
+            right: 16,
+            bottom: HomeAssistantFab.bottomOffsetOf(context),
+            child: HomeAssistantFab(
+              onTap: () => context.goNamed(AppRoute.aiChat.name),
+            ),
           ),
           Positioned(
             left: 0,
@@ -132,6 +121,26 @@ class PaigunScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Why the wall is empty, in the traveller's own terms.
+  ///
+  /// A board narrowed to nothing is not the same as a board with nothing on
+  /// it, and saying which is the difference between "try something else" and
+  /// "come back later".
+  static String _emptyMessage({
+    required PaigunFilter chip,
+    required bool searching,
+    required bool filtered,
+  }) {
+    if (searching) return 'ไม่พบทริปในที่ที่ค้นหา';
+    if (filtered) return 'ไม่มีทริปที่ตรงกับตัวกรอง';
+    return switch (chip) {
+      PaigunFilter.guide => 'ยังไม่มีคู่มือใกล้ตำแหน่งของคุณ',
+      PaigunFilter.plan => 'ยังไม่มีแผนทริปใกล้ตำแหน่งของคุณ',
+      PaigunFilter.topPunGuide => 'ยังไม่มีทริปปันไกด์',
+      PaigunFilter.all => 'ยังไม่มีทริปใกล้ตำแหน่งของคุณ',
+    };
   }
 
   /// Reached from the Home card as well as the nav tab, so there is not always
@@ -205,7 +214,6 @@ class PaigunScreen extends ConsumerWidget {
 class _Section extends StatelessWidget {
   const _Section({
     required this.rows,
-    required this.limit,
     required this.emptyMessage,
     required this.onOpen,
     required this.onSave,
@@ -213,9 +221,6 @@ class _Section extends StatelessWidget {
   });
 
   final AsyncValue<List<NearbyTrip>> rows;
-
-  /// Null shows everything.
-  final int? limit;
   final String emptyMessage;
   final ValueChanged<NearbyTrip> onOpen;
   final ValueChanged<NearbyTrip> onSave;
@@ -226,8 +231,7 @@ class _Section extends StatelessWidget {
     return rows.when(
       data: (all) {
         if (all.isEmpty) return _EmptyState(message: emptyMessage);
-        final shown = limit == null ? all : all.take(limit!).toList();
-        return PaigunGrid(rows: shown, onOpen: onOpen, onSave: onSave);
+        return PaigunGrid(rows: all, onOpen: onOpen, onSave: onSave);
       },
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),

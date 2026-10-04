@@ -100,6 +100,15 @@ class AppColors {
   static const paigunControl = Color(0xFF1E1A18);
   static const paigunDistance = Color(0xFF7C3AED);
 
+  /// Trip card, measured off Figma 2480-48940. The accent follows the trip's
+  /// type: a guide wears lime, a plan wears violet, on the distance chip and
+  /// on the little badge in front of the type label.
+  static const cardGuideAccent = Color(0xFFE0FE71);
+  static const cardPlanAccent = Color(0xFF7549F1);
+  static const cardTitle = Color(0xFF1B1D1A);
+  static const cardFacts = Color(0xFF6F7570);
+  static const cardCoverPill = Color(0xFF1C1714);
+
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);

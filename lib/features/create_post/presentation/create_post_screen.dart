@@ -143,11 +143,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// replace; the traveller's own answer never is.
   bool _placeSuggestedByDraft = false;
 
-  /// The account's stored fix, read once on open. Raw coordinates only — kept
-  /// for the Title sheet's Add Location row, which shows it as a hint and
-  /// never resolves or writes it anywhere itself. `_loadAccountFix` separately
-  /// resolves it through `/places/suggest` to seed the identity card's pin —
-  /// see that method — but that resolved place lives in `_postPlace`, not
+  /// The account's stored place, read once on open — kept for the Title
+  /// sheet's Add Location row, which shows it as a hint and never writes it
+  /// anywhere itself. `_loadAccountFix` separately adopts it as the identity
+  /// card's pin — see that method — but that copy lives in `_postPlace`, not
   /// here.
   UserLocation? _accountFix;
   final Set<String> _uncertainUploads = {},
@@ -311,36 +310,21 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   /// `GET /users/me/location`, read once on open.
   ///
-  /// When nothing has answered "where is this post about" yet, the fix also
-  /// seeds the identity card's pin — one `/places/suggest` lookup, so it is a
-  /// real named place and not raw coordinates standing in for one. It goes in
+  /// When nothing has answered "where is this post about" yet, the stored
+  /// place also seeds the identity card's pin. It goes in
   /// through `_adoptDraftPlace`, so it stays a suggestion: the traveller's own
   /// pick, or a "Create from Photos" draft's own place, still replaces it
   /// freely. [_placeAnswered] is the same "has this already been answered"
   /// check `_adoptDraftPlace` makes, checked here first too so a trip that
-  /// already has a destination — reopened for editing — never spends the
-  /// lookup at all.
+  /// already has a destination — reopened for editing — is left alone.
   Future<void> _loadAccountFix() async {
     final fix = await ref.read(locationSyncProvider).pull();
     if (!mounted) return;
     setState(() => _accountFix = fix);
     if (fix == null || _placeAnswered) return;
-
-    try {
-      final api = await ref.read(plunoApiProvider.future);
-      final nearby = await api.places.suggest(
-        latitude: fix.latitude,
-        longitude: fix.longitude,
-        radiusMeters: 3000,
-        limit: 1,
-      );
-      if (!mounted || _placeAnswered) return;
-      if (nearby.isNotEmpty) {
-        _adoptDraftPlace(postPlaceFromSearchResult(nearby.first));
-      }
-    } catch (_) {
-      // No worse than the fix never having answered at all.
-    }
+    // Already one of our places — the account stores a `places` row, not a
+    // point — so it adopts as is, with no lookup to resolve it.
+    _adoptDraftPlace(postPlaceFromSearchResult(fix.place));
   }
 
   /// True once nothing more should be guessed about the post's place: the
@@ -1054,11 +1038,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       context,
       picker: _picker,
       remaining: 200 - _photoCount(),
-      session: ref.read(authSessionProvider),
-      audience: _audience,
-      onAudienceChanged: (value) => setState(() => _audience = value),
       titleController: _postTitle,
-      onEditTitle: _editTitle,
     );
     if (selection == null || !mounted) return;
     final fromCamera = selection.fromCamera;
@@ -1223,6 +1203,74 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           : null;
       item.legacyMapId = null;
     });
+    // Only the spot's own place, not a photo-group item inside it: the
+    // "ติดต่อ"/time chips are drawn once per block, not once per item.
+    if (!cleared && itemIndex == 0) _autoFillPlaceDetails(block, place.id);
+  }
+
+  /// "ยืนยันสถานที่" — the assistant's own suggestion becomes the spot's
+  /// confirmed place, same as one picked by hand.
+  void _confirmLocation(int index, int itemIndex) {
+    final block = _blocks[index];
+    final item = block.items[itemIndex];
+    final location = item.location;
+    if (location == null) return;
+    setState(() {
+      item.location = ContentLocation(
+          status: ContentLocationStatus.confirmed,
+          name: location.name,
+          placeId: location.placeId,
+          latitude: location.latitude,
+          longitude: location.longitude);
+    });
+    if (itemIndex == 0) _autoFillPlaceDetails(block, location.placeId);
+  }
+
+  /// Fills the existing "ติดต่อ" and time chips from Google's own data for
+  /// [block]'s place, the moment one is actually added — never overwriting
+  /// what the writer already typed, and silent (no message, no new row) for
+  /// anywhere Google has nothing to add.
+  ///
+  /// `GET /places/:id` only answers for one of our own places — a legacy or
+  /// hand-pinned spot with no internal id is left exactly as it was.
+  Future<void> _autoFillPlaceDetails(_BlockFields block, String? placeId) async {
+    if (placeId == null || placeId.isEmpty) return;
+    final live = await ref.read(placeDetailsProvider(placeId).future);
+    if (live == null || !mounted || !_blocks.contains(block)) return;
+
+    final phone = live.internationalPhoneNumber ?? live.nationalPhoneNumber;
+    final hours = _todayOpenClose(live);
+    final fillContact = !block.details.hasContact &&
+        phone != null &&
+        phone.trim().isNotEmpty;
+    final fillHours = !block.details.hasTime && hours != null;
+    if (!fillContact && !fillHours) return;
+
+    setState(() {
+      block.details = block.details.copyWith(
+        contactInfo: fillContact ? phone.trim() : null,
+        opensAt: fillHours ? hours.$1 : null,
+        closesAt: fillHours ? hours.$2 : null,
+      );
+    });
+  }
+
+  /// Best-effort: today's line out of Google's own worded hours — "วันจันทร์:
+  /// 10:00–20:00" — read as a plain open/close pair. Null for anything that
+  /// does not look like exactly that (closed today, open 24 hours, a format
+  /// this did not anticipate) rather than guessed at.
+  (TimeOfDay, TimeOfDay)? _todayOpenClose(PlaceDetails live) {
+    final hours = live.currentOpeningHours ?? live.regularOpeningHours;
+    final days = hours?.weekdayDescriptions ?? const <String>[];
+    // Google always orders this Monday through Sunday regardless of locale,
+    // the same order `DateTime.weekday` counts in.
+    if (days.length != 7) return null;
+    final today = days[DateTime.now().weekday - 1];
+    final clock = RegExp(r'(\d{1,2}):(\d{2})').allMatches(today).toList();
+    if (clock.length < 2) return null;
+    TimeOfDay at(RegExpMatch m) =>
+        TimeOfDay(hour: int.parse(m.group(1)!), minute: int.parse(m.group(2)!));
+    return (at(clock[0]), at(clock[1]));
   }
 
   /// The เชื่อมกับแผนของฉัน step. Answers false when the traveller backed out,
@@ -1912,17 +1960,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                               status: ContentLocationStatus.none);
                           item.legacyMapId = null;
                         }),
-                        onConfirmLocationInItem: (itemIndex) => setState(() {
-                          final item = _blocks[index].items[itemIndex];
-                          final location = item.location;
-                          if (location == null) return;
-                          item.location = ContentLocation(
-                              status: ContentLocationStatus.confirmed,
-                              name: location.name,
-                              placeId: location.placeId,
-                              latitude: location.latitude,
-                              longitude: location.longitude);
-                        }),
+                        onConfirmLocationInItem: (itemIndex) =>
+                            _confirmLocation(index, itemIndex),
                         onSelectCover: (path) {
                           if (_legacyUrls.contains(path)) {
                             _message(

@@ -532,7 +532,13 @@ void main() {
     final adapter = FakeAdapter({
       'GET /users/me/location': [
         const FakeReply(200, {
-          'location': {'lat': 13.7563, 'lng': 100.493},
+          'location': {
+            'id': 'place-1',
+            'name': 'สนามหลวง',
+            'address': 'สนามหลวง กรุงเทพมหานคร 10200',
+            'lat': 13.7563,
+            'lng': 100.493,
+          },
         }),
       ],
       'POST /trips': [FakeReply(201, createdTripJson())],
@@ -1437,8 +1443,11 @@ void main() {
     expect(ctaOpacity().opacity, 1);
     await tester.tap(find.byTooltip('ลบรูปที่ 1'));
     await tester.pumpAndSettle();
-    expect(ctaOpacity().opacity, lessThan(1));
-    await tester.tap(find.text('ยกเลิก'));
+    // With the one photo gone, the bottom bar swaps the CTA out for the
+    // "add a photo" action it would otherwise have had nothing to do.
+    expect(find.text('สร้างโพสเลย'), findsNothing);
+    expect(find.text('เพิ่มรูป').last, findsOneWidget);
+    await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
     expect(find.text('AI สร้างโพสจากรูป'), findsOneWidget);
     // The page is a full page now, not a sheet over the composer, so the
@@ -1460,7 +1469,7 @@ void main() {
     await _tapImport(tester);
     await tester.pump();
     expect(find.text('กำลังเลือกรูป…'), findsOneWidget);
-    await tester.tap(find.text('ยกเลิก'));
+    await tester.tap(find.byTooltip('ย้อนกลับ'));
     pending.complete([_UnreadablePhoto('late.jpg')]);
     await tester.pumpAndSettle();
     expect(find.text('ยังอยู่'), findsOneWidget);
@@ -1478,7 +1487,7 @@ void main() {
     final router = GoRouter.of(tester.element(find.byType(CreatePostScreen)));
     await _tapImport(tester);
     await tester.pump();
-    await tester.tap(find.text('ยกเลิก'));
+    await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('ปิด'));
     await tester.pumpAndSettle();
@@ -1555,7 +1564,7 @@ void main() {
       await tester.pumpAndSettle();
       // Nothing came back, so the page stays put rather than closing itself —
       // backing out by hand is what returns to the untouched draft.
-      await tester.tap(find.text('ยกเลิก'));
+      await tester.tap(find.byTooltip('ย้อนกลับ'));
       await tester.pumpAndSettle();
       expect(find.text('ร่างเดิม'), findsOneWidget);
       expect(find.text('กำลังจัดรูปเป็นเรื่องราว…'), findsNothing);
@@ -2296,17 +2305,14 @@ void main() {
     final adapter = FakeAdapter({
       'GET /users/me/location': [
         const FakeReply(200, {
-          'location': {'lat': 13.7563, 'lng': 100.493},
-        }),
-      ],
-      'GET /places/suggest': [
-        const FakeReply(200, [
-          {
+          'location': {
             'id': 'place-1',
             'name': 'สนามหลวง',
             'address': 'สนามหลวง กรุงเทพมหานคร 10200',
+            'lat': 13.7563,
+            'lng': 100.493,
           },
-        ]),
+        }),
       ],
     });
     await _pumpComposer(
@@ -2316,17 +2322,17 @@ void main() {
     );
     await _settleNearby(tester);
 
-    // Resolved through a real lookup — a name and a locality, never the raw
-    // fix standing in for one — and only ever a starting point: nothing has
+    // The account stores a place, so it adopts as is — a name and a
+    // locality, no lookup — and only ever as a starting point: nothing has
     // answered "where is this post about" itself yet.
     expect(_cardPlace(tester)?.name, 'สนามหลวง');
     expect(_cardPlace(tester)?.area, 'กรุงเทพมหานคร');
-    expect(adapter.paths,
-        containsAll(['GET /users/me/location', 'GET /places/suggest']));
+    expect(adapter.paths, contains('GET /users/me/location'));
+    expect(adapter.paths, isNot(contains('GET /places/suggest')));
   });
 
   testWidgets(
-      'a trip reopened for editing never spends the account-fix lookup',
+      'a trip reopened for editing never adopts the account place',
       (tester) async {
     // Already has a destination, so nothing about "where is this post about"
     // is left to guess — the fix is still read (every open reads it), but
@@ -2334,7 +2340,13 @@ void main() {
     final adapter = FakeAdapter({
       'GET /users/me/location': [
         const FakeReply(200, {
-          'location': {'lat': 13.7563, 'lng': 100.493},
+          'location': {
+            'id': 'place-1',
+            'name': 'สนามหลวง',
+            'address': 'สนามหลวง กรุงเทพมหานคร 10200',
+            'lat': 13.7563,
+            'lng': 100.493,
+          },
         }),
       ],
     });
@@ -2454,7 +2466,13 @@ void main() {
     final adapter = FakeAdapter({
       'GET /users/me/location': [
         const FakeReply(200, {
-          'location': {'lat': 13.7563, 'lng': 100.493},
+          'location': {
+            'id': 'place-1',
+            'name': 'สนามหลวง',
+            'address': 'สนามหลวง กรุงเทพมหานคร 10200',
+            'lat': 13.7563,
+            'lng': 100.493,
+          },
         }),
       ],
       'GET /places/search': [
@@ -2467,15 +2485,22 @@ void main() {
       tester,
       adapter: adapter,
       extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      // Reopened with its own destination, so the stored place is not
+      // adopted as the pin — this is where the hint is left to say it.
+      initialTrip: ApiTrip.fromJson({
+        ...createdTripJson(),
+        'title': '',
+        'destination': 'ดานัง, เวียดนาม',
+      }),
     );
     await _settleNearby(tester);
 
     await tester.tap(find.text('Title..'));
     await tester.pumpAndSettle();
 
-    // A hint, never a value: coordinates, not a name, and it says "your
-    // position now" rather than claiming to be the post's place.
-    expect(find.textContaining('ตำแหน่งของคุณตอนนี้: 13.7563, 100.4930'),
+    // A hint, never a value: it says "your position now" rather than
+    // claiming to be the post's place.
+    expect(find.textContaining('ตำแหน่งของคุณตอนนี้: สนามหลวง'),
         findsOneWidget);
 
     await tester.ensureVisible(find.text('Add Location'));

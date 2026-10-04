@@ -3,41 +3,111 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../providers/paigun_providers.dart';
 
-/// ทั้งหมด / Near Me / Top PunGuide, the chip in force filled dark.
+/// ทั้งหมด / คู่มือ / แผนทริป / Top PunGuide, the chip in force filled dark,
+/// with ตัวกรอง parked at the head of the row (Figma 2480-67909).
+///
+/// The wizard button rides in the same row rather than up in the header: it
+/// narrows the very wall these chips do, and the header is now the location
+/// and the search box.
 class PaigunFilterBar extends StatelessWidget {
   const PaigunFilterBar({
     super.key,
     required this.selected,
     required this.onSelected,
+    required this.onTune,
+    this.filterCount = 0,
   });
 
   final PaigunFilter selected;
   final ValueChanged<PaigunFilter> onSelected;
 
-  static const _icons = <PaigunFilter, IconData>{
-    PaigunFilter.nearMe: Icons.near_me_outlined,
-    PaigunFilter.topPunGuide: Icons.shuffle,
-  };
+  /// Opens ตัวกรอง.
+  final VoidCallback onTune;
+
+  /// How many of the wizard's questions are currently narrowing the board.
+  /// Zero hides the badge, so an unfiltered board looks untouched.
+  final int filterCount;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 42,
-      child: ListView.separated(
+      height: 44,
+      child: ListView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: PaigunFilter.values.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final filter = PaigunFilter.values[index];
-          return _FilterChip(
-            label: filter.label,
-            icon: _icons[filter],
-            active: filter == selected,
-            onTap: () => onSelected(filter),
-          );
-        },
+        children: [
+          Center(child: _TuneButton(count: filterCount, onTap: onTune)),
+          for (final filter in PaigunFilter.values) ...[
+            const SizedBox(width: 8),
+            _FilterChip(
+              label: filter.label,
+              active: filter == selected,
+              onTap: () => onSelected(filter),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The round ตัวกรอง control, badged with how many answers are in force.
+class _TuneButton extends StatelessWidget {
+  const _TuneButton({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'ตัวกรอง',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.chipBorder),
+              ),
+              child: const Icon(
+                Icons.tune,
+                size: 19,
+                color: AppColors.foreground,
+              ),
+            ),
+            if (count > 0)
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.filterAction,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -46,13 +116,11 @@ class PaigunFilterBar extends StatelessWidget {
 class _FilterChip extends StatelessWidget {
   const _FilterChip({
     required this.label,
-    required this.icon,
     required this.active,
     required this.onTap,
   });
 
   final String label;
-  final IconData? icon;
   final bool active;
   final VoidCallback onTap;
 
@@ -75,47 +143,14 @@ class _FilterChip extends StatelessWidget {
               color: active ? AppColors.paigunControl : AppColors.chipBorder,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 15, color: foreground),
-                const SizedBox(width: 6),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 13,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
+          child: Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// "Near Me" / "Top PunGuide" heading over a wall of cards.
-class PaigunSectionHeader extends StatelessWidget {
-  const PaigunSectionHeader({super.key, required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: AppColors.foreground,
-          fontSize: 17,
-          fontWeight: FontWeight.w700,
         ),
       ),
     );

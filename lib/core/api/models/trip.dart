@@ -206,20 +206,16 @@ class TripListItem {
       likeCount: Json.integer(json, 'likeCount') ?? 0,
       remixCount: Json.integer(json, 'remixCount') ?? 0,
       creator: TripCreator.maybeFromJson(json['creator']),
-      // Only present when the request carried both `lat` and `lng`; a trip
-      // whose destination is still free text never gets one, so absent is
-      // "unknown" rather than zero.
+      // Only present when the request carried both `lat` and `lng`, so absent
+      // is "unknown" rather than zero.
       //
-      // Read only when the row actually has a resolved destination, which
-      // is the documented condition for the field existing at all. Posts
-      // come back without one yet carry `distanceKm: 20015` — π × the
-      // Earth's radius, the maximum a great circle can be, which is what a
-      // null pair measures to rather than a place anyone can travel to.
-      // Dropping it here keeps that number off every card at once; take
-      // this guard out once the server stops sending it.
-      distanceKm: place?.hasCoordinates ?? false
-          ? Json.number(json, 'distanceKm')
-          : null,
+      // Taken as sent, including on a post, which has no `destinationPlace`
+      // of its own: since 2026-10-04 the server measures those from the
+      // nearest located section of their `contents` instead. The client used
+      // to drop a distance that came without a resolved place, because that
+      // was how the `20015` the server sent for every post reached the cards
+      // — guarding it now would throw away the real figure.
+      distanceKm: Json.number(json, 'distanceKm'),
       createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
       updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
     );

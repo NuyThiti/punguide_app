@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/api/api_providers.dart';
+import '../../../../core/api/models/place.dart';
 import '../../../../core/api/models/trip_content.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/formatting/spot_detail_text.dart';
@@ -174,26 +177,37 @@ class _GroupHeading extends StatelessWidget {
 
 /// One spot: its photos, what it is called, where, the story, and the notes
 /// beside it.
-class _SpotCard extends StatelessWidget {
+class _SpotCard extends ConsumerWidget {
   const _SpotCard({required this.section, required this.gutter});
 
   final TripContent section;
   final double gutter;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // A suggested pin is the assistant's guess and the server hides it from a
     // public read; only a place the writer confirmed is theirs to publish.
     final location = section.location;
-    final place = location != null &&
-            location.status == ContentLocationStatus.confirmed
-        ? _placeLabel(location)
-        : null;
+    final confirmed = location != null &&
+        location.status == ContentLocationStatus.confirmed;
+    final place = confirmed ? _placeLabel(location) : null;
 
-    final time = _timeLine;
+    // One of our own places — fetched automatically so a reader sees its
+    // phone/website/hours whenever Google actually has them, with no tap
+    // required. Null for anything else: a suggested pin, a hand-typed name
+    // with no placeId, or a lookup that came back with nothing.
+    final placeId = confirmed ? location.placeId?.trim() : null;
+    final live = placeId == null || placeId.isEmpty
+        ? null
+        : ref.watch(placeDetailsProvider(placeId)).valueOrNull;
+
+    final time = _timeLine(live);
     final transport =
         transportText(section.transportModes, section.transportCost);
     final contact = section.contactInfo?.trim() ?? '';
+    final phone =
+        live?.internationalPhoneNumber ?? live?.nationalPhoneNumber;
+    final website = live?.websiteUri?.trim();
     final hack = section.tripHack?.trim() ?? '';
     final photos = _photos;
 
@@ -254,6 +268,17 @@ class _SpotCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   _InfoRow(icon: Icons.call_outlined, text: contact),
                 ],
+                // Google's own phone/website for this place — automatic, and
+                // only ever shown when Google actually has them. Separate from
+                // `contact` above, which is whatever the writer typed by hand.
+                if (phone != null && phone.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _InfoRow(icon: Icons.phone_outlined, text: phone.trim()),
+                ],
+                if (website != null && website.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _InfoRow(icon: Icons.language, text: website),
+                ],
                 if (hack.isNotEmpty) ...[
                   const SizedBox(height: 14),
                   _TripHackRow(text: hack),
@@ -270,12 +295,21 @@ class _SpotCard extends StatelessWidget {
   ///
   /// The design prints **both** halves, unlike the composer's chip, which has
   /// room for one and prefers the hour the writer went.
-  String get _timeLine {
+  ///
+  /// [live] only ever fills the second half, and only when the spot carries
+  /// no hours of its own — the writer's (or the assistant's) own answer is
+  /// never second-guessed by Google's.
+  String _timeLine(PlaceDetails? live) {
+    final ownHours = hoursRangeText(section.opensAt, section.closesAt);
+    final openNow =
+        live?.currentOpeningHours?.openNow ?? live?.regularOpeningHours?.openNow;
     final parts = <String>[
       if (section.visitedAt != null)
         'ไปตอน ${section.visitedAt!.replaceAll(':', '.')} น.',
-      if (hoursRangeText(section.opensAt, section.closesAt) != null)
-        'เปิด/ปิด ${hoursRangeText(section.opensAt, section.closesAt)}',
+      if (ownHours != null)
+        'เปิด/ปิด $ownHours'
+      else if (openNow != null)
+        openNow ? 'เปิดอยู่ตอนนี้' : 'ปิดอยู่ตอนนี้',
     ];
     return parts.join(' | ');
   }
