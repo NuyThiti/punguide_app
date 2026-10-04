@@ -4,7 +4,8 @@ import 'package:flutter/foundation.dart';
 
 /// Where the Pluno API lives, and the knobs the client needs at startup.
 ///
-/// Override the host at build time:
+/// Release builds talk to production, debug and profile builds to the local
+/// dev server. Override either at build time:
 /// `flutter run --dart-define=PLUNO_API_BASE_URL=https://api.pluno.co`
 @immutable
 class ApiConfig {
@@ -16,12 +17,17 @@ class ApiConfig {
     this.currency = 'THB',
   });
 
-  /// Reads `PLUNO_API_BASE_URL`, falling back to the local dev server.
+  /// Reads `PLUNO_API_BASE_URL`, falling back to [productionBaseUrl] in
+  /// release builds and the local dev server otherwise.
   factory ApiConfig.fromEnvironment() =>
       ApiConfig(baseUrl: _resolveBaseUrl(_envBaseUrl));
 
   static const _envBaseUrl =
       String.fromEnvironment('PLUNO_API_BASE_URL', defaultValue: '');
+
+  static const productionBaseUrl =
+      'https://travel-planner-api-git-909858882015.asia-northeast3.run.app';
+  static const _devBaseUrl = 'http://localhost:4002';
 
   /// No global prefix — paths start at `/trips`, `/places`, `/auth`.
   final String baseUrl;
@@ -38,8 +44,8 @@ class ApiConfig {
   /// reach — it needs `10.0.2.2` for the same machine. iOS simulators share
   /// the host network, so they are left alone.
   static String _resolveBaseUrl(String configured) {
-    final raw =
-        configured.trim().isEmpty ? 'http://localhost:4002' : configured.trim();
+    final fallback = kReleaseMode ? productionBaseUrl : _devBaseUrl;
+    final raw = configured.trim().isEmpty ? fallback : configured.trim();
     final url = raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
     if (kIsWeb) return url;
     final isAndroid = !kIsWeb && Platform.isAndroid;
