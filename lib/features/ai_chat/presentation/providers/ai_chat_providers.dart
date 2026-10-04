@@ -7,6 +7,7 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../location_access/domain/location_service.dart';
 import '../../../location_access/presentation/providers/location_providers.dart';
+import 'ai_chat_context.dart';
 
 /// Everything the Ai Chat screen draws itself from.
 @immutable
@@ -131,7 +132,7 @@ class AiChatController extends AutoDisposeNotifier<AiChatState> {
       clearTransportError: true,
     );
 
-    final origin = await _freshOrigin();
+    final origin = await _originForTurn();
     final completer = Completer<void>();
 
     _turn = api.chat
@@ -262,22 +263,27 @@ class AiChatController extends AutoDisposeNotifier<AiChatState> {
     }
   }
 
-  /// A position taken *now*, or nothing.
+  /// Where to tell the assistant the traveller is.
   ///
-  /// Deliberately not [LocationFixController.ensureFix]: that falls back to the
-  /// fix stored on the account, which the traveller allowed on some other
-  /// screen at some other time. The server refuses to read that column for
-  /// exactly this reason, and sending it from here would walk around the rule
-  /// rather than honour it. With no fresh fix the assistant asks where they
-  /// are, which is the right outcome.
-  Future<ChatOrigin?> _freshOrigin() async {
-    if (ref.read(locationPermissionProvider) !=
+  /// A reading taken *now* wins. Failing that it falls back to the place the
+  /// account has stored, which is what lets one tap on "ร้านอาหารใกล้ฉัน" be
+  /// answered instead of earning a question back.
+  ///
+  /// That fallback is the thing §8.2 of the API notes warns about: a position
+  /// allowed on another screen at another time. What makes it fair here is
+  /// that the page *says so* — [AiChatEmptyState] names the area and offers to
+  /// change it before a word is sent, so the assistant works from something
+  /// the traveller can see and correct rather than something inferred behind
+  /// them. Remove that line and this fallback has to go with it.
+  Future<ChatOrigin?> _originForTurn() async {
+    if (ref.read(locationPermissionProvider) ==
         LocationPermissionStatus.granted) {
-      return null;
+      final fix = await ref.read(locationServiceProvider).currentFix();
+      if (fix != null) {
+        return ChatOrigin(latitude: fix.latitude, longitude: fix.longitude);
+      }
     }
-    final fix = await ref.read(locationServiceProvider).currentFix();
-    if (fix == null) return null;
-    return ChatOrigin(latitude: fix.latitude, longitude: fix.longitude);
+    return ref.read(aiChatContextProvider).valueOrNull?.toOrigin();
   }
 
   /// Saves the draft the traveller is looking at, and returns the trip id.

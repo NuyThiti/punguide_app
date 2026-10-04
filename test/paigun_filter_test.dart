@@ -12,8 +12,8 @@ import 'package:pluno/features/paigun/presentation/providers/paigun_providers.da
 
 import 'support/home_feed_fixtures.dart';
 
-/// The board with the wizard behind its dark control, so a test can walk the
-/// real route rather than pumping the wizard on its own.
+/// The board with the sheet behind its ตัวกรอง control, so a test can walk the
+/// real route rather than pumping the sheet on its own.
 Widget _harness(ProviderContainer container) {
   return UncontrolledProviderScope(
     container: container,
@@ -36,54 +36,48 @@ Widget _harness(ProviderContainer container) {
   );
 }
 
-/// A feed row with a tier and a style the wizard can ask about.
-Map<String, dynamic> tieredTrip({
-  required String id,
-  required String title,
-  String? tier,
-  List<String> tags = const <String>['culture'],
-  int? durationDays = 3,
-  double totalBudget = 3000,
-}) {
-  return <String, dynamic>{
-    'id': id,
-    'title': title,
-    'destination': 'ภูเก็ต, ไทย',
-    'status': 'published',
-    'schedule': <String, dynamic>{
-      if (durationDays != null) 'durationDays': durationDays,
-    },
-    'totalBudget': totalBudget,
-    if (tier != null) 'budgetTier': tier,
-    'tags': tags,
-    'isSaved': false,
-    'isLiked': false,
-    'likeCount': 0,
-    'remixCount': 0,
-    'createdAt': '2026-09-01T00:00:00.000Z',
-    'updatedAt': '2026-09-01T00:00:00.000Z',
-  };
-}
-
-Future<void> _openWizard(WidgetTester tester) async {
+Future<void> _openSheet(WidgetTester tester) async {
   await tester.tap(find.byIcon(Icons.tune));
   await tester.pumpAndSettle();
 }
 
-/// Tap something inside the step's own scroll view.
+/// Brings something below the fold into the sheet's viewport.
 ///
-/// The later chips in a wall sit below the fold on a phone, and a tap on a
-/// clipped widget lands on the action bar instead — so scroll it into view
-/// first.
-Future<void> _tapInStep(WidgetTester tester, Finder target) async {
-  await tester.ensureVisible(target);
-  await tester.pumpAndSettle();
+/// The list is lazy, so a question far down it has no element at all until it
+/// is scrolled to — `ensureVisible` would throw on nothing.
+Future<void> _scrollSheetTo(WidgetTester tester, Finder target) async {
+  final list = find.descendant(
+    of: find.byType(PaigunFilterScreen),
+    matching: find.byType(ListView),
+  );
+
+  for (var attempt = 0; attempt < 10; attempt++) {
+    if (target.evaluate().isNotEmpty) {
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      return;
+    }
+    await tester.drag(list, const Offset(0, -220));
+    await tester.pumpAndSettle();
+  }
+}
+
+/// Tap something inside the sheet, scrolling to it first: a tap on a clipped
+/// widget lands on the apply bar instead.
+Future<void> _tapInSheet(WidgetTester tester, Finder target) async {
+  await _scrollSheetTo(tester, target);
   await tester.tap(target);
   await tester.pumpAndSettle();
 }
 
+void _phone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
+}
+
 void main() {
-  group('the wizard', () {
+  group('the sheet', () {
     late ProviderContainer container;
 
     setUp(() {
@@ -94,172 +88,115 @@ void main() {
 
     tearDown(() => container.dispose());
 
-    testWidgets('opens on วันที่ฉันจะไปเที่ยว with the calendar showing',
-        (tester) async {
-      tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
+    testWidgets('asks every question on one scroll', (tester) async {
+      _phone(tester);
 
       await tester.pumpWidget(_harness(container));
       await tester.pumpAndSettle();
-      await _openWizard(tester);
+      await _openSheet(tester);
 
-      expect(find.text('วันที่ฉันจะไปเที่ยว'), findsOneWidget);
-      expect(find.text('Calendar'), findsOneWidget);
-      expect(find.text('Flexible'), findsOneWidget);
-      // The rolling calendar draws its weekday header once, above the months.
-      expect(find.text('Sun'), findsOneWidget);
-      expect(find.text('Sat'), findsOneWidget);
-      // Untouched: no summary line, so no way to clear it either.
-      expect(find.text('ล้างที่เลือก'), findsNothing);
-      expect(find.text('ถัดไป'), findsOneWidget);
-      expect(find.text('ข้ามไปก่อน'), findsOneWidget);
+      expect(find.text('ตัวกรอง'), findsOneWidget);
+      expect(find.text('รูปแบบโพสที่จะเห็น'), findsOneWidget);
+      expect(find.text('วันที่เดินทาง'), findsOneWidget);
+      expect(find.text('จำนวนผู้ร่วมทริป'), findsOneWidget);
+      expect(find.text('งบประมาณต่อคน'), findsOneWidget);
+
+      // The last two sit below the fold until the sheet is scrolled.
+      await _scrollSheetTo(tester, find.text('สไตล์การเที่ยว'));
+      expect(find.text('รัศมีสถานที่ห่างจากฉัน'), findsOneWidget);
+      expect(find.text('ไม่จำกัด'), findsOneWidget);
+      expect(find.text('ธรรมชาติ'), findsOneWidget);
+      expect(find.text('+ เพิ่ม'), findsOneWidget);
     });
 
-    testWidgets(
-        'reads each answer back in the action bar and applies them to '
-        'the board', (tester) async {
-      tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
+    testWidgets('opens on the answers already in force', (tester) async {
+      _phone(tester);
+
+      container.read(tripFilterProvider.notifier).state =
+          const TripFilter(styles: ['ทะเล'], adults: 2, radiusKm: 25);
+      container.read(paigunFilterProvider.notifier).state = PaigunFilter.guide;
 
       await tester.pumpWidget(_harness(container));
       await tester.pumpAndSettle();
-      await _openWizard(tester);
+      await _openSheet(tester);
 
-      // วันที่ — a popular length, which the wheel follows.
-      await tester.tap(find.text('Flexible'));
+      // The head count reads back…
+      expect(find.text('2'), findsOneWidget);
+      // …and so does the board's own chip row, which is this sheet's first
+      // question rather than a second control.
+      await _scrollSheetTo(tester, find.text('25 Km.'));
+      expect(find.text('25 Km.'), findsOneWidget);
+    });
+
+    testWidgets('changes nothing until ตกลง', (tester) async {
+      _phone(tester);
+
+      await tester.pumpWidget(_harness(container));
       await tester.pumpAndSettle();
-      await _tapInStep(tester, find.text('3 วัน 2 คืน'));
-      expect(find.text('3 Day 2 Night'), findsOneWidget);
-      expect(find.text('ล้างที่เลือก'), findsOneWidget);
+      await _openSheet(tester);
 
-      await tester.tap(find.text('ถัดไป'));
+      await _tapInSheet(tester, find.text('ธรรมชาติ'));
+      await _tapInSheet(tester, find.text('10 Km.'));
+
+      // Still nothing behind the sheet.
+      expect(container.read(tripFilterProvider).isEmpty, isTrue);
+
+      // Backing out leaves the board exactly as it was found. The sheet has
+      // its own back disc rather than a Material app bar, so `pageBack` has
+      // nothing to find.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(PaigunFilterScreen),
+          matching: find.byIcon(Icons.chevron_left),
+        ),
+      );
       await tester.pumpAndSettle();
-
-      // จำนวนคน — the chips answer the counter beside them.
-      expect(find.text('จำนวนคน'), findsOneWidget);
-      await _tapInStep(tester, find.text('2 คน').first);
-      expect(find.text('ผู้ใหญ่ 2 คน'), findsOneWidget);
-
-      await tester.tap(find.text('ถัดไป'));
-      await tester.pumpAndSettle();
-
-      // งบ — a bracket, read back by name.
-      expect(find.text('งบเที่ยวของฉัน'), findsOneWidget);
-      await _tapInStep(tester, find.text('Premium').first);
-      // Once on the card, once in the summary.
-      expect(find.text('Premium'), findsNWidgets(2));
-
-      await tester.tap(find.text('ถัดไป'));
-      await tester.pumpAndSettle();
-
-      // สไตล์ — the last question, where ถัดไป becomes ตกลง.
-      expect(find.text('สไตล์เที่ยวของฉัน'), findsOneWidget);
-      expect(find.text('ถัดไป'), findsOneWidget);
-      await _tapInStep(tester, find.text('ทะเล'));
-      expect(find.text('1 รายการ'), findsOneWidget);
-      expect(find.text('ถัดไป'), findsNothing);
-      expect(find.text('ตกลง'), findsOneWidget);
-
-      await tester.tap(find.text('ตกลง'));
-      await tester.pumpAndSettle();
-
-      // Back on the board, with everything the wizard collected in force.
+      expect(container.read(tripFilterProvider).isEmpty, isTrue);
       expect(find.text('ไปกัน'), findsOneWidget);
+    });
+
+    testWidgets('ตกลง applies the answers and the type chip together',
+        (tester) async {
+      _phone(tester);
+
+      await tester.pumpWidget(_harness(container));
+      await tester.pumpAndSettle();
+      await _openSheet(tester);
+
+      await _tapInSheet(tester, find.text('คู่มือ'));
+      await _tapInSheet(tester, find.text('ธรรมชาติ'));
+      await _tapInSheet(tester, find.text('10 Km.'));
+      await _tapInSheet(tester, find.text('ตกลง'));
+
       final applied = container.read(tripFilterProvider);
-      expect(applied.dateMode, FilterDateMode.flexible);
-      expect(applied.days, 3);
-      expect(applied.adults, 2);
-      expect(applied.budgetTier, BudgetTier.premium);
-      expect(applied.styles, <String>['ทะเล']);
-      expect(applied.answeredCount, 4);
-    });
-
-    testWidgets('ล้างที่เลือก wipes the step on screen and nothing behind it',
-        (tester) async {
-      tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
-
-      await tester.pumpWidget(_harness(container));
-      await tester.pumpAndSettle();
-      await _openWizard(tester);
-
-      await tester.tap(find.text('Flexible'));
-      await tester.pumpAndSettle();
-      await _tapInStep(tester, find.text('1 สัปดาห์'));
-      expect(find.text('7 Day 6 Night'), findsOneWidget);
-
-      await tester.tap(find.text('ถัดไป'));
-      await tester.pumpAndSettle();
-      await _tapInStep(tester, find.text('4 คน').first);
-      expect(find.text('ผู้ใหญ่ 4 คน'), findsOneWidget);
-
-      await tester.tap(find.text('ล้างที่เลือก'));
-      await tester.pumpAndSettle();
-      expect(find.text('ผู้ใหญ่ 4 คน'), findsNothing);
-
-      // The length chosen a step earlier is still there.
-      await tester.tap(find.byIcon(Icons.chevron_left));
-      await tester.pumpAndSettle();
-      expect(find.text('7 Day 6 Night'), findsOneWidget);
-    });
-
-    testWidgets('backing out of the first step leaves the board untouched',
-        (tester) async {
-      tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
-
-      await tester.pumpWidget(_harness(container));
-      await tester.pumpAndSettle();
-      await _openWizard(tester);
-
-      await tester.tap(find.text('Flexible'));
-      await tester.pumpAndSettle();
-      await _tapInStep(tester, find.text('1 วัน'));
-
-      await tester.tap(find.byIcon(Icons.chevron_left));
-      await tester.pumpAndSettle();
-
+      expect(applied.styles, <String>['ธรรมชาติ']);
+      expect(applied.radiusKm, 10);
+      expect(container.read(paigunFilterProvider), PaigunFilter.guide);
+      // And it lands back on the board, which now says two questions narrow it.
       expect(find.text('ไปกัน'), findsOneWidget);
-      // Nothing is applied until the last step is finished.
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('ล้างตัวกรอง wipes the sheet, not the board behind it',
+        (tester) async {
+      _phone(tester);
+
+      container.read(tripFilterProvider.notifier).state =
+          const TripFilter(styles: ['ทะเล']);
+
+      await tester.pumpWidget(_harness(container));
+      await tester.pumpAndSettle();
+      await _openSheet(tester);
+
+      await tester.tap(find.text('ล้างตัวกรอง'));
+      await tester.pumpAndSettle();
+
+      // The board keeps its answer until ตกลง says otherwise.
+      expect(container.read(tripFilterProvider).styles, <String>['ทะเล']);
+
+      await _tapInSheet(tester, find.text('ตกลง'));
       expect(container.read(tripFilterProvider).isEmpty, isTrue);
     });
-  });
-
-  testWidgets('an applied filter goes up on the query and badges the control',
-      (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    final adapter = feedAdapter([
-      tieredTrip(id: 'sea', title: 'เกาะหลีเป๊ะ', tags: ['beach']),
-    ]);
-    final container = ProviderContainer(overrides: paigunOverrides(adapter));
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(_harness(container));
-    await tester.pumpAndSettle();
-    // Nothing answered yet: only the origin and the wall's own sort.
-    expect(
-      adapter.queriesOf('GET /trips').last.containsKey('styles'),
-      isFalse,
-    );
-
-    container.read(tripFilterProvider.notifier).state =
-        const TripFilter(styles: ['ทะเล']);
-    await tester.pumpAndSettle();
-
-    // The board does not sift the rows itself — it asks again, and the chip
-    // rides along as the enum the API documents.
-    for (final query in adapter.queriesOf('GET /trips').skip(2)) {
-      expect(query['styles'], 'beach');
-    }
-    // The header says one question is narrowing the board.
-    expect(find.text('1'), findsOneWidget);
   });
 
   group('TripFilter.toFeedQuery', () {
@@ -269,20 +206,15 @@ void main() {
 
     test('a chip with an enum goes up as a wire value, one without as text',
         () {
-      const filter = TripFilter(
-        styles: ['ทะเล', 'คาเฟ่', 'อิสลาม'],
-        constraints: ['มีผู้สูงอายุ', 'มังสวิรัติ'],
-      );
+      const filter = TripFilter(styles: ['ทะเล', 'คาเฟ่', 'อิสลาม']);
 
       final query = queryOf(filter);
       expect(query['styles'], 'beach,cafe');
-      expect(query['constraints'], 'seniors');
-      // Chips product added without waiting for a backend enum.
+      // A chip product added without waiting for a backend enum.
       expect(query['customStyles'], 'อิสลาม');
-      expect(query['customConstraints'], 'มังสวิรัติ');
     });
 
-    test('a calendar range is a window plus a ceiling, not a length', () {
+    test('a date window is a window plus a ceiling, not a length', () {
       final filter = TripFilter(
         startDate: DateTime(2026, 9, 28),
         endDate: DateTime(2026, 9, 30),
@@ -292,50 +224,58 @@ void main() {
       expect(query['dateFrom'], '2026-09-28');
       expect(query['dateTo'], '2026-09-30');
       // "What fits in these three days" — an exact durationDays would throw
-      // away the two-day trips the wizard means to keep.
+      // away the two-day trips the sheet means to keep.
       expect(query['maxDurationDays'], 3);
       expect(query.containsKey('durationDays'), isFalse);
     });
 
-    test('a half-drawn range reads as the single day the wizard shows', () {
+    test('a window with only a start reads as that single day', () {
       final filter = TripFilter(startDate: DateTime(2026, 9, 28));
 
       final query = queryOf(filter);
       expect(query['dateFrom'], '2026-09-28');
       expect(query['dateTo'], '2026-09-28');
+      expect(query['maxDurationDays'], 1);
     });
 
-    test('the flexible stepper is an exact length', () {
-      const filter = TripFilter(dateMode: FilterDateMode.flexible, days: 3);
+    test('the budget slider goes up as typed, per person', () {
+      const filter = TripFilter(adults: 2, children: 1, budgetPerPerson: 2500);
 
       final query = queryOf(filter);
-      expect(query['durationDays'], 3);
-      expect(query.containsKey('dateFrom'), isFalse);
-      expect(query.containsKey('maxDurationDays'), isFalse);
-    });
-
-    test('a typed figure overrides the bracket and carries its scope', () {
-      const filter = TripFilter(
-        adults: 2,
-        children: 1,
-        budgetTier: BudgetTier.premium,
-        budgetAmount: 10000,
-      );
-
-      final query = queryOf(filter);
-      expect(query['budgetMax'], 10000);
-      // The server divides by the trip's own head count, so the figure goes up
-      // as typed rather than pre-multiplied.
+      expect(query['budgetMax'], 2500);
+      // The server divides the trip's own budget by the trip's own head
+      // count, so the figure must not be pre-multiplied here.
       expect(query['budgetScope'], 'per_person');
-      expect(query.containsKey('budgetTiers'), isFalse);
       expect(query['adults'], 2);
       expect(query['children'], 1);
     });
 
-    test('a bracket on its own goes up as a tier', () {
-      const filter = TripFilter(budgetTier: BudgetTier.economy);
+    test('a slider left on the ceiling is not a budget answer', () {
+      const filter = TripFilter(budgetPerPerson: TripFilter.budgetCeiling);
 
-      expect(queryOf(filter)['budgetTiers'], 'economy');
+      expect(filter.hasBudget, isFalse);
+      expect(queryOf(filter).containsKey('budgetMax'), isFalse);
+    });
+
+    test('a radius goes up only alongside the coordinates it measures from',
+        () {
+      const origin = PaigunOrigin(
+        label: 'ตำแหน่งของฉัน',
+        address: 'เขตพระนคร, กรุงเทพ 10200',
+        latitude: 13.7563,
+        longitude: 100.4930,
+      );
+      const filter = TripFilter(radiusKm: 25);
+
+      final located = filter
+          .toFeedQuery(sort: FeedSort.nearest, origin: origin)
+          .toQuery();
+      expect(located['radiusKm'], 25);
+      expect(located['lat'], 13.7563);
+
+      // Half a fix measures nothing, so the server is given neither — and a
+      // radius around nowhere would silently hide every trip.
+      expect(queryOf(filter).containsKey('radiusKm'), isFalse);
     });
 
     test('an untouched sheet asks for nothing but the wall it is on', () {
@@ -345,19 +285,17 @@ void main() {
       expect(queryOf(TripFilter.none).keys, <String>['sort']);
     });
 
-    test('the origin rides along so the server can measure', () {
-      const origin = PaigunOrigin(
-        label: 'ตำแหน่งของฉัน',
-        address: 'เขตพระนคร, กรุงเทพ 10200',
-        latitude: 13.7563,
-        longitude: 100.4930,
-      );
-
+    test('the board\'s own controls ride along on the same request', () {
       final query = TripFilter.none
-          .toFeedQuery(sort: FeedSort.popular, origin: origin)
+          .toFeedQuery(
+            sort: FeedSort.popular,
+            type: TripType.content,
+            query: 'คาเฟ่',
+          )
           .toQuery();
-      expect(query['lat'], 13.7563);
-      expect(query['lng'], 100.4930);
+
+      expect(query['type'], 'content');
+      expect(query['q'], 'คาเฟ่');
       expect(query['sort'], 'popular');
     });
   });

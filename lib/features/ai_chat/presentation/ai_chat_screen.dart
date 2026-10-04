@@ -6,6 +6,7 @@ import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
+import 'providers/ai_chat_context.dart';
 import 'providers/ai_chat_providers.dart';
 import 'widgets/ai_chat_bubble.dart';
 import 'widgets/ai_chat_cards.dart';
@@ -41,11 +42,6 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   final _savedDrafts = <String, String>{};
   String? _savingKey;
 
-  /// The opener the design prints above the composer. It stays put once the
-  /// conversation has started — the design keeps it there, and a shortcut that
-  /// vanished the moment it was used would be the harder one to find again.
-  static const _opener = 'สถานที่ใกล้ฉัน';
-
   @override
   void dispose() {
     _controller.dispose();
@@ -56,6 +52,10 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(aiChatControllerProvider);
+
+    // Null while it loads, and null again if it fails — the page simply opens
+    // without an area rather than waiting on a request to draw itself.
+    final here = ref.watch(aiChatContextProvider).valueOrNull;
 
     ref.listen(aiChatControllerProvider, (previous, next) {
       if (next.messages.length != previous?.messages.length) _scrollToEnd();
@@ -91,7 +91,10 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               AiChatHeader(onBack: _close),
               Expanded(
                 child: state.isEmpty
-                    ? const AiChatEmptyState()
+                    ? AiChatEmptyState(
+                        context_: here,
+                        onChangeArea: _changeArea,
+                      )
                     : ListView(
                         controller: _scroll,
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -109,7 +112,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                   controller: _controller,
                   onSend: _send,
                   onSuggestion: _sendText,
-                  suggestion: _opener,
+                  suggestions: chatOpeners(here),
                   sending: state.sending,
                 ),
               ),
@@ -179,6 +182,15 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   }
 
   void _retry() => ref.read(aiChatControllerProvider.notifier).retry();
+
+  /// Opens the picker so a wrong area can be corrected, then re-reads the
+  /// account — confirming a pin writes it back through `/users/me/location`,
+  /// so the page has to ask again to see the change.
+  Future<void> _changeArea() async {
+    await context.pushNamed(AppRoute.locationPicker.name);
+    if (!mounted) return;
+    ref.invalidate(aiChatContextProvider);
+  }
 
   void _openTrip(String tripId) =>
       context.pushNamed(AppRoute.tripDetail.name, params: {'tripId': tripId});

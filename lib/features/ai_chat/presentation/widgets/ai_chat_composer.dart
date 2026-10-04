@@ -13,7 +13,7 @@ class AiChatComposer extends StatelessWidget {
     required this.controller,
     required this.onSend,
     required this.onSuggestion,
-    this.suggestion,
+    this.suggestions = const <String>[],
     this.sending = false,
   });
 
@@ -24,24 +24,37 @@ class AiChatComposer extends StatelessWidget {
   /// cannot become two turns.
   final bool sending;
 
-  /// The one-tap opener above the card. Null once the conversation has
-  /// started — it is a way in, not a permanent shortcut.
-  final String? suggestion;
+  /// The one-tap openers above the card.
+  ///
+  /// The design draws one; when the account knows where the traveller is there
+  /// are three, each naming the area, so a single tap asks something the
+  /// assistant can answer outright. They scroll rather than wrap, to keep the
+  /// composer's height fixed however long the area's name runs.
+  final List<String> suggestions;
   final ValueChanged<String> onSuggestion;
 
   static const _hint = 'What are you looking for today?';
 
   @override
   Widget build(BuildContext context) {
-    final suggestion = this.suggestion;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (suggestion != null) ...[
-          _SuggestionChip(
-            label: suggestion,
-            onTap: () => onSuggestion(suggestion),
+        if (suggestions.isNotEmpty) ...[
+          SizedBox(
+            height: 38,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: suggestions.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => Center(
+                child: _SuggestionChip(
+                  label: suggestions[index],
+                  onTap: () => onSuggestion(suggestions[index]),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 12),
         ],

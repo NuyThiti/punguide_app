@@ -109,6 +109,12 @@ class AppColors {
   static const cardFacts = Color(0xFF6F7570);
   static const cardCoverPill = Color(0xFF1C1714);
 
+  /// ตัวกรอง sheet (Figma 2480-59246): the board darkened behind it, the
+  /// grabber, and the peach a chosen chip wears.
+  static const filterBackdrop = Color(0xFF2B1511);
+  static const filterGrabber = Color(0xFFE2E0DD);
+  static const filterChipOn = Color(0xFFFFEDE4);
+
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);

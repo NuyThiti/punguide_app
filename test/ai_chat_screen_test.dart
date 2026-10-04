@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/api/api_providers.dart';
+import 'package:pluno/features/ai_chat/presentation/providers/ai_chat_context.dart';
+import 'package:pluno/features/auth/domain/auth_session.dart';
+import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/ai_chat/presentation/ai_chat_screen.dart';
 import 'package:pluno/features/ai_chat/presentation/widgets/ai_chat_bubble.dart';
 import 'package:pluno/features/ai_chat/presentation/widgets/ai_chat_empty_state.dart';
@@ -57,7 +60,11 @@ FakeAdapter _adapter({String? stream, Map<String, List<FakeReply>>? extra}) =>
       ...?extra,
     });
 
-Future<void> _pumpChat(WidgetTester tester, FakeAdapter adapter) async {
+Future<void> _pumpChat(
+  WidgetTester tester,
+  FakeAdapter adapter, {
+  bool signedIn = false,
+}) async {
   tester.view.physicalSize = const Size(430, 932);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -66,12 +73,33 @@ Future<void> _pumpChat(WidgetTester tester, FakeAdapter adapter) async {
     ProviderScope(
       overrides: [
         plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+        if (signedIn)
+          authSessionProvider
+              .overrideWith((ref) => AuthController(AuthSession.demo)),
       ],
       child: const MaterialApp(home: AiChatScreen()),
     ),
   );
   await tester.pumpAndSettle();
 }
+
+/// What `GET /users/me/location` answers once a place has been stored.
+Map<String, List<FakeReply>> _storedPlace({
+  String address = 'เทศบาลนครเชียงใหม่ อำเภอเมืองเชียงใหม่ เชียงใหม่',
+}) =>
+    <String, List<FakeReply>>{
+      'GET /users/me/location': [
+        FakeReply(200, <String, dynamic>{
+          'location': <String, dynamic>{
+            'id': 'place-1',
+            'name': 'ร้านกาแฟริมคลอง',
+            'address': address,
+            'lat': 18.7961,
+            'lng': 98.9673,
+          },
+        }),
+      ],
+    };
 
 Future<void> _send(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField), text);
@@ -237,5 +265,96 @@ void main() {
 
     expect(find.text('ยังไม่มีใครแชร์ทริปน่านไว้เลยครับ'), findsOneWidget);
     expect(find.text('ทริปที่คนอื่นแชร์ไว้'), findsNothing);
+  });
+
+  group('knowing where the traveller is', () {
+    testWidgets('names the area and offers openers that use it',
+        (tester) async {
+      await _pumpChat(
+        tester,
+        _adapter(extra: _storedPlace()),
+        signedIn: true,
+      );
+
+      // The page says what it is working from, in the traveller's own words.
+      expect(find.text('กำลังดูแถว เชียงใหม่'), findsOneWidget);
+      expect(find.text('เปลี่ยน'), findsOneWidget);
+
+      // And the openers are worth one tap each, rather than the generic one.
+      expect(find.text('ที่เที่ยวในเชียงใหม่'), findsOneWidget);
+      expect(find.text('ร้านอาหารใกล้ฉัน'), findsOneWidget);
+      expect(find.text('สถานที่ใกล้ฉัน'), findsNothing);
+    });
+
+    testWidgets('sends the stored place as the turn origin', (tester) async {
+      final adapter = _adapter(extra: _storedPlace());
+      await _pumpChat(tester, adapter, signedIn: true);
+
+      await tester.tap(find.text('ร้านอาหารใกล้ฉัน'));
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('POST /chat/conversations/room-1/messages')!;
+      expect(body['text'], 'ร้านอาหารใกล้ฉัน');
+      expect(body['origin'], <String, dynamic>{
+        'lat': 18.7961,
+        'lng': 98.9673,
+        // The province, not the cafe across the road — a landmark is not
+        // where the traveller is.
+        'label': 'เชียงใหม่',
+      });
+    });
+
+    testWidgets('falls back to the place name when the address has no province',
+        (tester) async {
+      await _pumpChat(
+        tester,
+        _adapter(extra: _storedPlace(address: '')),
+        signedIn: true,
+      );
+
+      expect(find.text('กำลังดูแถว ร้านกาแฟริมคลอง'), findsOneWidget);
+    });
+
+    testWidgets('signed out, it claims nothing and sends no origin',
+        (tester) async {
+      // Stubbed, but the route is behind the auth guard so it is never asked.
+      final adapter = _adapter(extra: _storedPlace());
+      await _pumpChat(tester, adapter);
+
+      expect(find.textContaining('กำลังดูแถว'), findsNothing);
+      expect(find.text('สถานที่ใกล้ฉัน'), findsOneWidget);
+      expect(adapter.paths, isNot(contains('GET /users/me/location')));
+
+      await _send(tester, 'หาที่เที่ยวหน่อย');
+      final body = adapter.bodyOf('POST /chat/conversations/room-1/messages')!;
+      expect(body.containsKey('origin'), isFalse);
+    });
+
+    testWidgets('a location the page could not read is simply not claimed',
+        (tester) async {
+      final adapter = _adapter(
+        extra: <String, List<FakeReply>>{
+          'GET /users/me/location': [const FakeReply(500, null)],
+        },
+      );
+      await _pumpChat(tester, adapter, signedIn: true);
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('กำลังดูแถว'), findsNothing);
+      expect(find.text('สถานที่ใกล้ฉัน'), findsOneWidget);
+    });
+
+    test('the openers only name an area when there is one', () {
+      expect(chatOpeners(null), <String>['สถานที่ใกล้ฉัน']);
+      expect(
+        chatOpeners(const AiChatContext(
+          latitude: 1,
+          longitude: 2,
+          placeName: 'ร้านกาแฟ',
+          area: 'น่าน',
+        )),
+        contains('ที่เที่ยวในน่าน'),
+      );
+    });
   });
 }
