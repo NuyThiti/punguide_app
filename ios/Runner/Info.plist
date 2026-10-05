@@ -29,7 +29,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.113430056181-qlvjh3bpie7q8q5ma0gk5t8c7prban33</string>
+				<string>com.googleusercontent.apps.113430056181-v6imjlsl0ml661u363hmo92lhurdggm7</string>
 			</array>
 		</dict>
 	</array>
@@ -37,6 +37,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>GMSApiKey</key>
 	<string>$(MAPS_API_KEY)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
