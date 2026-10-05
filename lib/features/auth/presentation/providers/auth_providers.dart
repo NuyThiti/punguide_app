@@ -21,9 +21,17 @@ final authSessionProvider =
     ref.watch(googleAuthenticatorProvider),
   );
   // Fire and forget: the UI shows the signed-out state until this lands.
-  controller.restoreSession();
+  // Anything that must not guess — the launch screen — awaits
+  // [sessionRestoredProvider] instead.
+  controller.restored;
   return controller;
 });
+
+/// Completes once the session left over from the last run has been restored,
+/// or found missing. Never fails.
+final sessionRestoredProvider = FutureProvider<void>(
+  (ref) => ref.watch(authSessionProvider.notifier).restored,
+);
 
 /// Convenience read for widgets that only care whether a session exists.
 final isSignedInProvider =
@@ -59,6 +67,12 @@ class AuthController extends StateNotifier<AuthSession?> {
   /// driven from the screen so it can tell a cancel from a failure.
   final GoogleAuthenticator? _google;
   StreamSubscription<void>? _expirySubscription;
+  Future<void>? _restored;
+
+  /// The one [restoreSession] call, started on first read.
+  Future<void> get restored => _restored ??= restoreSession().catchError(
+        (Object error) => debugPrint('Session restore failed: $error'),
+      );
 
   /// Whether this controller talks to the server or to the local stand-in.
   bool get isBackedByApi => _api != null;

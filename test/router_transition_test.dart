@@ -16,6 +16,8 @@ void main() {
         child: MaterialApp.router(routerConfig: appRouter),
       ),
     );
+    // The app opens on the launch screen; start this test from Home.
+    appRouter.goNamed(AppRoute.home.name);
     await tester.pumpAndSettle();
     expect(find.byType(HomeScreen), findsOneWidget);
 

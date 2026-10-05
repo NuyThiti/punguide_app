@@ -14,7 +14,12 @@ import 'providers/auth_providers.dart';
 enum _AuthMode { signIn, register }
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.then});
+
+  /// Where to go once signed in — or once the screen is dismissed. Set when
+  /// the screen opens the app rather than being asked for, so the launch
+  /// sequence carries on to the next step instead of dropping onto Home.
+  final String? then;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -109,7 +114,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         content: Text(registering ? 'สมัครสมาชิกแล้ว' : 'เข้าสู่ระบบแล้ว'),
       ),
     );
-    router.goNamed(AppRoute.home.name);
+    _continue(router);
   }
 
   /// The server's own wording is the fallback — it explains the password rules
@@ -162,7 +167,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = false);
     messenger.showSnackBar(const SnackBar(content: Text('เข้าสู่ระบบแล้ว')));
-    router.goNamed(AppRoute.home.name);
+    _continue(router);
   }
 
   /// A rejected Firebase token and an unconfigured server both surface here,
@@ -187,8 +192,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
   }
 
+  void _continue(GoRouter router) {
+    final then = widget.then;
+    if (then != null) {
+      router.go(then);
+    } else {
+      router.goNamed(AppRoute.home.name);
+    }
+  }
+
   void _close() {
-    if (Navigator.of(context).canPop()) {
+    if (widget.then != null) {
+      // Opened at launch: closing skips signing in, not the rest of the
+      // sequence.
+      _continue(GoRouter.of(context));
+    } else if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     } else {
       context.goNamed(AppRoute.home.name);

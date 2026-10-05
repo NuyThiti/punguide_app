@@ -9,6 +9,7 @@ import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/launch/presentation/launch_screen.dart';
 import '../../features/location_access/presentation/location_access_screen.dart';
 import '../../features/location_access/presentation/location_picker_screen.dart';
 import '../../features/location_access/presentation/providers/location_providers.dart';
@@ -23,6 +24,7 @@ import '../../features/search/presentation/search_screen.dart';
 import '../../features/trip_detail/presentation/trip_detail_screen.dart';
 
 enum AppRoute {
+  launch,
   home,
   aiChat,
   login,
@@ -70,8 +72,16 @@ Page<void> _instantPage(GoRouterState state, Widget child) =>
     NoTransitionPage<void>(key: state.pageKey, child: child);
 
 final appRouter = GoRouter(
-  initialLocation: '/',
+  // Every run opens on the launch screen, which decides between Login,
+  // Location Access and Home once the session is back.
+  initialLocation: '/start',
   routes: [
+    GoRoute(
+      path: '/start',
+      name: AppRoute.launch.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const LaunchScreen()),
+    ),
     GoRoute(
       path: '/',
       name: AppRoute.home.name,
@@ -204,7 +214,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/login',
       name: AppRoute.login.name,
-      pageBuilder: (context, state) => _instantPage(state, const LoginScreen()),
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        LoginScreen(then: state.queryParams['then']),
+      ),
     ),
     GoRoute(
       path: '/profile',
