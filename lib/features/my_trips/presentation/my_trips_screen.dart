@@ -45,6 +45,7 @@ class MyTripsScreen extends ConsumerWidget {
                 child: !signedIn
                     ? const _SignedOutState()
                     : RefreshIndicator(
+                        color: AppColors.loading,
                         onRefresh: () =>
                             ref.read(myTripsProvider.notifier).refresh(),
                         child: rows.when(

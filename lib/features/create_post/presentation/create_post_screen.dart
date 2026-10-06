@@ -30,6 +30,8 @@ import 'widgets/post_title_field.dart';
 import 'widgets/post_warnings.dart';
 import 'widgets/post_block.dart';
 import 'widgets/trip_link_picker.dart';
+import 'widgets/trip_spot_pagination.dart';
+import 'widgets/trip_spot_reorder_sheet.dart';
 
 /// What `POST /trips/:id/contents/generate` takes in one call. A cost ceiling
 /// billed per photo, not a limit on the post, which still holds 200.
@@ -81,6 +83,12 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// Keep one section; any section can be removed when more than one exists.
   final List<_BlockFields> _blocks = <_BlockFields>[_BlockFields()];
+
+  /// The spot on screen — kept apart from [_blocks] itself, and always by a
+  /// block's own stable [_BlockFields.id] rather than its position, so an add,
+  /// a delete or a drag in the reorder sheet can never leave it pointing at
+  /// the wrong spot (or past the end of a shorter list).
+  int _currentBlockIndex = 0;
 
   PostAudience _audience = PostAudience.public;
 
@@ -363,16 +371,74 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       return;
     }
     final fields = _BlockFields()..listen(_refresh);
-    setState(() => _blocks.add(fields));
+    setState(() {
+      _blocks.add(fields);
+      // The point of "เพิ่มจุดต่อไป": land on the spot it just made.
+      _currentBlockIndex = _blocks.length - 1;
+    });
   }
 
   void _removeBlock(int index) {
+    // The last spot never goes — same invariant the "ลบจุดนี้" row already
+    // enforces by hiding itself; the reorder sheet enforces it the same way.
+    if (_blocks.length <= 1) return;
     final fields = _blocks[index];
+    final viewedId = _blocks[_currentBlockIndex].id;
     setState(() {
       _blocks.removeAt(index);
       _syncCover();
+      final stillThere = _blocks.indexWhere((block) => block.id == viewedId);
+      _currentBlockIndex = stillThere >= 0
+          ? stillThere
+          : _currentBlockIndex.clamp(0, _blocks.length - 1);
     });
     fields.dispose(_refresh);
+  }
+
+  /// What the reorder sheet's own delete button calls — by id, since a spot's
+  /// position there is a snapshot that may already have moved.
+  void _removeBlockById(String id) {
+    final index = _blocks.indexWhere((block) => block.id == id);
+    if (index != -1) _removeBlock(index);
+  }
+
+  /// A drag in the reorder sheet. [newIndex] arrives already adjusted for
+  /// [oldIndex] having been removed — `ReorderableListView.onReorderItem`'s
+  /// own contract — so this is a plain remove-then-insert, the same the sheet
+  /// does to its own copy.
+  void _reorderBlocks(int oldIndex, int newIndex) {
+    final viewedId = _blocks[_currentBlockIndex].id;
+    setState(() {
+      final block = _blocks.removeAt(oldIndex);
+      _blocks.insert(newIndex, block);
+      _currentBlockIndex = _blocks.indexWhere((b) => b.id == viewedId);
+    });
+  }
+
+  /// How many of a spot's items actually carry a place — "Spot 1 • 1 place"
+  /// in the reorder sheet.
+  int _placeCount(_BlockFields block) => block.items
+      .where((item) =>
+          item.place != null ||
+          item.location?.status == ContentLocationStatus.confirmed)
+      .length;
+
+  Future<void> _openReorderSheet() async {
+    await showTripSpotReorderSheet(
+      context,
+      spots: [
+        for (final block in _blocks)
+          ReorderableSpot(
+            id: block.id,
+            title: block.title.text,
+            thumbnailPath:
+                block.imagePaths.isEmpty ? null : block.imagePaths.first,
+            placeCount: _placeCount(block),
+          ),
+      ],
+      onReorder: _reorderBlocks,
+      onDelete: _removeBlockById,
+    );
   }
 
   /// Puts the heading field on screen and drops the caret in it.
@@ -1815,12 +1881,25 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return AppFrame(
       background: AppColors.screen,
       child: PopScope(
-        canPop: !_publishing && !_arranging,
+        // Back from spot 2+ first goes to spot 1 — leaving the screen itself
+        // is only what a back on spot 1 does. `_close`'s own `Navigator.pop`
+        // runs under this same scope, so this governs both the header's
+        // close button and the system gesture alike.
+        canPop: !_publishing && !_arranging && _currentBlockIndex == 0,
         onPopInvokedWithResult: (didPop, result) {
           // The system back gesture is leaving too, and leaving is leaving
           // however it is done.
-          if (didPop) _clearLocal();
-          if (!didPop && _arranging) _cancelArrangement();
+          if (didPop) {
+            _clearLocal();
+            return;
+          }
+          if (_arranging) {
+            _cancelArrangement();
+            return;
+          }
+          if (_currentBlockIndex != 0) {
+            setState(() => _currentBlockIndex = 0);
+          }
         },
         child: AbsorbPointer(
           absorbing: _publishing,
@@ -1864,42 +1943,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       warnings: _warnings,
                       onDismiss: () => setState(() => _warnings = const []),
                     ),
-                    for (var index = 0; index < _blocks.length; index++) ...[
-                      if (index > 0) const SizedBox(height: 18),
-                      if (_blocks.length > 1)
-                        Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text('จุด ${index + 1}',
-                                  style: const TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700)),
-                              IconButton(
-                                  tooltip: 'เลื่อนขึ้น',
-                                  icon:
-                                      const Icon(Icons.arrow_upward, size: 18),
-                                  onPressed: index == 0
-                                      ? null
-                                      : () => setState(() {
-                                            final block =
-                                                _blocks.removeAt(index);
-                                            _blocks.insert(index - 1, block);
-                                          })),
-                              IconButton(
-                                  tooltip: 'เลื่อนลง',
-                                  icon: const Icon(Icons.arrow_downward,
-                                      size: 18),
-                                  onPressed: index == _blocks.length - 1
-                                      ? null
-                                      : () => setState(() {
-                                            final block =
-                                                _blocks.removeAt(index);
-                                            _blocks.insert(index + 1, block);
-                                          })),
-                            ]),
-                      PostBlock(
-                        key: ValueKey(_blocks[index]),
+                    Builder(builder: (context) {
+                      // One spot on screen at a time — pagination (below,
+                      // outside this scroll view) is what moves between them,
+                      // so this never renders more than one `PostBlock`'s
+                      // worth of text fields, photo grids and map widgets at
+                      // once. `index` is kept as the name the callback bodies
+                      // below already use throughout.
+                      final index = _currentBlockIndex;
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: PostBlock(
+                        key: ValueKey(_blocks[index].id),
                         titleController: _blocks[index].title,
                         titleFocus: _blocks[index].titleFocus,
                         bodyController: _blocks[index].body,
@@ -2000,13 +2055,25 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         onRemove: _blocks.length == 1
                             ? null
                             : () => _removeBlock(index),
-                      ),
-                    ],
+                        ),
+                      );
+                    }),
                     const SizedBox(height: 16),
                     AddSpotButton(onTap: _addBlock),
                   ],
                 ),
               ),
+              if (_blocks.length > 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
+                  child: TripSpotPagination(
+                    count: _blocks.length,
+                    currentIndex: _currentBlockIndex,
+                    onSelect: (index) =>
+                        setState(() => _currentBlockIndex = index),
+                    onManage: _openReorderSheet,
+                  ),
+                ),
               PostActionBar(
                 onSaveDraft: _saveDraftAndClose,
                 onShare: _next,
@@ -2024,6 +2091,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 /// The controllers and attachments of one section, owned by the screen so the
 /// block itself stays stateless.
 class _BlockFields {
+  /// Local only — never sent, never read back. Pagination, the reorder sheet
+  /// and `ValueKey`s all need a spot's identity to survive it changing
+  /// position (or vanishing, for the rest of the list, when one is deleted),
+  /// which a list index cannot do on its own.
+  final String id = uuidV4();
+
   final TextEditingController title = TextEditingController();
   final FocusNode titleFocus = FocusNode();
   final List<_BlockItemFields> items = [_BlockItemFields()];

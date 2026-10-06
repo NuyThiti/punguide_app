@@ -21,6 +21,7 @@ import '../../features/puntok/presentation/puntok_screen.dart';
 import '../../features/remix_trip/presentation/remix_trip_screen.dart';
 import '../../features/saved_trips/presentation/saved_trips_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
+import '../../features/trip_detail/presentation/post_share_settings_screen.dart';
 import '../../features/trip_detail/presentation/trip_detail_screen.dart';
 
 enum AppRoute {
@@ -37,6 +38,7 @@ enum AppRoute {
   createPost,
   editTrip,
   editTripBrief,
+  shareSettings,
   myTrips,
   savedTrips,
   remixTrip,
@@ -151,6 +153,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _instantPage(
         state,
         EditTripBriefScreen(tripId: state.params['tripId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/trips/:tripId/share',
+      name: AppRoute.shareSettings.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        PostShareSettingsScreen(tripId: state.params['tripId']!),
       ),
     ),
     GoRoute(

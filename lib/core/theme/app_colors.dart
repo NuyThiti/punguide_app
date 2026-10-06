@@ -14,6 +14,9 @@ class AppColors {
   static const secondary = Color(0xFF4CAC71);
   static const accent = Color(0xFFE89A5F);
 
+  /// Spinners and pull-to-refresh, app-wide.
+  static const loading = Color(0xFF5E27E0);
+
   /// PunGuide brand palette (PaiGun-PunGuide Figma file).
   /// "ไปกัน" action, active tab and the create FAB.
   static const brandOrange = Color(0xFFF4703A);

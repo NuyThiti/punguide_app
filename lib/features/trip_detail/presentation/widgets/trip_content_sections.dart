@@ -177,14 +177,25 @@ class _GroupHeading extends StatelessWidget {
 
 /// One spot: its photos, what it is called, where, the story, and the notes
 /// beside it.
-class _SpotCard extends ConsumerWidget {
+class _SpotCard extends ConsumerStatefulWidget {
   const _SpotCard({required this.section, required this.gutter});
 
   final TripContent section;
   final double gutter;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SpotCard> createState() => _SpotCardState();
+}
+
+class _SpotCardState extends ConsumerState<_SpotCard> {
+  /// Collapsed by default, as Figma 2532-82227 draws it: a reader skims the
+  /// places first and opens the one they care about.
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final section = widget.section;
+    final gutter = widget.gutter;
     // A suggested pin is the assistant's guess and the server hides it from a
     // public read; only a place the writer confirmed is theirs to publish.
     final location = section.location;
@@ -250,38 +261,51 @@ class _SpotCard extends ConsumerWidget {
                     ),
                   ),
                 ],
-                if (time.isNotEmpty) ...[
+                if (_open) ...[
+                  if (time.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _InfoRow(icon: Icons.schedule, text: time),
+                  ],
+                  if (transport.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(
+                      icon: Icons.directions_bus_filled_outlined,
+                      text: transport,
+                    ),
+                  ],
+                  // Not in the Figma frame, which shows no contact row at all —
+                  // kept because the writer's own `contactInfo` would otherwise
+                  // be collected and never read back.
+                  if (contact.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.call_outlined, text: contact),
+                  ],
+                  // Google's own phone/website for this place — automatic, and
+                  // only ever shown when Google actually has them. Separate from
+                  // `contact` above, which is whatever the writer typed by hand.
+                  if (phone != null && phone.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.phone_outlined, text: phone.trim()),
+                  ],
+                  if (website != null && website.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.language, text: website),
+                  ],
+                  if (hack.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _TripHackRow(text: hack),
+                  ],
+                ],
+                // Only offered when there is something behind it — a spot
+                // with no hours, no way there and no tip has nothing to
+                // show, and an empty drawer is worse than none.
+                if (_hasDetails(time, transport, contact, phone, website,
+                    hack)) ...[
                   const SizedBox(height: 12),
-                  _InfoRow(icon: Icons.schedule, text: time),
-                ],
-                if (transport.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _InfoRow(
-                    icon: Icons.directions_bus_filled_outlined,
-                    text: transport,
+                  _DetailsToggle(
+                    open: _open,
+                    onTap: () => setState(() => _open = !_open),
                   ),
-                ],
-                // Not in the Figma frame, which shows no contact row at all —
-                // kept because the writer's own `contactInfo` would otherwise
-                // be collected and never read back.
-                if (contact.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _InfoRow(icon: Icons.call_outlined, text: contact),
-                ],
-                // Google's own phone/website for this place — automatic, and
-                // only ever shown when Google actually has them. Separate from
-                // `contact` above, which is whatever the writer typed by hand.
-                if (phone != null && phone.trim().isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _InfoRow(icon: Icons.phone_outlined, text: phone.trim()),
-                ],
-                if (website != null && website.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _InfoRow(icon: Icons.language, text: website),
-                ],
-                if (hack.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  _TripHackRow(text: hack),
                 ],
               ],
             ),
@@ -290,6 +314,15 @@ class _SpotCard extends ConsumerWidget {
       ),
     );
   }
+
+  static bool _hasDetails(String time, String transport, String contact,
+          String? phone, String? website, String hack) =>
+      time.isNotEmpty ||
+      transport.isNotEmpty ||
+      contact.isNotEmpty ||
+      (phone != null && phone.trim().isNotEmpty) ||
+      (website != null && website.isNotEmpty) ||
+      hack.isNotEmpty;
 
   /// "ไปตอน 06.00 น. | เปิด/ปิด 06.00 - 14.30 น."
   ///
@@ -300,6 +333,7 @@ class _SpotCard extends ConsumerWidget {
   /// no hours of its own — the writer's (or the assistant's) own answer is
   /// never second-guessed by Google's.
   String _timeLine(PlaceDetails? live) {
+    final section = widget.section;
     final ownHours = hoursRangeText(section.opensAt, section.closesAt);
     final openNow =
         live?.currentOpeningHours?.openNow ?? live?.regularOpeningHours?.openNow;
@@ -316,6 +350,7 @@ class _SpotCard extends ConsumerWidget {
 
   /// Photos, preferring uploaded media over the legacy URL-only sections.
   List<String?> get _photos {
+    final section = widget.section;
     if (section.mediaIds != null) {
       return [
         for (final image in section.images)
@@ -336,6 +371,41 @@ class _SpotCard extends ConsumerWidget {
       return '${location.latitude}, ${location.longitude}';
     }
     return null;
+  }
+}
+
+/// "ดูรายละเอียด" — opens the spot's hours, the way there and its tip.
+class _DetailsToggle extends StatelessWidget {
+  const _DetailsToggle({required this.open, required this.onTap});
+
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            open ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด',
+            style: const TextStyle(
+              color: AppColors.foreground,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            open ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+            size: 18,
+            color: AppColors.foreground,
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -126,6 +126,11 @@ Widget _harness({AuthUser? viewer}) => ProviderScope(
               name: AppRoute.home.name,
               builder: (_, __) => const Scaffold(body: Text('home page')),
             ),
+            GoRoute(
+              path: '/remix/:tripId',
+              name: AppRoute.remixTrip.name,
+              builder: (_, __) => const Scaffold(body: Text('remix page')),
+            ),
           ],
         ),
       ),
@@ -145,6 +150,16 @@ Future<void> _pumpPost(
 
 const _owner = AuthUser(id: 'u1', username: 'maki');
 const _visitor = AuthUser(id: 'u2', username: 'someone');
+
+
+/// Opens every spot's details drawer — the extras are collapsed by default.
+Future<void> _openDetails(WidgetTester tester) async {
+  for (final toggle in find.text('ดูรายละเอียด').evaluate().toList()) {
+    await tester.tap(find.byWidget(toggle.widget));
+    await tester.pump();
+  }
+  await tester.pumpAndSettle();
+}
 
 void main() {
   setUp(() => adapter = FakeAdapter({}));
@@ -229,6 +244,7 @@ void main() {
       (tester) async {
     phone(tester);
     await _pumpPost(tester);
+    await _openDetails(tester);
 
     // Hours read the way the composer writes them.
     expect(find.text('เปิด/ปิด 08.00 - 17.00 น.'), findsOneWidget);
@@ -253,6 +269,8 @@ void main() {
       ]),
     );
 
+    await _openDetails(tester);
+
     // The design shows both halves; the composer's chip had room for one.
     expect(
       find.text('ไปตอน 06.00 น. | เปิด/ปิด 06.00 - 14.30 น.'),
@@ -264,6 +282,7 @@ void main() {
       (tester) async {
     phone(tester);
     await _pumpPost(tester);
+    await _openDetails(tester);
 
     expect(find.text('Trip Hack'), findsOneWidget);
     final hack = find.text('มาเย็น ๆ แสงสวย คนน้อย และร้านข้าง ๆ เพิ่งเปิดพอดี');
@@ -333,9 +352,69 @@ void main() {
     phone(tester);
     await _pumpPost(tester, viewer: _visitor);
 
-    // A post is not remixable, so somebody else's gets no bar at all.
+    // No edit bar — but Remix Trip is in the hero for everyone now.
     expect(find.text('แก้ไขโพสต์'), findsNothing);
-    expect(find.text('Remix Trip'), findsNothing);
+    expect(find.text('Remix Trip'), findsOneWidget);
+  });
+
+  testWidgets('Remix Trip leaves for the remix route', (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _visitor);
+
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('remix page'), findsOneWidget);
+  });
+
+  testWidgets('a spot keeps its details shut until asked', (tester) async {
+    phone(tester);
+    await _pumpPost(tester);
+
+    // Collapsed: the hours are behind the toggle.
+    expect(find.text('ดูรายละเอียด'), findsWidgets);
+    expect(find.text('เปิด/ปิด 08.00 - 17.00 น.'), findsNothing);
+
+    await tester.tap(find.text('ดูรายละเอียด').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('เปิด/ปิด 08.00 - 17.00 น.'), findsOneWidget);
+    expect(find.text('ซ่อนรายละเอียด'), findsOneWidget);
+  });
+
+  testWidgets('a spot with nothing extra is offered no drawer',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [
+        <String, dynamic>{'title': 'จุดเปล่า', 'content': 'เนื้อหา'},
+      ]),
+    );
+
+    // An empty drawer is worse than none.
+    expect(find.text('ดูรายละเอียด'), findsNothing);
+  });
+
+  testWidgets('the counts read compactly and the facts sit under Trip Overview',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: <String, dynamic>{
+        ..._postJson(),
+        'remixCount': 1111,
+        'likeCount': 1721,
+      },
+    );
+
+    expect(find.text('1.1K'), findsOneWidget);
+    expect(find.text('1.7K'), findsOneWidget);
+
+    // The facts moved off the hero: they now sit below Trip Overview.
+    final overview = tester.getRect(find.text('Trip Overview'));
+    final place = tester.getRect(find.text('เทศบาลนครระยอง · ระยอง'));
+    expect(place.top, greaterThan(overview.top));
   });
 
   /// The real value from the ระยอง post: `contactInfo` is free text, not a
@@ -357,6 +436,7 @@ void main() {
       ]),
     );
 
+    await _openDetails(tester);
     expect(tester.takeException(), isNull);
 
     final chip = find.text(longContact);

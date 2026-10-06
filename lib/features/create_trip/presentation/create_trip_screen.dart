@@ -6,6 +6,7 @@ import '../../../core/api/api_providers.dart';
 import '../../../core/api/pluno_api.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../home/presentation/providers/home_feed_providers.dart';
 import '../domain/plan_labels.dart';
 import '../../trips/domain/models/trip.dart';
@@ -1613,7 +1614,7 @@ class _SearchHeader extends StatelessWidget {
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
-                            color: Color(0xFFFF765E),
+                            color: AppColors.loading,
                           ),
                         ),
                       ),

@@ -47,6 +47,8 @@ class AppTheme {
         color: AppColors.screen,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
+      progressIndicatorTheme:
+          const ProgressIndicatorThemeData(color: AppColors.loading),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       ),

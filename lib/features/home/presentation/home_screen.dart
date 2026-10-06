@@ -99,6 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Stack(
         children: [
           RefreshIndicator(
+            color: AppColors.loading,
             onRefresh: () => ref.read(homeFeedProvider.notifier).refresh(),
             child: ListView(
               controller: _scroll,

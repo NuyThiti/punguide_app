@@ -67,6 +67,7 @@ class PaigunScreen extends ConsumerWidget {
               ),
               Expanded(
                 child: RefreshIndicator(
+                  color: AppColors.loading,
                   onRefresh: () => refreshPaigunFeed(ref),
                   child: ListView(
                     padding: EdgeInsets.only(

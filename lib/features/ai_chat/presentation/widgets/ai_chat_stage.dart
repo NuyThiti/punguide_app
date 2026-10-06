@@ -66,7 +66,7 @@ class AiChatThinking extends StatelessWidget {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: AppColors.aiGreeting,
+                    color: AppColors.loading,
                   ),
                 ),
               ),

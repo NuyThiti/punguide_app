@@ -343,6 +343,7 @@ class ApiTrip {
     this.placeCount = 0,
     this.linkedTrip,
     this.description,
+    this.allowRemix = false,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -376,6 +377,7 @@ class ApiTrip {
         budgetCurrency: Json.string(json, 'budgetCurrency'),
         placeCount: Json.integer(json, 'placeCount') ?? 0,
         linkedTrip: LinkedTrip.maybeFromJson(json['linkedTrip']),
+        allowRemix: Json.boolean(json, 'allowRemix'),
         mediaSummary: MediaSummary.fromJson(Json.asMap(json['mediaSummary'])),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
@@ -419,6 +421,13 @@ class ApiTrip {
   /// The blurb under the post's name, written for whoever reads it. Absent
   /// when none was written.
   final String? description;
+
+  /// Whether other travellers may remix this post into a plan of their own.
+  ///
+  /// Guessed wire shape — no such field exists in the API contract yet; this
+  /// is a placeholder for the "เปิดให้ remix" toggle until the backend
+  /// confirms the real key.
+  final bool allowRemix;
 
   final double totalBudget;
   final BudgetTier? budgetTier;

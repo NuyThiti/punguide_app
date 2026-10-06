@@ -13,6 +13,7 @@ import 'package:pluno/features/create_post/domain/models/post_draft.dart';
 import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_block.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
+import 'package:pluno/features/create_post/presentation/widgets/trip_spot_pagination.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
@@ -485,22 +486,31 @@ void main() {
     await _tapImport(tester);
     await _settleImport(tester);
 
-    // A spot per section, each holding the photo it was written about.
-    final blocks =
-        tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
-    expect(blocks, hasLength(2));
-    expect(blocks.first.details.opensAt, const TimeOfDay(hour: 9, minute: 0));
-    expect(blocks.first.details.closesAt, const TimeOfDay(hour: 20, minute: 0));
-    expect(blocks.first.details.tripHack, 'ไปช่วงเช้า');
-    expect(blocks.first.items!.first.bodyController.text,
+    // A spot per section, each holding the photo it was written about. Only
+    // the current one is mounted, so the pagination row's own callback moves
+    // between them instead of a `widgetList` over everything at once.
+    expect(find.byType(TripSpotPagination), findsOneWidget);
+    final onSelectPage = tester
+        .widget<TripSpotPagination>(find.byType(TripSpotPagination))
+        .onSelect;
+
+    final firstBlock = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(firstBlock.details.opensAt, const TimeOfDay(hour: 9, minute: 0));
+    expect(firstBlock.details.closesAt, const TimeOfDay(hour: 20, minute: 0));
+    expect(firstBlock.details.tripHack, 'ไปช่วงเช้า');
+    expect(firstBlock.items!.first.bodyController.text,
         'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
-    expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
-    expect(blocks.last.imagePaths, ['assets/images/puntok_london.jpg']);
+    expect(firstBlock.imagePaths, ['assets/images/puntok_osaka.jpg']);
 
     // Its warnings have to be on screen, and its place stays unconfirmed.
     expect(find.text('• รูปที่สองมืดเกินกว่าจะอธิบายได้'), findsOneWidget);
     expect(find.text('วัดเจดีย์หลวง'), findsOneWidget);
     expect(find.text('ผู้ช่วยแนะนำ ยังไม่ยืนยัน'), findsOneWidget);
+
+    onSelectPage(1);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
+        ['assets/images/puntok_london.jpg']);
 
     // The photos went up in order, with the key that makes a replay free.
     final body = adapter.bodyOf('POST /trips/trip-new/contents/generate')!;
@@ -1065,12 +1075,19 @@ void main() {
 
     // One card per photo, in the order they were sent, the wordless one kept
     // for the traveller to fill in rather than folded into its neighbour.
-    final blocks =
-        tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
-    expect(blocks, hasLength(2));
-    expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
-    expect(blocks.last.imagePaths, ['assets/images/puntok_london.jpg']);
-    expect(blocks.last.items!.first.bodyController.text, isEmpty);
+    // Only the current spot is mounted, so the pagination callback — not a
+    // `widgetList` over everything — moves between them.
+    final onSelectPage = tester
+        .widget<TripSpotPagination>(find.byType(TripSpotPagination))
+        .onSelect;
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
+        ['assets/images/puntok_osaka.jpg']);
+
+    onSelectPage(1);
+    await tester.pumpAndSettle();
+    final secondBlock = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(secondBlock.imagePaths, ['assets/images/puntok_london.jpg']);
+    expect(secondBlock.items!.first.bodyController.text, isEmpty);
     expect(find.text('• 2 photos have no caption yet'), findsOneWidget);
   });
 
@@ -1405,21 +1422,42 @@ void main() {
     await tester.enterText(_bodyField().first, 'ข้อความเดิม');
     await _tapImport(tester);
     await _settleImport(tester);
-    var blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
-    expect(blocks, hasLength(2));
-    expect(blocks.first.bodyController.text, 'ข้อความเดิม');
-    expect(blocks.last.imagePaths, hasLength(2));
-    expect(blocks.last.bodyController.text, isEmpty);
-    expect(blocks.last.place, isNull);
-    final secondBlock = blocks.last;
-    blocks.first.onDropImage!((1, 0));
+
+    // Import appended a second spot for the photos without touching the
+    // first spot's text, and the screen stayed on the first spot.
+    final firstBlock = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(firstBlock.bodyController.text, 'ข้อความเดิม');
+    expect(firstBlock.imagePaths, isEmpty);
+    // Captured now, while this instance is the current spot (index 0) —
+    // the closures stay bound to that index no matter which page is on
+    // screen when they are actually called.
+    final dropImage = firstBlock.onDropImage!;
+    final dropBeforeImage = firstBlock.onDropBeforeImage!;
+    // Driving the page switch straight through the pagination row's own
+    // callback — the same thing a tap on a dot would do — sidesteps any
+    // flakiness from hit-testing coordinates while a route transition's
+    // IgnorePointer is still settling from `_settleImport`'s page pop.
+    final onSelectPage =
+        tester.widget<TripSpotPagination>(find.byType(TripSpotPagination)).onSelect;
+
+    onSelectPage(1);
     await tester.pumpAndSettle();
-    blocks = tester.widgetList<PostBlock>(find.byType(PostBlock)).toList();
-    expect(blocks.first.imagePaths, ['assets/images/puntok_osaka.jpg']);
-    expect(secondBlock.imagePaths, ['assets/images/puntok_london.jpg']);
-    blocks.first.onDropBeforeImage!((1, 0), 0);
+    final secondBlock = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(secondBlock.imagePaths, hasLength(2));
+    expect(secondBlock.bodyController.text, isEmpty);
+    expect(secondBlock.place, isNull);
+
+    onSelectPage(0);
     await tester.pumpAndSettle();
-    expect(tester.widget<PostBlock>(find.byType(PostBlock).first).imagePaths,
+
+    dropImage((1, 0));
+    await tester.pumpAndSettle();
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
+        ['assets/images/puntok_osaka.jpg']);
+
+    dropBeforeImage((1, 0), 0);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
         ['assets/images/puntok_london.jpg', 'assets/images/puntok_osaka.jpg']);
     expect(tester.takeException(), isNull);
   });
@@ -1909,7 +1947,7 @@ void main() {
     expect(find.text('เที่ยวย่านพระนคร 1 day trip'), findsOneWidget);
   });
 
-  testWidgets('เพิ่มจุดต่อไป appends a spot and the extra one goes away',
+  testWidgets('เพิ่มจุดต่อไป appends a spot and lands on it',
       (tester) async {
     await _pumpComposer(tester);
 
@@ -1921,13 +1959,17 @@ void main() {
     await tester.tap(find.text('เพิ่มจุดต่อไป'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(PostBlock), findsNWidgets(2));
-    expect(find.text('ลบจุดนี้'), findsNWidgets(2));
+    // One spot on screen at a time now — the new one, since adding a spot
+    // lands on it — with the pagination row showing both exist.
+    expect(find.byType(PostBlock), findsOneWidget);
+    expect(find.text('ลบจุดนี้'), findsOneWidget);
+    expect(find.byType(TripSpotPagination), findsOneWidget);
 
-    await tester.tap(find.text('ลบจุดนี้').last);
+    await tester.tap(find.text('ลบจุดนี้'));
     await tester.pumpAndSettle();
 
     expect(find.byType(PostBlock), findsOneWidget);
+    expect(find.text('ลบจุดนี้'), findsNothing);
   });
 
   testWidgets(
@@ -1938,14 +1980,30 @@ void main() {
     await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
     await tester.tap(find.text('เพิ่มจุดต่อไป'));
     await tester.pumpAndSettle();
-    await tester.enterText(_bodyField().last, 'ส่วนที่สอง');
+    // Landed on the new, second spot.
+    await tester.enterText(_bodyField().first, 'ส่วนที่สอง');
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('เลื่อนขึ้น').last);
+
+    // Drag the second row above the first one in the reorder sheet.
+    await tester.tap(find.byTooltip('จัดเรียงลำดับหัวข้อ'));
     await tester.pumpAndSettle();
-    final fields = tester.widgetList<TextField>(_bodyField()).toList();
-    expect(fields.first.controller!.text, 'ส่วนที่สอง');
-    expect(fields.last.controller!.text, 'ส่วนแรก');
-    await tester.tap(find.text('ลบจุดนี้').last);
+    expect(find.text('หัวข้อ: (ยังไม่ตั้งชื่อ)'), findsNWidgets(2));
+    await tester.drag(
+        find.byIcon(Icons.drag_indicator).last, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 1)); // dismiss the sheet
+    await tester.pumpAndSettle();
+
+    // The reordered spot 1 is now "ส่วนที่สอง"; spot 2 is "ส่วนแรก".
+    expect(find.text('ส่วนที่สอง'), findsOneWidget);
+    expect(find.text('ส่วนแรก'), findsNothing);
+    await tester.tap(find.descendant(
+        of: find.byType(TripSpotPagination), matching: find.text('2')));
+    await tester.pumpAndSettle();
+    expect(find.text('ส่วนแรก'), findsOneWidget);
+
+    // Deleting the spot on screen (now "ส่วนแรก") leaves only "ส่วนที่สอง".
+    await tester.tap(find.text('ลบจุดนี้'));
     await tester.pumpAndSettle();
     expect(find.text('ส่วนแรก'), findsNothing);
     expect(find.text('ส่วนที่สอง'), findsOneWidget);

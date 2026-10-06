@@ -281,6 +281,7 @@ class TripsApi {
     List<TripContentRequest>? contents,
     TripStatus? status,
     TripVisibility? visibility,
+    bool? allowRemix,
   }) async {
     final body = await _client.patch<Map<String, dynamic>>(
       '/trips/$tripId',
@@ -319,6 +320,8 @@ class TripsApi {
         // The first switch to public stamps publishedAt; going private again
         // does not clear it.
         'visibility': visibility?.wire,
+        // Unconfirmed wire key — see `ApiTrip.allowRemix`.
+        'allowRemix': allowRemix,
       }),
     );
     return ApiTrip.fromJson(Json.asMap(body));

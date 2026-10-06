@@ -46,8 +46,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>PaiGun PunGuide uses your camera to take photos for your posts and trip cover.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>PaiGun PunGuide uses your location while you are using the app to show trips and places near you, and to measure how far away each one is.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PaiGun PunGuide's camera may request microphone access from iOS even though the app only takes photos, never video.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose a photo for your trip cover.</string>
 	<key>UIApplicationSceneManifest</key>

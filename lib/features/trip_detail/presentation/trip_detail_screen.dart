@@ -1,4 +1,3 @@
-import '../../create_post/presentation/create_post_screen.dart';
 import 'widgets/trip_content_sections.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
+import '../../../shared/formatting/compact_count.dart';
 import '../../../shared/layout/screen_class.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
@@ -110,9 +110,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           label: 'แก้ไขโพสต์',
           color: AppColors.createTop,
           onTap: () async {
-            await Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) =>
-                    CreatePostScreen(initialTrip: trip.requireValue)));
+            await context.pushNamed(AppRoute.shareSettings.name,
+                params: {'tripId': widget.tripId});
             if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
           });
     }
@@ -133,7 +132,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   /// Trip Overview and the spots.
   Widget _contentBody(ApiTrip trip) {
     final blurb = trip.description?.trim() ?? '';
-    final linked = trip.linkedTrip;
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
@@ -144,27 +142,16 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             onBack: _leave,
             onShare: () => _todo('แชร์โพสต์ยังไม่เปิดใช้งาน'),
             onFollow: () => _todo('ติดตามยังไม่เปิดใช้งาน'),
-            onOpenPlan: linked == null
-                ? null
-                : () => context.goNamed(
-                      AppRoute.tripDetail.name,
-                      params: {'tripId': linked.id},
-                    ),
+            onRemix: () => context.goNamed(
+              AppRoute.remixTrip.name,
+              params: {'tripId': widget.tripId},
+            ),
           ),
         ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(_gutter(context), 20, _gutter(context), 0),
           sliver: SliverToBoxAdapter(
-            child: _PostOverview(
-              trip: trip,
-              blurb: blurb,
-              saved: ref
-                      .watch(selectedTripProvider(widget.tripId))
-                      .valueOrNull
-                      ?.isSaved ??
-                  trip.isSaved,
-              onSave: () => _toggleSaved(trip),
-            ),
+            child: _PostOverview(trip: trip, blurb: blurb),
           ),
         ),
         // No horizontal padding here: the spot photos run to the screen's
@@ -299,7 +286,7 @@ class _PostHero extends StatelessWidget {
     required this.onBack,
     required this.onShare,
     required this.onFollow,
-    required this.onOpenPlan,
+    required this.onRemix,
   });
 
   final ApiTrip trip;
@@ -307,9 +294,7 @@ class _PostHero extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onFollow;
 
-  /// Null when the post links no plan, which is when the design's call to
-  /// action has nowhere to go.
-  final VoidCallback? onOpenPlan;
+  final VoidCallback onRemix;
 
   @override
   Widget build(BuildContext context) {
@@ -373,38 +358,35 @@ class _PostHero extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 22,
-                        height: 1.25,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        height: 1.4,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    _PostFacts(trip: trip),
-                    if (onOpenPlan != null) ...[
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 46,
-                        child: ElevatedButton(
-                          onPressed: onOpenPlan,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.brandPurple,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        onPressed: onRemix,
+                        icon: const Icon(Icons.shuffle, size: 18),
+                        label: const Text(
+                          'Remix Trip',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
                           ),
-                          child: const Text(
-                            'ดูแผนเที่ยวรายวันของทริปนี้',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.brandPurple,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(99),
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -483,8 +465,9 @@ class _PostAuthor extends StatelessWidget {
 
 /// Where, how long, how many places and what per head.
 ///
+/// Under Trip Overview as of Figma 2532-82227 — it used to sit on the hero.
 /// The duration and the place count describe the **linked plan** when there is
-/// one — a post has no schedule of its own — and fall back to the post's own
+/// one (a post has no schedule of its own) and fall back to the post's own
 /// figures otherwise.
 class _PostFacts extends StatelessWidget {
   const _PostFacts({required this.trip});
@@ -503,7 +486,7 @@ class _PostFacts extends StatelessWidget {
     final places = linked?.placeCount ?? trip.contents.length;
     final heads = trip.customer?.groupSize ?? 1;
     final perHead = trip.totalBudget > 0 && heads > 0
-        ? '${(trip.totalBudget / heads).asBaht} /คน'
+        ? '${(trip.totalBudget / heads).asBaht}/คน'
         : null;
 
     final facts = <String>[
@@ -513,21 +496,28 @@ class _PostFacts extends StatelessWidget {
     ];
 
     return Wrap(
-      alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 6,
       runSpacing: 4,
       children: [
         if (trip.destination.isNotEmpty) ...[
-          Icon(
+          const Icon(
             Icons.location_on_outlined,
-            size: 13,
-            color: Colors.white.withValues(alpha: 0.9),
+            size: 14,
+            color: AppColors.postPurple,
           ),
-          _FactText(trip.destination),
+          Text(
+            trip.destination,
+            style: const TextStyle(
+              color: AppColors.postPurple,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.underline,
+            ),
+          ),
         ],
         for (final fact in facts) ...[
-          _FactText('·'),
+          const _FactText('·'),
           _FactText(fact),
         ],
       ],
@@ -544,9 +534,9 @@ class _FactText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: TextStyle(
-        color: Colors.white.withValues(alpha: 0.92),
-        fontSize: 12,
+      style: const TextStyle(
+        color: AppColors.muted,
+        fontSize: 12.5,
         fontWeight: FontWeight.w600,
       ),
     );
@@ -587,17 +577,10 @@ class _RoundGlassButton extends StatelessWidget {
 
 /// "Trip Overview": the counts, the bookmark, and the post's own blurb.
 class _PostOverview extends StatelessWidget {
-  const _PostOverview({
-    required this.trip,
-    required this.blurb,
-    required this.saved,
-    required this.onSave,
-  });
+  const _PostOverview({required this.trip, required this.blurb});
 
   final ApiTrip trip;
   final String blurb;
-  final bool saved;
-  final VoidCallback onSave;
 
   @override
   Widget build(BuildContext context) {
@@ -619,34 +602,23 @@ class _PostOverview extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            _CountChip(icon: Icons.shuffle, value: trip.remixCount),
+            _CountChip(
+              icon: Icons.shuffle,
+              value: trip.remixCount,
+              compact: true,
+            ),
             const SizedBox(width: 6),
             // The design's glyph is a bookmark, but the only count the API
             // returns is likes — there is no saveCount on a trip.
-            _CountChip(icon: Icons.bookmark_border, value: trip.likeCount),
-            const SizedBox(width: 6),
-            Tooltip(
-              message: saved ? 'เลิกบันทึก' : 'บันทึกทริป',
-              child: GestureDetector(
-                onTap: onSave,
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.chipBorder),
-                  ),
-                  child: Icon(
-                    saved ? Icons.bookmark : Icons.bookmark_border,
-                    size: 16,
-                    color: AppColors.postPurple,
-                  ),
-                ),
-              ),
+            _CountChip(
+              icon: Icons.bookmark_border,
+              value: trip.likeCount,
+              compact: true,
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        _PostFacts(trip: trip),
         if (blurb.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
@@ -1167,7 +1139,14 @@ class _OverviewSection extends StatelessWidget {
 }
 
 class _CountChip extends StatelessWidget {
-  const _CountChip({required this.icon, required this.value});
+  const _CountChip({
+    required this.icon,
+    required this.value,
+    this.compact = false,
+  });
+
+  /// The post reads "1.1K"; the plan face's own design groups to "1,111".
+  final bool compact;
 
   final IconData icon;
   final int value;
@@ -1186,7 +1165,7 @@ class _CountChip extends StatelessWidget {
           Icon(icon, size: 13, color: AppColors.muted),
           const SizedBox(width: 4),
           Text(
-            _grouped(value),
+            compact ? compactCount(value) : _grouped(value),
             style: const TextStyle(
               color: AppColors.foreground,
               fontSize: 12,
