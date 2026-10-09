@@ -8,18 +8,33 @@ import '../../domain/models/post_draft.dart';
 
 class PostBlockItem {
   const PostBlockItem({
+    required this.id,
     required this.bodyController,
     required this.imagePaths,
     this.place,
     this.location,
     this.legacyMapId,
+    this.details = const PostSpotDetails(),
+    this.locationFieldKey,
+    this.locationHasError = false,
   });
 
+  /// Stable across adds/removes/reorders — never the item's position.
+  final String id;
   final TextEditingController bodyController;
   final List<String> imagePaths;
   final PostPlace? place;
   final ContentLocation? location;
   final String? legacyMapId;
+
+  /// When to go, how to get there, and the tip — this item's own, never
+  /// shared with any sibling under the same heading.
+  final PostSpotDetails details;
+
+  /// Where "เพิ่มจุดต่อไป"/"Next" scroll to when this item failed its
+  /// location check, and whether it currently has.
+  final Key? locationFieldKey;
+  final bool locationHasError;
 }
 
 typedef PostPhotoMove = ({int block, int item, int photo});
@@ -57,7 +72,6 @@ class PostBlock extends StatefulWidget {
     required this.onPickPlace,
     required this.onClearPlace,
     required this.onExtra,
-    this.details = const PostSpotDetails(),
     this.blockIndex = 0,
     this.items,
     this.unavailableImages = const {},
@@ -79,6 +93,7 @@ class PostBlock extends StatefulWidget {
     this.onClearPlaceInItem,
     this.onConfirmLocationInItem,
     this.onRemove,
+    this.locationErrorText,
   });
 
   final void Function((int, int), int)? onDropBeforeImage;
@@ -114,29 +129,22 @@ class PostBlock extends StatefulWidget {
   final VoidCallback onPickPlace;
   final VoidCallback onClearPlace;
 
-  /// Answers for the rows the API cannot store yet.
-  final ValueChanged<PostSpotExtra> onExtra;
-
-  /// When to go, how to get there, and the tip — drawn above the chips.
-  final PostSpotDetails details;
+  /// Answers for the rows the API cannot store yet — per item, since each
+  /// item in a section has its own now.
+  final void Function(int itemIndex, PostSpotExtra extra) onExtra;
 
   /// Null on the only spot — a post always keeps one.
   final VoidCallback? onRemove;
+
+  /// The message every flagged item's row shows — the per-item key/flag
+  /// themselves live on each `PostBlockItem` now, not here.
+  final String? locationErrorText;
 
   @override
   State<PostBlock> createState() => _PostBlockState();
 }
 
 class _PostBlockState extends State<PostBlock> {
-  /// The heading is opened from the options row and then stays: a heading
-  /// being typed must not vanish under the writer's hands.
-  bool _headingOpen = false;
-
-  bool get _headingVisible =>
-      _headingOpen ||
-      widget.titleController.text.trim().isNotEmpty ||
-      widget.titleFocus.hasFocus;
-
   @override
   void initState() {
     super.initState();
@@ -155,16 +163,14 @@ class _PostBlockState extends State<PostBlock> {
     if (mounted) setState(() {});
   }
 
-  void _openHeading() {
-    setState(() => _headingOpen = true);
-    widget.titleFocus.requestFocus();
-  }
-
   @override
   Widget build(BuildContext context) {
     final blockItems = widget.items ??
         [
           PostBlockItem(
+              // The single-item legacy fallback below `widget.items` never has
+              // a sibling to disambiguate from, so a constant id is fine.
+              id: 'legacy',
               bodyController: widget.bodyController,
               imagePaths: [
                 ...widget.imagePaths,
@@ -204,20 +210,22 @@ class _PostBlockState extends State<PostBlock> {
                   ),
                 ),
               ),
-            if (_headingVisible) ...[
-              _TitleRow(
-                controller: widget.titleController,
-                focusNode: widget.titleFocus,
-              ),
-              const _Hairline(),
-            ],
+            _TitleRow(
+              controller: widget.titleController,
+              focusNode: widget.titleFocus,
+            ),
+            const _Hairline(),
             for (var item = 0; item < blockItems.length; item++) ...[
               if (item > 0) const _Hairline(),
               _PostBlockContentItem(
-                hideEmptyLocation: blockItems.length == 1,
+                key: ValueKey(blockItems[item].id),
                 blockIndex: widget.blockIndex,
                 itemIndex: item,
                 item: blockItems[item],
+                locationFieldKey: blockItems[item].locationFieldKey,
+                locationHasError: blockItems[item].locationHasError,
+                locationErrorText: widget.locationErrorText,
+                onExtra: (extra) => widget.onExtra(item, extra),
                 unavailableImages: widget.unavailableImages,
                 coverPath: widget.coverPath,
                 onSelectCover: widget.onSelectCover,
@@ -258,30 +266,10 @@ class _PostBlockState extends State<PostBlock> {
                   ),
                 ),
             ],
-            if (!widget.details.isEmpty) ...[
-              const SizedBox(height: 4),
-              PostSpotDetailRows(
-                details: widget.details,
-                onEdit: (detail) => widget.onExtra(switch (detail) {
-                  PostSpotDetail.time => PostSpotExtra.recommendTime,
-                  PostSpotDetail.transport => PostSpotExtra.howToGetHere,
-                  PostSpotDetail.hack => PostSpotExtra.tripHack,
-                  PostSpotDetail.contact => PostSpotExtra.contact,
-                }),
-              ),
+            if (widget.onAddItem != null) ...[
+              const SizedBox(height: 10),
+              _AddContentItemButton(onTap: widget.onAddItem!),
             ],
-            const SizedBox(height: 16),
-            _AttachmentRow(
-              onPickImage: widget.onPickImage,
-              onExtra: widget.onExtra,
-              onAddHeading: _headingVisible ? null : _openHeading,
-              // One entry point per spot. A block split into several items
-              // keeps a row on each of them instead — see the flag below.
-              onAddLocation:
-                  blockItems.length == 1 && blockItems.first.place == null
-                      ? widget.onPickPlace
-                      : null,
-            ),
             const SizedBox(height: 16),
             const _Hairline(),
           ],
@@ -419,7 +407,7 @@ class PostAddOption extends StatelessWidget {
 
 class _PostBlockContentItem extends StatelessWidget {
   const _PostBlockContentItem({
-    this.hideEmptyLocation = false,
+    super.key,
     required this.blockIndex,
     required this.itemIndex,
     required this.item,
@@ -434,6 +422,10 @@ class _PostBlockContentItem extends StatelessWidget {
     required this.onPickPlace,
     required this.onClearPlace,
     required this.onConfirmLocation,
+    required this.onExtra,
+    this.locationFieldKey,
+    this.locationHasError = false,
+    this.locationErrorText,
   });
 
   final int blockIndex, itemIndex;
@@ -447,6 +439,15 @@ class _PostBlockContentItem extends StatelessWidget {
   final void Function(PostPhotoMove, int) onDropBeforeImage;
   final VoidCallback onPickPlace, onClearPlace;
   final VoidCallback? onConfirmLocation;
+
+  /// Answers for this item's own rows the API cannot store yet.
+  final ValueChanged<PostSpotExtra> onExtra;
+
+  /// Where "+ เพิ่มจุดต่อไป"/"Next" scroll to when this item failed its
+  /// location check.
+  final Key? locationFieldKey;
+  final bool locationHasError;
+  final String? locationErrorText;
 
   /// What the location row reads: the place over its distance and address, or
   /// the prompt when nothing is pinned yet.
@@ -476,10 +477,6 @@ class _PostBlockContentItem extends StatelessWidget {
     return ('Add Location', null, false);
   }
 
-  /// True on a spot with a single item: its options row carries the location
-  /// chip, so an empty row here would say the same thing twice.
-  final bool hideEmptyLocation;
-
   @override
   Widget build(BuildContext context) {
     final (label, sublabel, pinned) = _locationLabel;
@@ -497,13 +494,15 @@ class _PostBlockContentItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (pinned || !hideEmptyLocation)
-              _LocationRow(
-                label: label,
-                sublabel: sublabel,
-                pinned: pinned,
-                onTap: onPickPlace,
-              ),
+            _LocationRow(
+              key: locationFieldKey,
+              label: label,
+              sublabel: sublabel,
+              pinned: pinned,
+              onTap: onPickPlace,
+              hasError: locationHasError,
+              errorText: locationErrorText,
+            ),
             if (suggested && onConfirmLocation != null)
               Align(
                 alignment: Alignment.centerLeft,
@@ -585,6 +584,24 @@ class _PostBlockContentItem extends StatelessWidget {
                 ),
               ),
             ],
+            if (!item.details.isEmpty) ...[
+              const SizedBox(height: 4),
+              PostSpotDetailRows(
+                details: item.details,
+                onEdit: (detail) => onExtra(switch (detail) {
+                  PostSpotDetail.time => PostSpotExtra.recommendTime,
+                  PostSpotDetail.transport => PostSpotExtra.howToGetHere,
+                  PostSpotDetail.hack => PostSpotExtra.tripHack,
+                  PostSpotDetail.contact => PostSpotExtra.contact,
+                }),
+              ),
+            ],
+            const SizedBox(height: 10),
+            _ItemExtrasRow(
+              onPickImage: onPickImage,
+              onPickPlace: onPickPlace,
+              onExtra: onExtra,
+            ),
           ],
         ),
       ),
@@ -592,15 +609,19 @@ class _PostBlockContentItem extends StatelessWidget {
   }
 }
 
-/// "Add Location", or the place over its distance and address once there is
-/// one. Taking a pin off again happens in the sheet — the design's row carries
-/// a chevron and nothing else.
+/// "Add Location", required (the asterisk), or the place over its distance
+/// and address once there is one. Taking a pin off again happens in the
+/// sheet — the row itself carries only a chevron, plus an error glyph and a
+/// line of help text underneath once validation has failed it.
 class _LocationRow extends StatelessWidget {
   const _LocationRow({
+    super.key,
     required this.label,
     required this.sublabel,
     required this.pinned,
     required this.onTap,
+    this.hasError = false,
+    this.errorText,
   });
 
   final String label;
@@ -613,69 +634,132 @@ class _LocationRow extends StatelessWidget {
 
   final VoidCallback onTap;
 
+  /// "เพิ่มจุดต่อไป"/"Next" asked for a location and this spot had none.
+  final bool hasError;
+  final String? errorText;
+
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              // A plain purple pin, the size of the heading's plus above it —
-              // this pass drops the tinted plate the last one had.
-              const SizedBox(
-                width: 34,
-                child: Icon(
-                  Icons.location_on_outlined,
-                  size: 21,
-                  color: AppColors.postPurple,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+    final tint = hasError ? AppColors.brandOrangeDeep : AppColors.postPurple;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DecoratedBox(
+          decoration: hasError
+              ? const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: AppColors.brandOrangeDeep),
+                  ),
+                )
+              : const BoxDecoration(),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
                   children: [
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: pinned
-                            ? AppColors.foreground
-                            : AppColors.postFieldHint,
-                        fontSize: 15,
-                        fontWeight: pinned ? FontWeight.w700 : FontWeight.w500,
+                    // A plain purple pin, the size of the heading's plus
+                    // above it — this pass drops the tinted plate the last
+                    // one had.
+                    SizedBox(
+                      width: 34,
+                      child: Icon(
+                        Icons.location_on_outlined,
+                        size: 21,
+                        color: tint,
                       ),
                     ),
-                    if (sublabel != null && sublabel!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        sublabel!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 13,
-                        ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: hasError
+                                        ? AppColors.brandOrangeDeep
+                                        : pinned
+                                            ? AppColors.foreground
+                                            : AppColors.postFieldHint,
+                                    fontSize: 15,
+                                    fontWeight: pinned
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (!pinned)
+                                Text(
+                                  '*',
+                                  style: TextStyle(
+                                    color: hasError
+                                        ? AppColors.brandOrangeDeep
+                                        : AppColors.postFieldHint,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (sublabel != null && sublabel!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              sublabel!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
+                    ),
+                    if (hasError) ...[
+                      const Icon(
+                        Icons.error,
+                        size: 18,
+                        color: AppColors.brandOrangeDeep,
+                      ),
+                      const SizedBox(width: 6),
                     ],
+                    const SizedBox(width: 2),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 22,
+                      color: Color(0xFF9A9A95),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right,
-                size: 22,
-                color: Color(0xFF9A9A95),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        if (hasError && errorText != null && errorText!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 46, bottom: 4),
+            child: Text(
+              errorText!,
+              style: const TextStyle(
+                color: AppColors.brandOrangeDeep,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -753,27 +837,23 @@ class _BlockPhoto extends StatelessWidget {
   }
 }
 
-/// The dashed row under the story: camera, gallery, video, and Trip Hack.
-class _AttachmentRow extends StatelessWidget {
-  const _AttachmentRow({
+/// One item's own "+ something" chips — add a photo, then when to go, how to
+/// get there, who to call, the one tip worth passing on. Independent per
+/// item, so the same row appears once under every content item in a
+/// section, not once for the whole heading.
+class _ItemExtrasRow extends StatelessWidget {
+  const _ItemExtrasRow({
     required this.onPickImage,
+    required this.onPickPlace,
     required this.onExtra,
-    this.onAddHeading,
-    this.onAddLocation,
   });
 
   final VoidCallback onPickImage;
+  final VoidCallback onPickPlace;
   final ValueChanged<PostSpotExtra> onExtra;
-
-  /// Null once the heading is on screen, or once a place is pinned — the
-  /// offer disappears when there is nothing left to offer.
-  final VoidCallback? onAddHeading;
-  final VoidCallback? onAddLocation;
 
   @override
   Widget build(BuildContext context) {
-    // One line that scrolls: six options wrapped onto two rows and took more
-    // height than the story they belong to.
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       clipBehavior: Clip.none,
@@ -784,22 +864,12 @@ class _AttachmentRow extends StatelessWidget {
           onTap: onPickImage,
         ),
         const SizedBox(width: 8),
-        if (onAddHeading != null)
-          PostAddChip(
-            icon: Icons.title,
-            label: '',
-            tooltip: 'ตั้งชื่อหัวข้อ',
-            onTap: onAddHeading!,
-          ),
-        if (onAddHeading != null) const SizedBox(width: 8),
-        if (onAddLocation != null)
-          PostAddChip(
-            icon: Icons.location_on_outlined,
-            label: 'Location',
-            tooltip: 'Add Location',
-            onTap: onAddLocation!,
-          ),
-        if (onAddLocation != null) const SizedBox(width: 8),
+        PostAddChip(
+          icon: Icons.location_on_outlined,
+          tooltip: 'Add Location',
+          onTap: onPickPlace,
+        ),
+        const SizedBox(width: 8),
         PostAddChip(
           icon: Icons.schedule,
           tooltip: PostSpotExtra.recommendTime.label,
@@ -889,6 +959,49 @@ class PostAddChip extends StatelessWidget {
                     ],
                   ],
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "+ เพิ่มเนื้อหา" — another content item under this same spot's heading,
+/// distinct from "+ เพิ่มจุดต่อไป" (a whole new spot/section).
+class _AddContentItemButton extends StatelessWidget {
+  const _AddContentItemButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: CustomPaint(
+          painter:
+              const PostDashedBorder(color: AppColors.postDashed, radius: 12),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 18, color: AppColors.postPurple),
+                  SizedBox(width: 6),
+                  Text(
+                    'เพิ่มเนื้อหา',
+                    style: TextStyle(
+                      color: AppColors.postPurple,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

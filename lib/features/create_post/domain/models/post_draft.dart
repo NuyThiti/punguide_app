@@ -122,6 +122,7 @@ class PostTopicItem {
     this.place,
     this.location,
     this.legacyMapId,
+    this.details = const PostSpotDetails(),
   });
 
   final String body;
@@ -135,12 +136,17 @@ class PostTopicItem {
   final ContentLocation? location;
   final String? legacyMapId;
 
+  /// When to go, how to get there, and the tip — one set per item: each
+  /// content item in a section answers for these on its own.
+  final PostSpotDetails details;
+
   bool get isEmpty =>
       body.trim().isEmpty &&
       photos.isEmpty &&
       place == null &&
       location == null &&
-      legacyMapId == null;
+      legacyMapId == null &&
+      details.isEmpty;
 }
 
 /// One section of a post: the story itself, plus whatever the writer chose to
@@ -241,11 +247,7 @@ class PostTopic {
     this.place,
     this.location,
     this.legacyMapId,
-    this.details = const PostSpotDetails(),
   });
-
-  /// When to go, how to get there, and the tip — one set per spot.
-  final PostSpotDetails details;
 
   /// Empty when the writer never added a heading.
   final String title;

@@ -10,8 +10,8 @@ class AppColors {
   static const foreground = Color(0xFF1E1E1E);
   static const muted = Color(0xFF7C8782);
   static const line = Color(0xFFF0EDE9);
-  static const primary = Color(0xFF2A9E64);
-  static const secondary = Color(0xFF4CAC71);
+  static const primary = Color(0xFF5E27E0);
+  static const secondary = Color(0xFF5E27E0);
   static const accent = Color(0xFFE89A5F);
 
   /// Spinners and pull-to-refresh, app-wide.

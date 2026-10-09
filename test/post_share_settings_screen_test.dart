@@ -87,6 +87,13 @@ void main() {
     expect(find.text('เชื่อมโพสต์นี้กับแพลนท่องเที่ยวของคุณ'), findsOneWidget);
   });
 
+  testWidgets('shows the second-of-two step indicator above the bar',
+      (tester) async {
+    await _pumpScreen(tester);
+
+    expect(find.text('2/2'), findsOneWidget);
+  });
+
   testWidgets('picking a plan connects it and shows its facts',
       (tester) async {
     await _pumpScreen(tester, plans: [
@@ -199,7 +206,15 @@ void main() {
     expect(find.text('ยังไม่มีแผนให้เชื่อม สร้างแพลนก่อนได้เลย'), findsOneWidget);
   });
 
-  testWidgets('sharing sends the connected plan and the remix toggle',
+  testWidgets('hides the remix toggle until the API can store it',
+      (tester) async {
+    await _pumpScreen(tester);
+
+    expect(find.text('เปิดให้ remix'), findsNothing);
+    expect(find.byType(Switch), findsNothing);
+  });
+
+  testWidgets('sharing sends the connected plan but not allowRemix',
       (tester) async {
     await _pumpScreen(tester, plans: [
       _plan(id: 'plan-1', title: 'เดินเล่นพระนคร'),
@@ -212,15 +227,13 @@ void main() {
     await tester.tap(find.text('ตกลง'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(Switch));
-    await tester.pumpAndSettle();
-
     await tester.tap(find.text('Share'));
     await tester.pumpAndSettle();
 
     final body = adapter.bodyOf('PATCH /trips/trip-1')!;
     expect(body['linkedTripId'], 'plan-1');
-    expect(body['allowRemix'], isTrue);
+    // The API rejects the whole PATCH if this key is present.
+    expect(body.containsKey('allowRemix'), isFalse);
     expect(body['visibility'], 'public');
   });
 

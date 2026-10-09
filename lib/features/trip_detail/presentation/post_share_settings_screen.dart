@@ -47,6 +47,12 @@ class _PostShareSettingsScreenState
   late PostAboutTrip _about;
   late bool _allowRemix;
 
+  // Hidden until the API can store it: `PATCH /trips/:id` rejects
+  // `allowRemix`, so a visible switch would look saved when it isn't. Flip
+  // this back on (and send `_allowRemix` in `_share`) once the backend adds
+  // the field.
+  static const _showRemixToggle = false;
+
   // Richer display-only data for the connected plan's card — the trip's own
   // `linkedTrip` has it; a freshly picked `PostTripLink` does not, so this is
   // re-derived (see `_resolveConnectedPreview`) whenever the selection changes.
@@ -149,7 +155,8 @@ class _PostShareSettingsScreenState
         visibility: _audience == PostAudience.public
             ? TripVisibility.public
             : TripVisibility.private,
-        allowRemix: _allowRemix,
+        // `_allowRemix` stays on screen only: the API has no such property
+        // yet and rejects the whole PATCH if it is sent.
       );
       if (mounted) Navigator.of(context).pop(true);
     } catch (_) {
@@ -213,16 +220,26 @@ class _PostShareSettingsScreenState
                           ? null
                           : _planFactsLine(_connectedPreview!),
                     ),
-                    const SizedBox(height: 12),
-                    _RemixToggleRow(
-                      value: _allowRemix,
-                      onChanged: (value) => setState(() => _allowRemix = value),
-                    ),
+                    if (_showRemixToggle) ...[
+                      const SizedBox(height: 12),
+                      _RemixToggleRow(
+                        value: _allowRemix,
+                        onChanged: (value) =>
+                            setState(() => _allowRemix = value),
+                      ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(height: 24),
             ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Align(
+            alignment: Alignment.center,
+            child: _StepIndicator(step: 1, totalSteps: 2),
           ),
         ),
         _BottomBar(
@@ -425,6 +442,60 @@ class _RemixToggleRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Where this screen sits in the composer→share flow: a dash per step
+/// already reached (this one included), a dot for anything still ahead —
+/// the same shape `create_trip_screen.dart`'s own page indicator uses, just
+/// themed to this screen's purple rather than that wizard's orange.
+class _StepIndicator extends StatelessWidget {
+  const _StepIndicator({required this.step, required this.totalSteps});
+
+  /// 0-based. A step reached (this one included) draws as a dash; one still
+  /// ahead draws as a dot.
+  final int step;
+  final int totalSteps;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < totalSteps; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          if (i <= step)
+            Container(
+              width: 20,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.postPurple,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            )
+          else
+            const SizedBox(
+              width: 6,
+              height: 6,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.postPurpleSoft,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+        const SizedBox(width: 8),
+        Text(
+          '${step + 1}/$totalSteps',
+          style: const TextStyle(
+            fontSize: 11,
+            color: AppColors.muted,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

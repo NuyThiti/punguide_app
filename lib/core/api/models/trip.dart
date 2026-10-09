@@ -426,7 +426,8 @@ class ApiTrip {
   ///
   /// Guessed wire shape — no such field exists in the API contract yet; this
   /// is a placeholder for the "เปิดให้ remix" toggle until the backend
-  /// confirms the real key.
+  /// confirms the real key. Read-only for now: `PATCH /trips/:id` rejects
+  /// `allowRemix` with a 400, so the client never sends it.
   final bool allowRemix;
 
   final double totalBudget;

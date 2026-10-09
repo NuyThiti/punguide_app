@@ -15,6 +15,7 @@ import 'package:pluno/features/create_post/presentation/widgets/post_block.dart'
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 import 'package:pluno/features/create_post/presentation/widgets/trip_spot_pagination.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
+import 'package:pluno/features/trip_detail/presentation/post_share_settings_screen.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
@@ -146,6 +147,12 @@ Widget _harness(
             name: AppRoute.home.name,
             builder: (_, __) => const Scaffold(body: Text('home')),
           ),
+          GoRoute(
+            path: '/trips/:tripId/share',
+            name: AppRoute.shareSettings.name,
+            builder: (_, state) =>
+                PostShareSettingsScreen(tripId: state.params['tripId']!),
+          ),
         ],
       ),
     ),
@@ -187,6 +194,15 @@ Future<void> _pumpComposer(WidgetTester tester,
       ])
     ];
   }
+  // "Next" now lands on the Post Share Settings screen, which reads the
+  // draft straight back with a GET before it can show anything — default it
+  // to the same shape `POST /trips` answers with (plus the composer's own
+  // default audience, public, so a test that never touches visibility still
+  // sees it publish public), unless a test wants something richer. Applies
+  // whether the draft is freshly created here or reopening an existing one
+  // (`initialTrip`), so it is unconditional.
+  client.replies.putIfAbsent('GET /trips/trip-new',
+      () => [FakeReply(200, {...createdTripJson(), 'visibility': 'public'})]);
   await tester.pumpWidget(
       _harness(adapter: client, initialTrip: initialTrip, extra: extra));
   await tester.pumpAndSettle();
@@ -217,6 +233,16 @@ Future<void> _confirmPlace(WidgetTester tester) async {
   await tester.tap(find.text('เชียงใหม่').last);
   await tester.pumpAndSettle();
 }
+
+/// A bare adapter with just enough stubbed to let [_confirmPlace] run on a
+/// composer pumped with no custom adapter of its own.
+FakeAdapter _placesAdapter() => FakeAdapter({
+      'GET /places/search': [
+        const FakeReply(200, [
+          {'id': 'place-1', 'mapId': 'map-1', 'name': 'เชียงใหม่'}
+        ])
+      ],
+    });
 
 /// Create from Photos asks where the photos come from before it opens
 /// anything. Which answer is given decides whether the assistant is told where
@@ -283,26 +309,33 @@ Map<String, dynamic> _image(String id, String path) => {
       'urls': {'large': path, 'thumbnail': path}
     };
 
-/// The bar's Next now leads through เชื่อมกับแผนของฉัน before anything is
-/// published, so every publish in these tests confirms that step.
+/// The bar's Next: syncs the draft's content to the server (a real request,
+/// so it needs actual async turns, not just a settle) and lands on the Post
+/// Share Settings screen — connecting a plan, visibility and remix all live
+/// there now, not in a picker opened straight off this button.
 Future<void> _tapNext(WidgetTester tester) async {
   await tester.tap(find.text('Next'));
-  // The sheet reads the plan list over the fake transport, which needs real
-  // async turns — its spinner alone would never let pumpAndSettle finish.
+  // Bounded, not `pumpAndSettle`: an uncertain upload surfaces its own
+  // dialog here now (`_syncForShare` runs before any navigation), and that
+  // dialog's own progress spinner would never let a plain settle return.
   for (var i = 0; i < 20; i++) {
     await tester.pump(const Duration(milliseconds: 50));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
   }
-  await tester.pumpAndSettle();
-  await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
-  // Publishing starts here and paints its own progress bar, so settle would
-  // never return — turn the wheel a bounded number of times instead.
+}
+
+/// Taps "Share" on the Post Share Settings screen `_tapNext` lands on —
+/// publishing starts there and paints its own progress bar, so settle alone
+/// would never return.
+Future<void> _tapShare(WidgetTester tester) async {
+  await tester.tap(find.text('Share'));
   for (var i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 50));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
   }
+  await tester.pumpAndSettle();
 }
 
 /// Writes About trip through the Title sheet and confirms it.
@@ -410,12 +443,24 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('ตรวจรูปที่อัปโหลดไม่ทราบผล'), findsOneWidget);
     await tester.tap(find.text('รูปที่ตรวจพบ'));
+    for (var i = 0;
+        i < 10 && find.text('เชื่อมแพลนของฉัน').evaluate().isEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await _tapShare(tester);
     await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
     expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'),
         hasLength(2));
     expect(adapter.paths.where((p) => p == 'POST /trips'), hasLength(1));
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['mediaIds'],
+    expect(
+        adapter.requests
+            .firstWhere((r) =>
+                r.method == 'PATCH' &&
+                r.path == '/trips/trip-new' &&
+                r.data.containsKey('contents'))
+            .data['contents'][0]['mediaIds'],
         [_a, _b]);
   });
 
@@ -495,11 +540,12 @@ void main() {
         .onSelect;
 
     final firstBlock = tester.widget<PostBlock>(find.byType(PostBlock));
-    expect(firstBlock.details.opensAt, const TimeOfDay(hour: 9, minute: 0));
-    expect(firstBlock.details.closesAt, const TimeOfDay(hour: 20, minute: 0));
-    expect(firstBlock.details.tripHack, 'ไปช่วงเช้า');
-    expect(firstBlock.items!.first.bodyController.text,
-        'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
+    final firstItem = firstBlock.items!.first;
+    expect(firstItem.details.opensAt, const TimeOfDay(hour: 9, minute: 0));
+    expect(firstItem.details.closesAt, const TimeOfDay(hour: 20, minute: 0));
+    expect(firstItem.details.tripHack, 'ไปช่วงเช้า');
+    expect(
+        firstItem.bodyController.text, 'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
     expect(firstBlock.imagePaths, ['assets/images/puntok_osaka.jpg']);
 
     // Its warnings have to be on screen, and its place stays unconfirmed.
@@ -1177,6 +1223,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     // Confirmed only because a person tapped it, and it carries the id and
@@ -1204,8 +1251,13 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
-    await tester.enterText(find.byType(TextField).first, 'แก้ข้อความ');
+    // The spot's own heading — not its story — is what the title falls back
+    // to now; changing it is what should move the *second* publish's title.
+    tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
+        'แก้ข้อความ';
+    await tester.pumpAndSettle();
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
     final creates = adapter.requests
         .where((r) => r.method == 'POST' && r.path == '/trips')
@@ -1218,7 +1270,7 @@ void main() {
   });
 
   testWidgets(
-      'photo-only content publishes with user-entered trip fields, led by its own photo',
+      'photo-only content publishes using its own location as title and destination',
       (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(
@@ -1235,13 +1287,9 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await _tapImport(tester);
     await _settleImport(tester);
+    await _confirmPlace(tester);
     await _tapNext(tester);
-    await tester.enterText(
-        find.widgetWithText(TextFormField, 'ชื่อโพสต์'), 'วันหยุด');
-    await tester.enterText(
-        find.widgetWithText(TextFormField, 'จุดหมาย (พิมพ์เองได้)'),
-        'ระหว่างทาง');
-    await tester.tap(find.widgetWithText(TextButton, 'บันทึก'));
+    await _tapShare(tester);
     await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
     // The import created the draft before there was anything to name it with,
@@ -1252,8 +1300,11 @@ void main() {
       'destination': 'ยังไม่ระบุ'
     });
     final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
-    expect(patched['title'], 'วันหยุด');
-    expect(patched['destination'], 'ระหว่างทาง');
+    // Post Title and Post Location were never typed — both are optional, and
+    // publishing never stops to ask for them. Each resolves from the one
+    // thing the photo-only post actually has: its confirmed location.
+    expect(patched['title'], 'เชียงใหม่');
+    expect(patched['destination'], 'เชียงใหม่');
     expect(
         adapter.requests
             .firstWhere((r) => r.method == 'POST')
@@ -1263,7 +1314,7 @@ void main() {
       {
         'content': '',
         'mediaIds': [_a],
-        'location': {'status': 'none'}
+        'location': {'status': 'confirmed', 'name': 'เชียงใหม่'}
       }
     ]);
     // No cover was chosen, so the post leads with the one picture it has
@@ -1289,6 +1340,7 @@ void main() {
     await tester.pumpAndSettle();
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     // There is nothing to lead with, and a cover is not worth inventing.
@@ -1332,11 +1384,18 @@ void main() {
         (0, 1), 0);
     await tester.pumpAndSettle();
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
     // Nothing is re-uploaded, and the trip had no cover of its own, so it is
-    // led by the picture that now reads first.
-    expect(adapter.paths.where((p) => p != 'GET /trips/mine'),
-        ['PUT /trips/trip-new/cover', 'PATCH /trips/trip-new']);
+    // led by the picture that now reads first. Two round trips now: the
+    // content sync (cover + the first PATCH), then the share screen's own
+    // read-back and its own PATCH.
+    expect(adapter.paths.where((p) => p != 'GET /trips/mine'), [
+      'PUT /trips/trip-new/cover',
+      'PATCH /trips/trip-new',
+      'GET /trips/trip-new',
+      'PATCH /trips/trip-new',
+    ]);
     expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _b});
     final section =
         (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single;
@@ -1366,7 +1425,10 @@ void main() {
           'images': [
             _image(_a, 'assets/images/puntok_osaka.jpg'),
             _image(_b, 'assets/images/puntok_london.jpg')
-          ]
+          ],
+          // A location is required before Next proceeds at all; set directly
+          // on the fixture to keep this a test of cover/media dereferencing.
+          'location': {'status': 'confirmed', 'name': 'เชียงใหม่'},
         },
       ]
     });
@@ -1374,11 +1436,14 @@ void main() {
     tester.widget<PostBlock>(find.byType(PostBlock)).onRemoveImage!(0);
     await tester.pumpAndSettle();
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
     expect(adapter.paths.where((p) => p != 'GET /trips/mine'), [
       'PATCH /trips/trip-new',
       'DELETE /trips/trip-new/media/$_a',
-      'PATCH /trips/trip-new'
+      'PATCH /trips/trip-new',
+      'GET /trips/trip-new',
+      'PATCH /trips/trip-new',
     ]);
     final firstWrite = adapter.requests
         .firstWhere((r) => r.path == '/trips/trip-new' && r.method == 'PATCH');
@@ -1398,7 +1463,11 @@ void main() {
           'mediaIds': [_a],
           'images': [
             {'mediaId': _a, 'unavailable': true}
-          ]
+          ],
+          // A location is required before Next proceeds at all; set directly
+          // on the fixture so this stays a test of the unavailable-reference
+          // guard, not an incidental one of the location requirement.
+          'location': {'status': 'confirmed', 'name': 'เชียงใหม่'},
         }
       ]
     });
@@ -1556,31 +1625,6 @@ void main() {
     expect(find.text('ร่างที่เก็บไว้'), findsOneWidget);
   });
 
-  testWidgets(
-      'photo-only draft asks for trip fields and can return without publishing',
-      (tester) async {
-    final adapter = FakeAdapter({});
-    final previous = ImagePickerPlatform.instance;
-    ImagePickerPlatform.instance = _TripPicker(
-        Future.value([_UnreadablePhoto('assets/images/puntok_osaka.jpg')]));
-    addTearDown(() => ImagePickerPlatform.instance = previous);
-    await _pumpComposer(tester, adapter: adapter);
-    await _tapImport(tester);
-    await _settleImport(tester);
-    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
-        hasLength(1));
-    await _tapNext(tester);
-    expect(find.byType(AlertDialog), findsOneWidget);
-    await tester.tap(find.text('กลับไปแก้ไข'));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 500));
-    // The import had to make the draft and upload the photo — that is the
-    // assistant's price of entry. Backing out of publishing still writes
-    // nothing to the trip itself.
-    expect(adapter.paths, contains('POST /trips'));
-    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
-  });
-
   for (final denied in [false, true]) {
     testWidgets(
         denied
@@ -1672,6 +1716,8 @@ void main() {
         {'mediaId': 'bbbbbbbb-0000-4000-8000-000000000002'});
     expect(adapter.paths.indexOf('PUT /trips/trip-new/cover'),
         lessThan(adapter.paths.indexOf('PATCH /trips/trip-new')));
+    await _tapShare(tester);
+    await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
   });
 
@@ -1718,6 +1764,7 @@ void main() {
     await tester.pumpAndSettle();
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     // It reached the trip as its cover even though no section carried it, and
@@ -1791,7 +1838,10 @@ void main() {
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.enterText(_bodyField().first, 'เรื่องราว');
+    // The spot's own heading, not its story — the post's title falls back to
+    // a content's heading now, never its body text.
+    tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
+        'เรื่องราว';
     await tester.pumpAndSettle();
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
     await _tapNext(tester);
@@ -1801,6 +1851,8 @@ void main() {
       'title': 'เรื่องราว',
       'destination': 'เชียงใหม่',
     });
+    await _tapShare(tester);
+    await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
   });
 
@@ -1821,7 +1873,9 @@ void main() {
     expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
     expect(adapter.bodyOf('POST /trips'), {
       'type': 'content',
-      'title': 'เดินเล่น',
+      // No heading was set, so the title falls back past the body text —
+      // which is never part of the chain — straight to the location's name.
+      'title': 'เชียงใหม่',
       'destination': 'เชียงใหม่',
     });
     expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'], [
@@ -1831,12 +1885,18 @@ void main() {
         'location': {'status': 'confirmed', 'name': 'เชียงใหม่'}
       },
     ]);
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['visibility'], 'public');
     if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
     await _tapNext(tester);
     expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
+    // The retried content-sync PATCH, twice (one 500, one success) — the
+    // share screen's own PATCH, once more on top of that, comes after Share.
     expect(adapter.paths.where((path) => path == 'PATCH /trips/trip-new'),
         hasLength(2));
+    await _tapShare(tester);
+    await _finishPublish(tester);
+    expect(adapter.paths.where((path) => path == 'PATCH /trips/trip-new'),
+        hasLength(3));
+    expect(adapter.requests.last.data['visibility'], 'public');
     expect(find.text('home'), findsOneWidget);
   });
 
@@ -1868,19 +1928,21 @@ void main() {
     expect(tester.getTopLeft(find.text('Public')).dy,
         lessThan(tester.getTopLeft(find.text('Title..')).dy));
 
-    // The spot: a heading, where it is, then the story.
-    // Optional parts offer themselves from the spot's options row rather than
-    // sit open as blank fields.
+    // The spot: a heading, where it is, then the story. The heading row is
+    // always on screen now, same as location — required-looking, not a
+    // chip that only appears once asked for.
     expect(_headingChip, findsOneWidget);
-    expect(find.text('Location'), findsOneWidget);
+    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+        findsOneWidget);
     // About trip is written in the Title sheet, so it is not on the page.
     expect(find.text('About trip'), findsNothing);
-    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
-        findsNothing);
-    expect(find.text('Add Location'), findsNothing);
+    // The location row is always on screen now — required, not optional —
+    // so there is no separate dashed chip for it any more.
+    expect(find.text('Add Location'), findsOneWidget);
+    expect(find.text('Location'), findsNothing);
     expect(find.text('Tell us about your trip..'), findsOneWidget);
 
-    // Every option is on one line that scrolls, rather than wrapping onto a
+    // Each item's own extras scroll on one line, rather than wrapping onto a
     // second row and taking more height than the story itself.
     final options = find.descendant(
       of: find.byType(PostBlock),
@@ -1888,17 +1950,17 @@ void main() {
           w is SingleChildScrollView && w.scrollDirection == Axis.horizontal),
     );
     expect(options, findsOneWidget);
-    expect(find.descendant(of: options, matching: _headingChip), findsOneWidget,
-        reason: 'ชื่อหัวข้อ');
-    for (final chip in ['Location', 'Trip Hack']) {
+    for (final chip in ['Trip Hack']) {
       expect(find.descendant(of: options, matching: find.text(chip)),
           findsOneWidget,
           reason: chip);
     }
 
-    // Attachments: a photo, the time, how you got there, and the hack.
+    // Attachments: a photo, the location, the time, how you got there, and
+    // the hack.
     for (final icon in const [
       Icons.add_photo_alternate_outlined,
+      Icons.location_on_outlined,
       Icons.schedule,
       Icons.directions_car_outlined,
       Icons.info_outline,
@@ -1947,14 +2009,123 @@ void main() {
     expect(find.text('เที่ยวย่านพระนคร 1 day trip'), findsOneWidget);
   });
 
-  testWidgets('เพิ่มจุดต่อไป appends a spot and lands on it',
+  testWidgets(
+      'a manual Post Title outranks a content heading, which stays its own',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    // Content #1 writes its own heading and gets a confirmed place — both of
+    // which would otherwise answer for the post.
+    tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
+        'Hotel Zelos';
+    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+
+    // The manual Post Title/Location, set through the Title sheet, must not
+    // be overwritten by either. The content's own heading is visible now
+    // too (a non-empty heading shows itself), so the sheet's own field has
+    // to be scoped explicitly rather than just "the first TextField".
+    await tester.tap(find.text('Title..'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.descendant(
+            of: find.byType(BottomSheet), matching: find.byType(TextField)).first,
+        'San Francisco Trip');
+    await tester.tap(find.text('ตกลง'));
+    await tester.pumpAndSettle();
+
+    await _tapNext(tester);
+    await _tapShare(tester);
+    await _finishPublish(tester);
+
+    expect(adapter.bodyOf('POST /trips'), {
+      'type': 'content',
+      'title': 'San Francisco Trip',
+      // Picked through `_confirmPlace`, which is the only place stubbed.
+      'destination': 'เชียงใหม่',
+    });
+    // The content's own heading is untouched — a manual Post Title answers
+    // for the post without ever reaching into content-level state.
+    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['title'],
+        'Hotel Zelos');
+  });
+
+  testWidgets(
+      'Post Location fallback follows content #1 after a reorder',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    // A spot with only a place and no text/photo never makes the post
+    // publishable on its own — give it a story so Next is actually live.
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
+    // Content #1: เชียงใหม่ — `_pumpComposer` stubs `/places/search` to that
+    // name itself whenever `POST /trips` is declared, same as `_confirmPlace`
+    // always finds.
+    await _confirmPlace(tester);
+    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
+    await tester.tap(find.text('เพิ่มจุดต่อไป'));
+    await tester.pumpAndSettle();
+    // Content #2: Chiang Mai.
+    adapter.replies['GET /places/search'] = [
+      const FakeReply(200, [
+        {'id': 'place-2', 'mapId': 'map-2', 'name': 'Chiang Mai'}
+      ])
+    ];
+    tester.widget<PostBlock>(find.byType(PostBlock)).onPickPlace();
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Chiang Mai');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Chiang Mai').last);
+    await tester.pumpAndSettle();
+
+    // Swap the two in the reorder sheet — Chiang Mai becomes content #1.
+    await tester.tap(find.byTooltip('จัดเรียงลำดับหัวข้อ'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+        find.byIcon(Icons.drag_indicator).last, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+
+    await _tapNext(tester);
+    await _tapShare(tester);
+    await _finishPublish(tester);
+
+    // The post never had a manual location of its own, so it follows
+    // whichever content is first on screen now — Chiang Mai, not เชียงใหม่.
+    expect(adapter.bodyOf('POST /trips')!['destination'], 'Chiang Mai');
+  });
+
+  testWidgets('Save Draft never asks for Post Title or Post Location',
       (tester) async {
     await _pumpComposer(tester);
+    await _scrollTo(tester, find.text('Save Draft'));
+    await tester.tap(find.text('Save Draft'));
+    await tester.pumpAndSettle();
+
+    // Both are empty, nothing was ever typed anywhere, and no dialog of any
+    // kind interrupted it.
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('เพิ่มจุดต่อไป appends a spot and lands on it',
+      (tester) async {
+    await _pumpComposer(tester, adapter: _placesAdapter());
 
     expect(find.byType(PostBlock), findsOneWidget);
     // The first section keeps no remove, so a post always has one.
     expect(find.text('ลบจุดนี้'), findsNothing);
 
+    // A location is required before the next spot can be added.
+    await _confirmPlace(tester);
     await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
     await tester.tap(find.text('เพิ่มจุดต่อไป'));
     await tester.pumpAndSettle();
@@ -1973,10 +2144,98 @@ void main() {
   });
 
   testWidgets(
+      'เพิ่มจุดต่อไป refuses an empty spot and clears once a location lands',
+      (tester) async {
+    await _pumpComposer(tester, adapter: _placesAdapter());
+
+    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
+    await tester.tap(find.text('เพิ่มจุดต่อไป'));
+    await tester.pumpAndSettle();
+
+    // No spot was added — still the one, now flagged inline.
+    expect(find.text('ลบจุดนี้'), findsNothing);
+    expect(find.text('กรุณาเพิ่ม Location'), findsOneWidget);
+
+    // Picking a location clears the error this instant, no second tap needed.
+    await _confirmPlace(tester);
+    expect(find.text('กรุณาเพิ่ม Location'), findsNothing);
+
+    // "เพิ่มจุดต่อไป" now goes through.
+    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
+    await tester.tap(find.text('เพิ่มจุดต่อไป'));
+    await tester.pumpAndSettle();
+    expect(find.text('ลบจุดนี้'), findsOneWidget);
+  });
+
+  testWidgets('Next jumps back to an earlier invalid spot and flags it',
+      (tester) async {
+    final adapter = _placesAdapter();
+    adapter.replies['POST /trips'] = [FakeReply(201, createdTripJson())];
+    adapter.replies['PATCH /trips/trip-new'] = [FakeReply(200, createdTripJson())];
+    await _pumpComposer(tester, adapter: adapter);
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
+    await _confirmPlace(tester);
+    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
+    await tester.tap(find.text('เพิ่มจุดต่อไป'));
+    await tester.pumpAndSettle();
+    // Landed on the new, still-empty second spot.
+    expect(find.text('กรุณาเพิ่ม Location'), findsNothing);
+
+    // Switch back to the first (valid) spot before asking for Next.
+    final pagination =
+        tester.widget<TripSpotPagination>(find.byType(TripSpotPagination));
+    pagination.onSelect(0);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+
+    // Blocked — never reached the publish sheet — and switched to the spot
+    // that actually needs attention rather than leaving the traveller on the
+    // one they were looking at.
+    expect(find.text('เชื่อมกับแผนของฉัน'), findsNothing);
+    expect(find.text('กรุณาเพิ่ม Location'), findsOneWidget);
+    expect(
+        tester
+            .widget<TripSpotPagination>(find.byType(TripSpotPagination))
+            .currentIndex,
+        1);
+
+    // Fixing it lets Next through — on to the Post Share Settings screen now,
+    // not the old picker.
+    await _confirmPlace(tester);
+    await _tapNext(tester);
+    expect(find.text('เชื่อมแพลนของฉัน'), findsOneWidget);
+  });
+
+  testWidgets('deleting the flagged spot clears its error state',
+      (tester) async {
+    await _pumpComposer(tester, adapter: _placesAdapter());
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
+    await _confirmPlace(tester);
+    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
+    await tester.tap(find.text('เพิ่มจุดต่อไป'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    expect(find.text('กรุณาเพิ่ม Location'), findsOneWidget);
+
+    await tester.tap(find.text('ลบจุดนี้'));
+    await tester.pumpAndSettle();
+
+    // Back to the one remaining, valid spot — no stale error left behind.
+    expect(find.byType(PostBlock), findsOneWidget);
+    expect(find.text('กรุณาเพิ่ม Location'), findsNothing);
+  });
+
+  testWidgets(
       'moving a section keeps its text and deleting removes only that section',
       (tester) async {
-    await _pumpComposer(tester);
+    await _pumpComposer(tester, adapter: _placesAdapter());
     await tester.enterText(_bodyField().first, 'ส่วนแรก');
+    // A location is required before the next spot can be added.
+    await _confirmPlace(tester);
     await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
     await tester.tap(find.text('เพิ่มจุดต่อไป'));
     await tester.pumpAndSettle();
@@ -2009,20 +2268,19 @@ void main() {
     expect(find.text('ส่วนที่สอง'), findsOneWidget);
   });
 
-  testWidgets('the spot heading is an add option until it is asked for',
+  testWidgets('the spot heading is always on screen, ready to type into',
       (tester) async {
     await _pumpComposer(tester);
 
-    // Nothing to fill in yet — just the offer.
+    // The offer — hint text and the "+" — is there from the start now, the
+    // same way the location row already is.
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
-        findsNothing);
+        findsOneWidget);
     expect(_headingChip, findsOneWidget);
 
     await _tapSpotOption(tester, _headingChip);
 
-    // Now the field is there, focused, ready to type into.
-    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
-        findsOneWidget);
+    // Tapping its own "+" just focuses the field that was already there.
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).titleFocus.hasFocus,
         isTrue);
 
@@ -2045,6 +2303,62 @@ void main() {
     await tester.tap(find.text('Tell us about your trip..'));
     await tester.pumpAndSettle();
     expect(find.text('ร้านอาหารที่ต้องแวะ'), findsOneWidget);
+  });
+
+  testWidgets(
+      'เพิ่มเนื้อหา adds another item under the same heading, not a new spot',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _tapSpotOption(tester, _headingChip);
+    await tester.enterText(find.byType(TextField).first, 'ที่พัก');
+    await tester.pumpAndSettle();
+    await tester.enterText(_bodyField().first, 'โรงแรมรัตนโกสินทร์');
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PostBlock), findsOneWidget);
+    expect(find.text('ลบชุดข้อมูลนี้'), findsNothing);
+
+    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
+    await tester.tap(find.text('เพิ่มเนื้อหา'));
+    await tester.pumpAndSettle();
+
+    // A second item under the same spot — still one page, still one heading,
+    // the first item's story untouched.
+    expect(find.byType(TripSpotPagination), findsNothing);
+    expect(find.byType(PostBlock), findsOneWidget);
+    expect(find.text('ที่พัก'), findsOneWidget);
+    expect(find.text('โรงแรมรัตนโกสินทร์'), findsOneWidget);
+    // Both items now offer their own delete — there are two to choose from.
+    expect(find.text('ลบชุดข้อมูลนี้'), findsNWidgets(2));
+
+    await tester.enterText(_bodyField().last, 'โรงแรมศาลารัตนโกสินทร์');
+    await tester.pumpAndSettle();
+    expect(find.text('โรงแรมรัตนโกสินทร์'), findsOneWidget);
+    expect(find.text('โรงแรมศาลารัตนโกสินทร์'), findsOneWidget);
+  });
+
+  testWidgets('deleting a content item keeps the heading and the other items',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _tapSpotOption(tester, _headingChip);
+    await tester.enterText(find.byType(TextField).first, 'ที่พัก');
+    await tester.pumpAndSettle();
+    await tester.enterText(_bodyField().first, 'โรงแรมรัตนโกสินทร์');
+    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
+    await tester.tap(find.text('เพิ่มเนื้อหา'));
+    await tester.pumpAndSettle();
+    await tester.enterText(_bodyField().last, 'โรงแรมศาลารัตนโกสินทร์');
+    await tester.pumpAndSettle();
+
+    await _scrollTo(tester, find.text('ลบชุดข้อมูลนี้').first);
+    await tester.tap(find.text('ลบชุดข้อมูลนี้').first);
+    await tester.pumpAndSettle();
+
+    // The heading and the remaining item survive; only the deleted one goes.
+    expect(find.text('ที่พัก'), findsOneWidget);
+    expect(find.text('โรงแรมรัตนโกสินทร์'), findsNothing);
+    expect(find.text('โรงแรมศาลารัตนโกสินทร์'), findsOneWidget);
+    expect(find.text('ลบชุดข้อมูลนี้'), findsNothing);
   });
 
   testWidgets(
@@ -2169,6 +2483,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     expect(find.text('home'), findsOneWidget);
@@ -2247,7 +2562,7 @@ void main() {
 
     await _pumpComposer(tester, adapter: adapter);
 
-    await _tapSpotOption(tester, find.text('Location'));
+    await _tapSpotOption(tester, find.text('Add Location'));
 
     // The sheet opens on its own header, and with no location answered yet it
     // offers to turn location services on instead of guessing a point.
@@ -2273,7 +2588,9 @@ void main() {
     expect(find.text('Akha Ama Coffee'), findsOneWidget);
     expect(find.text('9/1 Mata Apartment, Chiang Mai 50200, Thailand'),
         findsOneWidget);
-    expect(find.byIcon(Icons.location_on_outlined), findsOneWidget);
+    // The row's own pin, plus the item's "add location" chip alongside the
+    // Trip Hack group — both use the same glyph.
+    expect(find.byIcon(Icons.location_on_outlined), findsNWidgets(2));
     expect(adapter.paths, contains('GET /places/search'));
 
     // Taking the pin off happens back in the sheet, since the row itself
@@ -2284,9 +2601,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Akha Ama Coffee'), findsNothing);
-    // With the pin gone the row goes with it; the options row offers it again.
-    expect(find.text('Add Location'), findsNothing);
-    expect(find.text('Location'), findsOneWidget);
+    // With the pin gone the row reverts to its required, unfilled prompt.
+    expect(find.text('Add Location'), findsOneWidget);
   });
 
   testWidgets('a chosen photo fills the width above its place row',
@@ -2326,7 +2642,7 @@ void main() {
             onClearImage: () {},
             onPickPlace: () {},
             onClearPlace: () {},
-            onExtra: (_) {},
+            onExtra: (_, __) {},
           ),
         ),
       ),
@@ -2481,11 +2797,15 @@ void main() {
 
     await tester.tap(find.text('Title..'));
     await tester.pumpAndSettle();
-    expect(find.text('Add Location'), findsOneWidget);
+    // The composer's own spot now always shows its required "Add Location"
+    // row too, so the Title sheet's own place prompt is scoped to the sheet.
+    final sheetAddLocation = find.descendant(
+        of: find.byType(BottomSheet), matching: find.text('Add Location'));
+    expect(sheetAddLocation, findsOneWidget);
 
-    await tester.ensureVisible(find.text('Add Location'));
+    await tester.ensureVisible(sheetAddLocation);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Location'));
+    await tester.tap(sheetAddLocation);
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).last, 'พระนคร');
@@ -2511,6 +2831,7 @@ void main() {
         findsOneWidget);
 
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     // The locality of the post's own place, not the spot's pin.
@@ -2561,9 +2882,11 @@ void main() {
     expect(find.textContaining('ตำแหน่งของคุณตอนนี้: สนามหลวง'),
         findsOneWidget);
 
-    await tester.ensureVisible(find.text('Add Location'));
+    final sheetAddLocation = find.descendant(
+        of: find.byType(BottomSheet), matching: find.text('Add Location'));
+    await tester.ensureVisible(sheetAddLocation);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Location'));
+    await tester.tap(sheetAddLocation);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'เชียงใหม่');
     await tester.pump(const Duration(milliseconds: 400));
@@ -2639,6 +2962,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
@@ -2659,6 +2983,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
@@ -2666,55 +2991,26 @@ void main() {
     expect(patched.containsKey('budgetLimit'), isFalse);
   });
 
-  testWidgets('Next opens เชื่อมกับแผนของฉัน before anything is written',
+  testWidgets('Next syncs content and lands on the Post Share Settings screen',
       (tester) async {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
-      'GET /trips/mine': [
-        FakeReply(200, [
-          {
-            'id': 'plan-1',
-            'title': 'เดินเล่นพระนคร',
-            'destination': 'กรุงเทพมหานคร',
-            'status': 'draft',
-            'schedule': {
-              'startDate': '2026-09-20',
-              'endDate': '2026-09-20',
-              'durationDays': 1,
-            },
-            'totalBudget': 0,
-            'tags': <String>[],
-            'isSaved': false,
-            'isLiked': false,
-            'likeCount': 0,
-            'remixCount': 0,
-            'createdAt': '2026-09-09T00:00:00.000Z',
-            'updatedAt': '2026-09-09T00:00:00.000Z',
-          }
-        ])
-      ],
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
+    await _tapNext(tester);
 
-    await tester.tap(find.text('Next'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
-    await tester.pumpAndSettle();
-
-    expect(find.text('เชื่อมกับแผนของฉัน'), findsOneWidget);
-    expect(find.text('เดินเล่นพระนคร'), findsOneWidget);
-    expect(find.text('20 Sep 2026 • 1 วัน'), findsOneWidget);
-    // The step comes before the write, so nothing has been published yet.
-    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
+    // The content is already written by the time the share screen shows —
+    // "Share" there only needs to answer for title/visibility/plan/remix,
+    // never the spots themselves again.
+    expect(find.text('เชื่อมแพลนของฉัน'), findsOneWidget);
+    expect(adapter.paths, contains('PATCH /trips/trip-new'));
   });
 
-  testWidgets('ยกเลิก on the plan step cancels the publish', (tester) async {
+  testWidgets('backing out of the Post Share Settings screen leaves it unpublished',
+      (tester) async {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
@@ -2722,20 +3018,67 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
+    await _tapNext(tester);
+
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+
+    // Back on the composer — the content sync already happened (same as any
+    // other draft autosave), but nothing was shared.
+    expect(find.text('Next'), findsOneWidget);
+    expect(adapter.paths.where((p) => p == 'PATCH /trips/trip-new'),
+        hasLength(1));
+  });
+
+  testWidgets('each content item keeps its own Trip Hack independently',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
+    await tester.tap(find.text('เพิ่มเนื้อหา'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Trip Hack').first);
+    await tester.tap(find.text('Trip Hack').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
+        'ของจุดที่ 1');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Trip Hack').last);
+    await tester.tap(find.text('Trip Hack').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
+        'ของจุดที่ 2');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ของจุดที่ 1'), findsOneWidget);
+    expect(find.text('ของจุดที่ 2'), findsOneWidget);
+
+    final block = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(block.items![0].details.tripHack, 'ของจุดที่ 1');
+    expect(block.items![1].details.tripHack, 'ของจุดที่ 2');
+  });
+
+  testWidgets('Next blocks on a second item missing its own location',
+      (tester) async {
+    await _pumpComposer(tester, adapter: _placesAdapter());
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
+    await _confirmPlace(tester);
+
+    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
+    await tester.tap(find.text('เพิ่มเนื้อหา'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Next'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'ยกเลิก'));
     await tester.pumpAndSettle();
 
-    // Back on the composer with nothing written.
-    expect(find.text('Next'), findsOneWidget);
-    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
+    // Blocked on the second item specifically — the first's own location
+    // stays valid and shows no error of its own.
+    expect(find.text('กรุณาเพิ่ม Location'), findsOneWidget);
   });
 
   testWidgets('Trip Hack fills a row under the story', (tester) async {
@@ -2842,6 +3185,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     final section =
@@ -2872,6 +3216,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     final section =
@@ -2906,6 +3251,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     final section =
@@ -2924,6 +3270,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     final section =
@@ -2996,6 +3343,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
     expect(adapter.bodyOf('PATCH /trips/trip-new')!['customStyles'], ['ดำน้ำ']);
@@ -3006,9 +3354,6 @@ void main() {
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
-      'GET /trips/plan-1': [
-        FakeReply(200, {...createdTripJson(id: 'plan-1'), 'type': 'plan_trip'})
-      ],
       'GET /trips/mine': [
         FakeReply(200, [
           {
@@ -3033,29 +3378,22 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
+    await _tapNext(tester);
 
-    await tester.tap(find.text('Next'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
+    // "เชื่อมแพลนของฉัน" on the share screen opens the same picker the
+    // composer used to open straight off "Next".
+    await tester.tap(find.text('เชื่อมแพลนของฉัน'));
     await tester.pumpAndSettle();
-
-    // The count comes from the list now, no request per row.
     expect(find.text('1 วัน • 11 สถานที่'), findsOneWidget);
-
     await tester.tap(find.text('เดินเล่นพระนคร'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
-    for (var i = 0; i < 8; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
+    await tester.pumpAndSettle();
+
+    await _tapShare(tester);
     await _finishPublish(tester);
 
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['linkedTripId'], 'plan-1');
+    expect(adapter.requests.last.data['linkedTripId'], 'plan-1');
   });
 
   testWidgets('confirming with no plan chosen unlinks rather than staying put',
@@ -3068,9 +3406,10 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
     await _tapNext(tester);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
-    final body = adapter.bodyOf('PATCH /trips/trip-new')!;
+    final body = adapter.requests.last.data;
     // Explicitly null, not absent: the traveller answered "no plan".
     expect(body.containsKey('linkedTripId'), isTrue);
     expect(body['linkedTripId'], isNull);
@@ -3095,19 +3434,33 @@ void main() {
     });
     final adapter = FakeAdapter({
       'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      // The share screen reads the trip straight back and seeds its own
+      // connect-plan state off whatever `linkedTrip` that answers with.
+      'GET /trips/trip-new': [
+        FakeReply(200, {
+          ...createdTripJson(),
+          'visibility': 'public',
+          'linkedTrip': {
+            'id': 'plan-1',
+            'title': 'เดินเล่นพระนคร',
+            'schedule': {'durationDays': 1},
+            'placeCount': 11,
+          },
+        })
+      ],
       // The plan is not in this page of the list, and confirming must still
       // keep it rather than quietly unlinking.
       'GET /trips/mine': [const FakeReply(200, [])],
-      'GET /trips/plan-1': [
-        FakeReply(200, createdTripJson(id: 'plan-1')),
-      ],
     });
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
 
-    // The Next step opens on the plan already chosen, so confirming keeps it.
+    // The share screen opens on the plan already chosen, so sharing without
+    // touching "เชื่อมแพลนของฉัน" keeps it.
     await _tapNext(tester);
+    expect(find.text('เชื่อมแพลนเดินเล่นพระนคร'), findsOneWidget);
+    await _tapShare(tester);
     await _finishPublish(tester);
 
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['linkedTripId'], 'plan-1');
+    expect(adapter.requests.last.data['linkedTripId'], 'plan-1');
   });
 }

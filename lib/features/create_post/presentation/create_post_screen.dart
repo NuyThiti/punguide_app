@@ -1,4 +1,3 @@
-import 'widgets/post_info_dialog.dart';
 import '../../../shared/widgets/cover_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -29,7 +28,6 @@ import 'widgets/post_spot_details.dart';
 import 'widgets/post_title_field.dart';
 import 'widgets/post_warnings.dart';
 import 'widgets/post_block.dart';
-import 'widgets/trip_link_picker.dart';
 import 'widgets/trip_spot_pagination.dart';
 import 'widgets/trip_spot_reorder_sheet.dart';
 
@@ -41,6 +39,16 @@ const _assistantPhotoLimit = 20;
 /// post yet. It is not the traveller's own words, so the assistant is still
 /// free to overwrite it later — unlike anything they typed themselves.
 const _placeholderPostTitle = 'ร่างจากรูป';
+
+/// The post's own title, once publishing has exhausted every other answer —
+/// a manual one, every content's own heading, every content's own location.
+/// Post Title is optional by design; this is what "optional" resolves to,
+/// never a reason to stop the traveller and ask.
+const _defaultPostTitle = 'ทริปของฉัน';
+
+/// Same idea for the destination, which the API still needs some string for
+/// even though Post Location itself has nothing to fall back to.
+const _defaultPostDestination = 'ยังไม่ระบุ';
 
 final _localDraftProvider =
     StateProvider.family<PostDraft?, String>((ref, id) => null);
@@ -56,7 +64,10 @@ class _PublishResume {
   String? sourceId, creationTitle, creationDestination;
   String key = '', title = '', postDestination = '';
   PostAboutTrip about = const PostAboutTrip();
-  List<PostSpotDetails> spotDetails = const [];
+
+  /// One list of per-item details per block — each item in a section now
+  /// answers for its own extras, not the section as a whole.
+  List<List<PostSpotDetails>> spotDetails = const [];
 
   /// The cover media was uploaded by this composer, so it is ours to
   /// clean up once it stops being the cover.
@@ -89,6 +100,23 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// a delete or a drag in the reorder sheet can never leave it pointing at
   /// the wrong spot (or past the end of a shorter list).
   int _currentBlockIndex = 0;
+
+  /// Content items "เพิ่มจุดต่อไป"/"Next" have flagged for having no
+  /// location — mandatory for every item, not just a section's first — by
+  /// the item's own [_BlockItemFields.id], never by page/display order,
+  /// since a drag in the reorder sheet must not leave the error pointing at
+  /// the wrong item. Cleared as soon as a location actually lands on that
+  /// item; "Save Draft" never consults this at all.
+  final Set<String> _locationErrorItemIds = {};
+
+  /// Where "เพิ่มจุดต่อไป"/"Next" scroll to when they flag an item — one key
+  /// per item id, never a single shared key: `AnimatedSwitcher` keeps the
+  /// outgoing `PostBlock` mounted beside the incoming one for its crossfade,
+  /// and a key shared between them collides the instant both exist at once.
+  final Map<String, GlobalKey> _locationFieldKeys = {};
+
+  GlobalKey _locationFieldKeyFor(String itemId) =>
+      _locationFieldKeys.putIfAbsent(itemId, GlobalKey.new);
 
   PostAudience _audience = PostAudience.public;
 
@@ -215,7 +243,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         for (var i = 0;
             i < resume.spotDetails.length && i < _blocks.length;
             i++) {
-          _blocks[i].details = resume.spotDetails[i];
+          final itemDetails = resume.spotDetails[i];
+          for (var j = 0;
+              j < itemDetails.length && j < _blocks[i].items.length;
+              j++) {
+            _blocks[i].items[j].details = itemDetails[j];
+          }
         }
         _postDestination.text = resume.postDestination;
         _uncertainUploads.addAll(resume.uncertain);
@@ -254,7 +287,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             ? _blocks.last
             : (_BlockFields()..title.text = section.title);
         final item = canMerge ? _BlockItemFields() : block.items.first;
-        block.details = PostSpotDetails(
+        item.details = PostSpotDetails(
           visitedAt: _timeOfDay(section.visitedAt),
           opensAt: _timeOfDay(section.opensAt),
           closesAt: _timeOfDay(section.closesAt),
@@ -365,7 +398,42 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         trip: _trip,
       );
 
+  /// Whether a single item carries a location.
+  bool _itemHasLocation(_BlockItemFields item) =>
+      item.place != null ||
+      item.location?.status == ContentLocationStatus.confirmed;
+
+  /// Every item in [block] that still needs a location — mandatory for all
+  /// of them now, not just the first.
+  List<String> _invalidItemIds(_BlockFields block) => [
+        for (final item in block.items)
+          if (!_itemHasLocation(item)) item.id,
+      ];
+
+  /// Whether every item in a spot carries a location.
+  bool _blockHasLocation(_BlockFields block) => _invalidItemIds(block).isEmpty;
+
+  void _scrollToLocationField(String itemId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _locationFieldKeys[itemId]?.currentContext;
+      if (target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+        alignment: 0.1,
+      );
+    });
+  }
+
   void _addBlock() {
+    final current = _blocks[_currentBlockIndex];
+    final invalid = _invalidItemIds(current);
+    if (invalid.isNotEmpty) {
+      setState(() => _locationErrorItemIds.addAll(invalid));
+      _scrollToLocationField(invalid.first);
+      return;
+    }
     if (_blocks.length >= 100) {
       _message('เพิ่มเนื้อหาได้สูงสุด 100 ส่วน');
       return;
@@ -386,6 +454,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final viewedId = _blocks[_currentBlockIndex].id;
     setState(() {
       _blocks.removeAt(index);
+      for (final item in fields.items) {
+        _locationErrorItemIds.remove(item.id);
+        _locationFieldKeys.remove(item.id);
+      }
       _syncCover();
       final stillThere = _blocks.indexWhere((block) => block.id == viewedId);
       _currentBlockIndex = stillThere >= 0
@@ -441,7 +513,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     );
   }
 
-  /// Puts the heading field on screen and drops the caret in it.
+  /// "+ เพิ่มเนื้อหา" — another content item under this spot's own heading,
+  /// never a new spot of its own.
   void _addItem(int index) {
     final block = _blocks[index];
     if (block.items.length >= 20) {
@@ -458,6 +531,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final item = block.items[itemIndex];
     setState(() {
       block.items.removeAt(itemIndex);
+      _locationErrorItemIds.remove(item.id);
+      _locationFieldKeys.remove(item.id);
       _syncCover();
     });
     item.dispose(_refresh);
@@ -660,7 +735,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final title = derivedTitle.isEmpty ? _placeholderPostTitle : derivedTitle;
     final derivedDestination = _destinationForPublish(_draft);
     final destination = derivedDestination.isEmpty
-        ? _coordinatesOfFirstPhoto() ?? 'ยังไม่ระบุ'
+        ? _coordinatesOfFirstPhoto() ?? _defaultPostDestination
         : derivedDestination;
 
     _creationTitle ??= title;
@@ -999,7 +1074,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           : _contactInfoText(options?.contactInfo);
       final block = _BlockFields()
         ..title.text = section.title
-        ..details = PostSpotDetails(
+        ..items.first.details = PostSpotDetails(
           visitedAt: _timeOfDay(section.visitedAt),
           opensAt: _timeOfDay(section.opensAt),
           closesAt: _timeOfDay(section.closesAt),
@@ -1268,10 +1343,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ? const ContentLocation(status: ContentLocationStatus.none)
           : null;
       item.legacyMapId = null;
+      // A real pick clears the error this instant — never waits for another
+      // tap on "เพิ่มจุดต่อไป"/"Next" to notice.
+      if (!cleared) _locationErrorItemIds.remove(item.id);
     });
-    // Only the spot's own place, not a photo-group item inside it: the
-    // "ติดต่อ"/time chips are drawn once per block, not once per item.
-    if (!cleared && itemIndex == 0) _autoFillPlaceDetails(block, place.id);
+    // Every item answers for its own "ติดต่อ"/time chips now.
+    if (!cleared) _autoFillPlaceDetails(item, place.id);
   }
 
   /// "ยืนยันสถานที่" — the assistant's own suggestion becomes the spot's
@@ -1288,32 +1365,36 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           placeId: location.placeId,
           latitude: location.latitude,
           longitude: location.longitude);
+      _locationErrorItemIds.remove(item.id);
     });
-    if (itemIndex == 0) _autoFillPlaceDetails(block, location.placeId);
+    _autoFillPlaceDetails(item, location.placeId);
   }
 
   /// Fills the existing "ติดต่อ" and time chips from Google's own data for
-  /// [block]'s place, the moment one is actually added — never overwriting
+  /// [item]'s place, the moment one is actually added — never overwriting
   /// what the writer already typed, and silent (no message, no new row) for
   /// anywhere Google has nothing to add.
   ///
   /// `GET /places/:id` only answers for one of our own places — a legacy or
   /// hand-pinned spot with no internal id is left exactly as it was.
-  Future<void> _autoFillPlaceDetails(_BlockFields block, String? placeId) async {
+  Future<void> _autoFillPlaceDetails(
+      _BlockItemFields item, String? placeId) async {
     if (placeId == null || placeId.isEmpty) return;
     final live = await ref.read(placeDetailsProvider(placeId).future);
-    if (live == null || !mounted || !_blocks.contains(block)) return;
+    if (live == null ||
+        !mounted ||
+        !_blocks.any((block) => block.items.contains(item))) return;
 
     final phone = live.internationalPhoneNumber ?? live.nationalPhoneNumber;
     final hours = _todayOpenClose(live);
-    final fillContact = !block.details.hasContact &&
+    final fillContact = !item.details.hasContact &&
         phone != null &&
         phone.trim().isNotEmpty;
-    final fillHours = !block.details.hasTime && hours != null;
+    final fillHours = !item.details.hasTime && hours != null;
     if (!fillContact && !fillHours) return;
 
     setState(() {
-      block.details = block.details.copyWith(
+      item.details = item.details.copyWith(
         contactInfo: fillContact ? phone.trim() : null,
         opensAt: fillHours ? hours.$1 : null,
         closesAt: fillHours ? hours.$2 : null,
@@ -1339,44 +1420,34 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return (at(clock[0]), at(clock[1]));
   }
 
-  /// The เชื่อมกับแผนของฉัน step. Answers false when the traveller backed out,
-  /// so the caller knows not to carry on to whatever came after it.
-  Future<bool> _chooseTrip() async {
-    final link = await showTripLinkPicker(context, current: _trip);
-    if (link == null || !mounted) return false;
-    if (link == noTripLink) {
-      setState(() {
-        _trip = null;
-        _tripDestination = null;
-      });
-      return true;
-    }
-    try {
-      final api = await ref.read(plunoApiProvider.future);
-      final trip = await api.trips.byId(link.id);
-      if (!mounted) return false;
-      setState(() {
-        _trip = link;
-        _tripDestination = trip.destination;
-      });
-      return true;
-    } catch (_) {
-      if (!mounted) return false;
-      // The link itself is settled — the sheet already answered with an id and
-      // a title. Only the plan's destination, which merely fills the post's
-      // own when it is blank, failed to load; that must not cancel publishing.
-      setState(() => _trip = link);
-      _message('เชื่อมแผนแล้ว แต่โหลดจุดหมายของแผนไม่สำเร็จ');
-      return true;
-    }
-  }
-
-  /// The bar's Next: the link step first, then publishing. Backing out of the
-  /// sheet cancels the whole thing rather than posting without it.
+  /// The bar's Next: every spot's location first, then syncing the draft's
+  /// content to the server, then the Post Share Settings screen — connecting
+  /// a plan, choosing who sees it, and the remix toggle all live there now,
+  /// not in a picker opened straight off this button. Its own "Share"
+  /// finishes the post; popping back without sharing leaves the composer
+  /// exactly where it was.
   Future<void> _next() async {
-    if (!await _chooseTrip()) return;
-    if (!mounted) return;
-    await _publish();
+    final invalidIndex =
+        _blocks.indexWhere((block) => !_blockHasLocation(block));
+    if (invalidIndex != -1) {
+      final invalid = _invalidItemIds(_blocks[invalidIndex]);
+      setState(() {
+        _currentBlockIndex = invalidIndex;
+        _locationErrorItemIds.addAll(invalid);
+      });
+      _scrollToLocationField(invalid.first);
+      return;
+    }
+    if (!await _syncForShare() || !mounted) return;
+    final shared = await context.pushNamed<bool>(
+      AppRoute.shareSettings.name,
+      params: {'tripId': _draftId!},
+    );
+    if (shared == true && mounted) {
+      _published = true;
+      _message('บันทึกโพสต์เรียบร้อยแล้ว');
+      _close();
+    }
   }
 
   /// "06:00" for the wire, or null when the traveller never set one.
@@ -1414,8 +1485,37 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return trimmed.length <= 200 ? trimmed : trimmed.substring(0, 200);
   }
 
+  /// The richest place a topic (a "content"/spot) carries — its own item 0
+  /// first, then any other item inside it with one.
+  PostPlace? _topicPlace(PostTopic topic) {
+    if (topic.place != null) return topic.place;
+    for (final item in topic.contentItems) {
+      if (item.place != null) return item.place;
+    }
+    return null;
+  }
+
+  /// What a topic's place or location actually reads as a name — area over
+  /// name for a place, same as the identity card shows it.
+  String? _topicLocationName(PostTopic topic) {
+    final place = _topicPlace(topic);
+    if (place != null) {
+      if (place.area != null && place.area!.trim().isNotEmpty) {
+        return place.area!.trim();
+      }
+      if (place.name.trim().isNotEmpty) return place.name.trim();
+    }
+    final name = topic.location?.name?.trim();
+    return name == null || name.isEmpty ? null : name;
+  }
+
+  /// The post's own title: a manual one wins outright; otherwise the first
+  /// content with a heading, then the first with a location name — this is
+  /// the whole post's name, never a stand-in for an empty content heading or
+  /// location of its own, which stay exactly as blank as the writer left them.
   String _titleForPublish(PostDraft draft) {
-    if (_postTitle.text.trim().isNotEmpty) return _postTitle.text.trim();
+    final manual = _postTitle.text.trim();
+    if (manual.isNotEmpty) return manual;
     if (_trip != null && _trip!.title.trim().isNotEmpty) {
       return _trimForTripField(_trip!.title);
     }
@@ -1423,37 +1523,27 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       if (topic.title.trim().isNotEmpty) {
         return _trimForTripField(topic.title);
       }
-      if (topic.body.trim().isNotEmpty) {
-        return _trimForTripField(topic.body);
-      }
+    }
+    for (final topic in draft.topics) {
+      final name = _topicLocationName(topic);
+      if (name != null) return _trimForTripField(name);
     }
     return '';
   }
 
+  /// The post's own destination: a manual one wins outright; otherwise only
+  /// the first content's own location — never the second, third, and so on,
+  /// so a drag in the reorder sheet changes which content answers for it.
   String _destinationForPublish(PostDraft draft) {
-    if (_postDestination.text.trim().isNotEmpty)
-      return _postDestination.text.trim();
+    final manual = _postDestination.text.trim();
+    if (manual.isNotEmpty) return manual;
     final linkedDestination = _tripDestination?.trim();
     if (linkedDestination != null && linkedDestination.isNotEmpty) {
       return _trimForTripField(linkedDestination);
     }
-    for (final topic in draft.topics) {
-      PostPlace? place;
-      for (final item in topic.contentItems) {
-        if (item.place != null) {
-          place = item.place;
-          break;
-        }
-      }
-      if (place == null) continue;
-      if (place.area != null && place.area!.trim().isNotEmpty) {
-        return _trimForTripField(place.area!);
-      }
-      if (place.name.trim().isNotEmpty) {
-        return _trimForTripField(place.name);
-      }
-    }
-    return '';
+    if (draft.topics.isEmpty) return '';
+    final name = _topicLocationName(draft.topics.first);
+    return name == null ? '' : _trimForTripField(name);
   }
 
   /// Forgets what this run remembered of the draft.
@@ -1485,8 +1575,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ..creationDestination = _creationDestination
           ..title = _postTitle.text
           ..about = _about
-          ..spotDetails =
-              _blocks.map((block) => block.details).toList(growable: false)
+          ..spotDetails = _blocks
+              .map((block) => block.items
+                  .map((item) => item.details)
+                  .toList(growable: false))
+              .toList(growable: false)
           ..postDestination = _postDestination.text
           ..uncertain = Set.of(_uncertainUploads)
           ..legacy = Set.of(_legacyUrls)
@@ -1509,21 +1602,32 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
   }
 
-  Future<void> _publish() async {
-    if (_publishing || _arranging || !_draft.isPublishable) return;
+  /// Everything short of the step the share screen now owns: creates the
+  /// draft trip if there isn't one yet, uploads every photo, writes the
+  /// content and the post's own title/destination/styles/about. Deliberately
+  /// leaves `linkedTripId` and `visibility` untouched (left out of the PATCH
+  /// entirely, not cleared) — connecting a plan and choosing who sees the
+  /// post are answered on `PostShareSettingsScreen`, not here.
+  ///
+  /// Returns whether it's safe to go on to that screen — `_draftId` is
+  /// guaranteed set when this returns `true`.
+  Future<bool> _syncForShare() async {
+    if (_publishing || _arranging || !_draft.isPublishable) return false;
     if (_audience == PostAudience.followers) {
       _message('ขณะนี้รองรับสาธารณะและเฉพาะฉัน กรุณาเลือกผู้ชมอีกครั้ง');
-      return;
+      return false;
     }
     FocusManager.instance.primaryFocus?.unfocus();
     final draft = _draft;
-    var title = _titleForPublish(draft);
-    var destination = _destinationForPublish(draft);
-    if (title.isEmpty || destination.isEmpty) {
-      if (!await _editPostInfo(title, destination) || !mounted) return;
-      title = _postTitle.text.trim();
-      destination = _postDestination.text.trim();
-    }
+    // Post Title and Post Location are both optional — nothing here ever
+    // stops to ask for them; a title that resolved to nothing becomes the
+    // post's own default, the same way an empty content heading just stays
+    // empty rather than being treated as missing.
+    final resolvedTitle = _titleForPublish(draft);
+    final title = resolvedTitle.isEmpty ? _defaultPostTitle : resolvedTitle;
+    final resolvedDestination = _destinationForPublish(draft);
+    final destination =
+        resolvedDestination.isEmpty ? _defaultPostDestination : resolvedDestination;
     setState(() => _publishing = true);
     try {
       if (draft.topics.expand((s) => s.photos).length > 200)
@@ -1567,7 +1671,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 ? path
                 : '$path::$occurrence';
             if (_uncertainUploads.contains(key) &&
-                !await _resolveUpload(key, path)) return;
+                !await _resolveUpload(key, path)) return false;
             if (!_uploaded.containsKey(key)) {
               if (_uploaded.length >= 200) {
                 throw const FormatException(
@@ -1616,18 +1720,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       const ContentLocation(status: ContentLocationStatus.none),
               mapId: location == null ? item.legacyMapId : null,
               photoMetadata: metadata,
-              visitedAt: _hhmm(topic.details.visitedAt),
-              opensAt: _hhmm(topic.details.opensAt),
-              closesAt: _hhmm(topic.details.closesAt),
-              transportModes: topic.details.transportModes,
-              transportCost: topic.details.transportCost,
+              visitedAt: _hhmm(item.details.visitedAt),
+              opensAt: _hhmm(item.details.opensAt),
+              closesAt: _hhmm(item.details.closesAt),
+              transportModes: item.details.transportModes,
+              transportCost: item.details.transportCost,
               // Only alongside an amount: a currency on its own says nothing.
               transportCurrency:
-                  topic.details.transportCost == null ? null : 'THB',
+                  item.details.transportCost == null ? null : 'THB',
               tripHack:
-                  topic.details.hasHack ? topic.details.tripHack.trim() : null,
-              contactInfo: topic.details.hasContact
-                  ? topic.details.contactInfo.trim()
+                  item.details.hasHack ? item.details.tripHack.trim() : null,
+              contactInfo: item.details.hasContact
+                  ? item.details.contactInfo.trim()
                   : null));
         }
       }
@@ -1688,11 +1792,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           // The brief merges per key, so an empty list would clear whatever the
           // trip already carries rather than leaving it alone.
           customStyles: _customStyles.isEmpty ? null : _customStyles,
-          // The เชื่อมกับแผนของฉัน step: a plan links, confirming with none
-          // unlinks, and both are deliberate answers the traveller just gave.
-          linkedTripId: _trip == null
-              ? const Patch<String>.clear()
-              : Patch<String>.value(_trip!.id),
           // About trip's overview is the post's blurb, so it goes in
           // `description`, which every reader sees. `specialNotes` beside it
           // is the owner's private note and must not carry public prose.
@@ -1701,42 +1800,29 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           // so "ต่อคน" stays the app's reading of the same number.
           budgetLimit: _about.budget,
           budgetCurrency: _about.budget == null ? null : _about.currency,
-          contents: contents,
-          visibility: draft.audience == PostAudience.public
-              ? TripVisibility.public
-              : TripVisibility.private);
-      if (!mounted) return;
-      setState(() => _publishing = false);
-      _published = true;
-      _message('บันทึกโพสต์เรียบร้อยแล้ว');
-      _close();
+          contents: contents);
+      if (!mounted) return false;
+      return true;
     } on ApiException catch (error) {
       if (mounted) {
         _message(
             '${_uncertainUploads.isNotEmpty ? 'มีรูปที่ไม่ทราบผลอัปโหลด ครั้งถัดไปต้องตรวจ gallery ก่อนส่งซ้ำ: ' : _draftId == null ? '' : 'ยังเผยแพร่ไม่สำเร็จ ลองอีกครั้งได้: '}${error.message}');
       }
+      return false;
     } on FormatException catch (error) {
       if (mounted) _message(error.message);
+      return false;
     } catch (_) {
       if (mounted) _message('บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง');
+      return false;
     } finally {
       if (mounted) {
         setState(() => _publishing = false);
-        if (!_published) _saveLocal();
+        _saveLocal();
       }
     }
   }
 
-  Future<bool> _editPostInfo(String title, String destination) async {
-    final result = await showDialog<(String, String)>(
-        context: context,
-        builder: (_) => PostInfoDialog(title: title, destination: destination));
-    if (result == null || !mounted) return false;
-    _postTitle.text = result.$1;
-    _postDestination.text = result.$2;
-    _saveLocal();
-    return true;
-  }
 
   /// The first picture the post carries, in the order it reads. Null when it
   /// carries none — sections can be all words, and the oldest posts reference
@@ -1849,8 +1935,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// These are drawn and drafted but never published: a content section holds
   /// a title, a body, media, a location and photo metadata, and `/trips`
   /// rejects any key it does not know. The warning before publishing says so.
-  Future<void> _editExtra(int index, PostSpotExtra extra) async {
-    final current = _blocks[index].details;
+  Future<void> _editExtra(
+      int blockIndex, int itemIndex, PostSpotExtra extra) async {
+    final item = _blocks[blockIndex].items[itemIndex];
+    final current = item.details;
     final updated = switch (extra) {
       PostSpotExtra.recommendTime =>
         await showRecommendTimeSheet(context, current: current),
@@ -1862,7 +1950,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         await showContactSheet(context, current: current),
     };
     if (updated == null || !mounted) return;
-    setState(() => _blocks[index].details = updated);
+    setState(() => item.details = updated);
     _saveLocal();
   }
 
@@ -1962,11 +2050,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         items: _blocks[index]
                             .items
                             .map((item) => PostBlockItem(
+                                id: item.id,
                                 bodyController: item.body,
                                 imagePaths: item.imagePaths,
                                 place: item.place,
                                 location: item.location,
-                                legacyMapId: item.legacyMapId))
+                                legacyMapId: item.legacyMapId,
+                                details: item.details,
+                                locationFieldKey:
+                                    _locationFieldKeyFor(item.id),
+                                locationHasError: _locationErrorItemIds
+                                    .contains(item.id)))
                             .toList(growable: false),
                         imagePaths: _blocks[index].imagePaths,
                         unavailableImages: _unavailablePaths,
@@ -2038,8 +2132,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         }),
                         place: _blocks[index].items.first.place,
                         onPickImage: () => _pickPhoto(index),
-                        details: _blocks[index].details,
-                        onExtra: (extra) => _editExtra(index, extra),
+                        onExtra: (itemIndex, extra) =>
+                            _editExtra(index, itemIndex, extra),
                         onClearImage: () => setState(() {
                           _blocks[index].items.first.imagePaths.clear();
                           _syncCover();
@@ -2055,6 +2149,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         onRemove: _blocks.length == 1
                             ? null
                             : () => _removeBlock(index),
+                        locationErrorText: 'กรุณาเพิ่ม Location',
                         ),
                       );
                     }),
@@ -2101,17 +2196,12 @@ class _BlockFields {
   final FocusNode titleFocus = FocusNode();
   final List<_BlockItemFields> items = [_BlockItemFields()];
 
-  /// The three extras. They never leave the app — no content field holds
-  /// them — so they live here and in the local draft only.
-  PostSpotDetails details = const PostSpotDetails();
-
   TextEditingController get body => items.first.body;
   List<String> get imagePaths => items.length == 1
       ? items.first.imagePaths
       : items.expand((item) => item.imagePaths).toList(growable: false);
 
   PostTopic toTopic() => PostTopic(
-        details: details,
         title: title.text,
         body: body.text,
         imagePaths: List.of(items.first.imagePaths),
@@ -2122,6 +2212,7 @@ class _BlockFields {
                   place: item.place,
                   location: item.location,
                   legacyMapId: item.legacyMapId,
+                  details: item.details,
                 ))
             .toList(growable: false),
         place: items.first.place,
@@ -2140,7 +2231,8 @@ class _BlockFields {
         ..imagePaths.addAll(topic.photos)
         ..place = topic.place
         ..location = topic.location
-        ..legacyMapId = topic.legacyMapId));
+        ..legacyMapId = topic.legacyMapId
+        ..details = topic.details));
     if (items.isEmpty) items.add(_BlockItemFields());
   }
 
@@ -2167,6 +2259,7 @@ class _BlockFields {
         first.location = item.location;
         first.legacyMapId = item.legacyMapId;
       }
+      if (first.details.isEmpty) first.details = item.details;
       item.dispose(onChanged);
     }
     items.removeRange(1, items.length);
@@ -2190,11 +2283,21 @@ class _BlockFields {
 }
 
 class _BlockItemFields {
+  /// Stable across adds/removes/rebuilds — never the item's position, which
+  /// changes the moment a sibling item is deleted. Local only: the server
+  /// assigns its own ids, this is purely for `ValueKey`/widget identity.
+  final String id = uuidV4();
+
   final TextEditingController body = TextEditingController();
   final List<String> imagePaths = [];
   PostPlace? place;
   ContentLocation? location;
   String? legacyMapId;
+
+  /// When to go, how to get there, and the tip — one set per item. They
+  /// never leave the app except through `TripContentRequest` — no other
+  /// content field holds them — so they live here and in the local draft.
+  PostSpotDetails details = const PostSpotDetails();
 
   void listen(VoidCallback onChanged) => body.addListener(onChanged);
 
