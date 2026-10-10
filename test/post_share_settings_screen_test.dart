@@ -40,9 +40,11 @@ Map<String, dynamic> _plan({
   required String title,
   int durationDays = 1,
   int placeCount = 11,
+  String type = 'plan_trip',
 }) =>
     <String, dynamic>{
       'id': id,
+      'type': type,
       'title': title,
       'destination': 'กรุงเทพมหานคร',
       'status': 'draft',
@@ -92,6 +94,47 @@ void main() {
     await _pumpScreen(tester);
 
     expect(find.text('2/2'), findsOneWidget);
+  });
+
+  testWidgets(
+      'a draft that has never been shared defaults to Public, '
+      'regardless of the server\'s own private fallback', (tester) async {
+    await _pumpScreen(tester, trip: {
+      ..._postJson(),
+      'status': 'draft',
+      'visibility': 'private',
+      'publishedAt': null,
+    });
+
+    expect(find.text('Public'), findsOneWidget);
+    expect(find.text('Only me'), findsNothing);
+  });
+
+  testWidgets('a post already shared as Only me keeps that on reopen',
+      (tester) async {
+    await _pumpScreen(tester, trip: {
+      ..._postJson(),
+      'visibility': 'private',
+      'publishedAt': '2026-09-09T00:00:00.000Z',
+    });
+
+    expect(find.text('Only me'), findsOneWidget);
+    expect(find.text('Public'), findsNothing);
+  });
+
+  testWidgets(
+      "/trips/mine's own other posts never show up as a plan to connect",
+      (tester) async {
+    await _pumpScreen(tester, plans: [
+      _plan(id: 'plan-1', title: 'เดินเล่นพระนคร'),
+      _plan(id: 'post-1', title: 'ของกินย่านพระนคร', type: 'content'),
+    ]);
+
+    await tester.tap(find.text('เชื่อมแพลนของฉัน'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เดินเล่นพระนคร'), findsOneWidget);
+    expect(find.text('ของกินย่านพระนคร'), findsNothing);
   });
 
   testWidgets('picking a plan connects it and shows its facts',

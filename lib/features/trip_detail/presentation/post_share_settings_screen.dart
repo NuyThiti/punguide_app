@@ -61,8 +61,14 @@ class _PostShareSettingsScreenState
   void _seed(ApiTrip trip) {
     if (_seeded) return;
     _seeded = true;
-    _audience =
-        trip.visibility == TripVisibility.public ? PostAudience.public : PostAudience.onlyMe;
+    // A draft that has never gone out has no visibility of its own yet —
+    // default that one to Public. One reopened for editing keeps whatever it
+    // was actually shared as, rather than silently flipping it back.
+    _audience = trip.publishedAt == null
+        ? PostAudience.public
+        : (trip.visibility == TripVisibility.public
+            ? PostAudience.public
+            : PostAudience.onlyMe);
     final linked = trip.linkedTrip;
     _trip = linked == null ? null : PostTripLink(id: linked.id, title: linked.title);
     _connectedPreview = linked;

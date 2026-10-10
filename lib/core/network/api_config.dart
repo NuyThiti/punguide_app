@@ -27,9 +27,7 @@ class ApiConfig {
 
   static const productionBaseUrl =
       'https://travel-planner-api-git-909858882015.asia-northeast3.run.app';
-  // TEMP (demo): debug points at production. Revert to
-  // 'http://localhost:4002' after the demo — do not commit.
-  static const _devBaseUrl = productionBaseUrl;
+  static const _devBaseUrl = 'http://localhost:4002';
 
   /// No global prefix — paths start at `/trips`, `/places`, `/auth`.
   final String baseUrl;

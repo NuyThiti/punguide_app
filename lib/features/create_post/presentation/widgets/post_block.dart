@@ -81,7 +81,6 @@ class PostBlock extends StatefulWidget {
     this.onMoveImage,
     this.onDropImage,
     this.onDropBeforeImage,
-    this.onAddItem,
     this.onRemoveItem,
     this.onPickImageInItem,
     this.onClearImagesInItem,
@@ -100,7 +99,6 @@ class PostBlock extends StatefulWidget {
   final ValueChanged<int>? onMoveImage;
   final ValueChanged<(int, int)>? onDropImage;
   final List<PostBlockItem>? items;
-  final VoidCallback? onAddItem;
   final ValueChanged<int>? onRemoveItem;
   final ValueChanged<int>? onPickImageInItem;
   final ValueChanged<int>? onClearImagesInItem;
@@ -265,10 +263,6 @@ class _PostBlockState extends State<PostBlock> {
                         TextButton.styleFrom(foregroundColor: AppColors.muted),
                   ),
                 ),
-            ],
-            if (widget.onAddItem != null) ...[
-              const SizedBox(height: 10),
-              _AddContentItemButton(onTap: widget.onAddItem!),
             ],
             const SizedBox(height: 16),
             const _Hairline(),
@@ -494,15 +488,19 @@ class _PostBlockContentItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _LocationRow(
-              key: locationFieldKey,
-              label: label,
-              sublabel: sublabel,
-              pinned: pinned,
-              onTap: onPickPlace,
-              hasError: locationHasError,
-              errorText: locationErrorText,
-            ),
+            // The row itself is only worth showing once there's something to
+            // show — a pinned place, or a validation error to explain. The
+            // empty, nothing-picked-yet state is the chip's job now.
+            if (pinned || locationHasError)
+              _LocationRow(
+                key: locationFieldKey,
+                label: label,
+                sublabel: sublabel,
+                pinned: pinned,
+                onTap: onPickPlace,
+                hasError: locationHasError,
+                errorText: locationErrorText,
+              ),
             if (suggested && onConfirmLocation != null)
               Align(
                 alignment: Alignment.centerLeft,
@@ -959,49 +957,6 @@ class PostAddChip extends StatelessWidget {
                     ],
                   ],
                 ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// "+ เพิ่มเนื้อหา" — another content item under this same spot's heading,
-/// distinct from "+ เพิ่มจุดต่อไป" (a whole new spot/section).
-class _AddContentItemButton extends StatelessWidget {
-  const _AddContentItemButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: CustomPaint(
-          painter:
-              const PostDashedBorder(color: AppColors.postDashed, radius: 12),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add, size: 18, color: AppColors.postPurple),
-                  SizedBox(width: 6),
-                  Text(
-                    'เพิ่มเนื้อหา',
-                    style: TextStyle(
-                      color: AppColors.postPurple,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
               ),
             ),
           ),

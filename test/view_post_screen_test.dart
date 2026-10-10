@@ -106,12 +106,16 @@ List<Map<String, dynamic>> _spots() => [
       },
     ];
 
-Widget _harness({AuthUser? viewer}) => ProviderScope(
+Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
+    ProviderScope(
       overrides: [
         plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
         selectedTripProvider.overrideWith((ref, tripId) async => null),
-        currentUserProvider
-            .overrideWith((ref) => Future<AuthUser?>.value(viewer)),
+        currentUserProvider.overrideWith(
+          (ref) => viewerPending
+              ? Completer<AuthUser?>().future
+              : Future<AuthUser?>.value(viewer),
+        ),
       ],
       child: MaterialApp.router(
         routerConfig: GoRouter(
@@ -131,6 +135,11 @@ Widget _harness({AuthUser? viewer}) => ProviderScope(
               name: AppRoute.remixTrip.name,
               builder: (_, __) => const Scaffold(body: Text('remix page')),
             ),
+            GoRoute(
+              path: '/share/:tripId',
+              name: AppRoute.shareSettings.name,
+              builder: (_, __) => const Scaffold(body: Text('share settings')),
+            ),
           ],
         ),
       ),
@@ -140,11 +149,14 @@ Future<void> _pumpPost(
   WidgetTester tester, {
   Map<String, dynamic>? trip,
   AuthUser? viewer,
+  bool viewerPending = false,
 }) async {
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(200, trip ?? _postJson())],
   });
-  await tester.pumpWidget(_harness(viewer: viewer));
+  await tester.pumpWidget(
+    _harness(viewer: viewer, viewerPending: viewerPending),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -357,6 +369,43 @@ void main() {
     expect(find.text('Remix Trip'), findsOneWidget);
   });
 
+  testWidgets("the owner's hero offers edit, not Remix, and no bottom bar",
+      (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _owner);
+
+    expect(find.text('แก้ไขโพสต์'), findsOneWidget);
+    expect(find.text('Remix Trip'), findsNothing);
+    // It is the hero's pill now, not a bar pinned to the bottom.
+    expect(find.byKey(const Key('plan-action-bar')), findsNothing);
+    expect(
+      tester.getRect(find.text('แก้ไขโพสต์')).top,
+      lessThan(tester.getRect(find.text('Trip Overview')).top),
+    );
+  });
+
+  testWidgets('edit opens the post settings', (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _owner);
+
+    await tester.tap(find.text('แก้ไขโพสต์'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('share settings'), findsOneWidget);
+  });
+
+  testWidgets('no hero action at all until it is known who is looking',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewerPending: true);
+
+    // Guessing "visitor" would flash Remix on the owner's own post.
+    expect(find.text('Remix Trip'), findsNothing);
+    expect(find.text('แก้ไขโพสต์'), findsNothing);
+    // The title still renders, so the page itself is not waiting.
+    expect(find.text('ที่เที่ยวระยอง'), findsOneWidget);
+  });
+
   testWidgets('Remix Trip leaves for the remix route', (tester) async {
     phone(tester);
     await _pumpPost(tester, viewer: _visitor);
@@ -365,6 +414,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('remix page'), findsOneWidget);
+  });
+
+  testWidgets('the top bar stays put while the page slides under it',
+      (tester) async {
+    // A real phone's height, so the page actually overflows and scrolls.
+    tester.view.physicalSize = const Size(393 * 3, 700 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await _pumpPost(tester);
+
+    final bar = find.byTooltip('ย้อนกลับ');
+    final before = tester.getRect(bar);
+    expect(before.top, lessThan(100));
+
+    // The hero's own content scrolls away…
+    expect(find.text('Remix Trip'), findsOneWidget);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(find.text('Remix Trip'), findsNothing);
+
+    // …while the bar, the author and share stay exactly where they were.
+    expect(tester.getRect(bar), before);
+    expect(find.text('Thitichaya Butsala'), findsOneWidget);
+    expect(find.byTooltip('แชร์'), findsOneWidget);
   });
 
   testWidgets('a spot keeps its details shut until asked', (tester) async {

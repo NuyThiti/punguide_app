@@ -11,6 +11,7 @@ import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_post/domain/models/post_draft.dart';
 import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
+import 'package:pluno/features/create_post/presentation/widgets/post_action_bar.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_block.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 import 'package:pluno/features/create_post/presentation/widgets/trip_spot_pagination.dart';
@@ -293,6 +294,17 @@ Future<void> _settleImport(WidgetTester tester) async {
 Future<void> _scrollTo(WidgetTester tester, Finder target) async {
   await tester.scrollUntilVisible(target, 300,
       scrollable: find.byType(Scrollable).first);
+  await tester.pumpAndSettle();
+}
+
+/// Taps the composer's "+" button and picks one option from its menu —
+/// 'เพิ่มเนื้อหา' (another item under the current spot) or 'เพิ่มจุดถัดไป'
+/// (a whole new spot), replacing what used to be two separate buttons.
+Future<void> _tapAddMenu(WidgetTester tester, String option) async {
+  await _scrollTo(tester, find.byType(AddMenuButton));
+  await tester.tap(find.byType(AddMenuButton));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(option));
   await tester.pumpAndSettle();
 }
 
@@ -1936,9 +1948,9 @@ void main() {
         findsOneWidget);
     // About trip is written in the Title sheet, so it is not on the page.
     expect(find.text('About trip'), findsNothing);
-    // The location row is always on screen now — required, not optional —
-    // so there is no separate dashed chip for it any more.
-    expect(find.text('Add Location'), findsOneWidget);
+    // The full "Add Location" row only shows once there's a place (or an
+    // error) to show — an empty spot's only entry point is the chip now.
+    expect(find.text('Add Location'), findsNothing);
     expect(find.text('Location'), findsNothing);
     expect(find.text('Tell us about your trip..'), findsOneWidget);
 
@@ -1979,9 +1991,11 @@ void main() {
     expect(find.text('Save Draft'), findsOneWidget);
     expect(find.text('Next'), findsOneWidget);
 
+    // The "+" stays off until this first spot has something in it — an
+    // empty composer has nothing to add a second spot's worth of content to.
     await tester.drag(find.byType(ListView), const Offset(0, -700));
     await tester.pumpAndSettle();
-    expect(find.text('เพิ่มจุดต่อไป'), findsOneWidget);
+    expect(find.byType(AddMenuButton), findsNothing);
   });
 
   testWidgets('the Title sheet names the post and picks its activities',
@@ -2068,9 +2082,7 @@ void main() {
     // name itself whenever `POST /trips` is declared, same as `_confirmPlace`
     // always finds.
     await _confirmPlace(tester);
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
     // Content #2: Chiang Mai.
     adapter.replies['GET /places/search'] = [
       const FakeReply(200, [
@@ -2126,9 +2138,7 @@ void main() {
 
     // A location is required before the next spot can be added.
     await _confirmPlace(tester);
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
 
     // One spot on screen at a time now — the new one, since adding a spot
     // lands on it — with the pagination row showing both exist.
@@ -2148,9 +2158,11 @@ void main() {
       (tester) async {
     await _pumpComposer(tester, adapter: _placesAdapter());
 
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
+    // The "+" only shows once this spot has something in it — a story with
+    // no location yet is enough to reveal it, and enough to be refused.
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
     await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
 
     // No spot was added — still the one, now flagged inline.
     expect(find.text('ลบจุดนี้'), findsNothing);
@@ -2161,9 +2173,7 @@ void main() {
     expect(find.text('กรุณาเพิ่ม Location'), findsNothing);
 
     // "เพิ่มจุดต่อไป" now goes through.
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
     expect(find.text('ลบจุดนี้'), findsOneWidget);
   });
 
@@ -2175,9 +2185,7 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await _confirmPlace(tester);
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
     // Landed on the new, still-empty second spot.
     expect(find.text('กรุณาเพิ่ม Location'), findsNothing);
 
@@ -2213,9 +2221,7 @@ void main() {
     await _pumpComposer(tester, adapter: _placesAdapter());
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await _confirmPlace(tester);
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
 
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
@@ -2236,9 +2242,7 @@ void main() {
     await tester.enterText(_bodyField().first, 'ส่วนแรก');
     // A location is required before the next spot can be added.
     await _confirmPlace(tester);
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
     // Landed on the new, second spot.
     await tester.enterText(_bodyField().first, 'ส่วนที่สอง');
     await tester.pumpAndSettle();
@@ -2318,9 +2322,7 @@ void main() {
     expect(find.byType(PostBlock), findsOneWidget);
     expect(find.text('ลบชุดข้อมูลนี้'), findsNothing);
 
-    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
-    await tester.tap(find.text('เพิ่มเนื้อหา'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
 
     // A second item under the same spot — still one page, still one heading,
     // the first item's story untouched.
@@ -2344,9 +2346,7 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'ที่พัก');
     await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'โรงแรมรัตนโกสินทร์');
-    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
-    await tester.tap(find.text('เพิ่มเนื้อหา'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
     await tester.enterText(_bodyField().last, 'โรงแรมศาลารัตนโกสินทร์');
     await tester.pumpAndSettle();
 
@@ -2463,9 +2463,7 @@ void main() {
     await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
 
-    block = tester.widget<PostBlock>(find.byType(PostBlock));
-    block.onAddItem!();
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
     block = tester.widget<PostBlock>(find.byType(PostBlock));
     block.items![1].bodyController.text = 'มุมภูเขาและดอกทานตะวัน';
     block.onPickImageInItem!(1);
@@ -2562,7 +2560,10 @@ void main() {
 
     await _pumpComposer(tester, adapter: adapter);
 
-    await _tapSpotOption(tester, find.text('Add Location'));
+    // Nothing is pinned yet, so the full row is hidden — the chip alongside
+    // the Trip Hack group is the only entry point.
+    await _tapSpotOption(
+        tester, find.widgetWithIcon(PostAddChip, Icons.location_on_outlined));
 
     // The sheet opens on its own header, and with no location answered yet it
     // offers to turn location services on instead of guessing a point.
@@ -2601,8 +2602,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Akha Ama Coffee'), findsNothing);
-    // With the pin gone the row reverts to its required, unfilled prompt.
-    expect(find.text('Add Location'), findsOneWidget);
+    // With the pin gone, and no error flagged, the row hides again — the
+    // chip is once again the only entry point.
+    expect(find.text('Add Location'), findsNothing);
   });
 
   testWidgets('a chosen photo fills the width above its place row',
@@ -2660,11 +2662,10 @@ void main() {
   });
 
   testWidgets('the page lays out on a phone without overflow', (tester) async {
-    await _pumpComposer(tester);
+    await _pumpComposer(tester, adapter: _placesAdapter());
 
-    await _scrollTo(tester, find.text('เพิ่มจุดต่อไป'));
-    await tester.tap(find.text('เพิ่มจุดต่อไป'));
-    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+    await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pumpAndSettle();
 
@@ -3033,9 +3034,9 @@ void main() {
   testWidgets('each content item keeps its own Trip Hack independently',
       (tester) async {
     await _pumpComposer(tester);
-    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
-    await tester.tap(find.text('เพิ่มเนื้อหา'));
+    await tester.enterText(_bodyField().first, 'เดินเล่น');
     await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
 
     await tester.ensureVisible(find.text('Trip Hack').first);
     await tester.tap(find.text('Trip Hack').first);
@@ -3069,9 +3070,7 @@ void main() {
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await _confirmPlace(tester);
 
-    await _scrollTo(tester, find.text('เพิ่มเนื้อหา'));
-    await tester.tap(find.text('เพิ่มเนื้อหา'));
-    await tester.pumpAndSettle();
+    await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
 
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();

@@ -11,10 +11,14 @@ import 'composer_sheet.dart';
 /// The traveller's own plans, for the link step.
 ///
 /// `GET /trips/mine` rather than the cached local list: the design shows each
-/// plan's dates and length, and only the API rows carry a schedule.
+/// plan's dates and length, and only the API rows carry a schedule. The
+/// endpoint answers with every trip the traveller owns, posts included, so
+/// this keeps only the actual plans — there is nothing worth linking a post
+/// to among the owner's own other posts.
 final myPlansProvider = FutureProvider<List<TripListItem>>((ref) async {
   final api = await ref.watch(plunoApiProvider.future);
-  return api.trips.mine();
+  final rows = await api.trips.mine();
+  return rows.where((trip) => trip.type == TripType.planTrip).toList();
 });
 
 /// "เชื่อมกับแผนของฉัน" — the last step before a post goes out: which of the

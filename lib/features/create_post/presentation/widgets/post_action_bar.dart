@@ -1,45 +1,30 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import 'post_block.dart';
 
-/// "+ เพิ่มจุดต่อไป" — the next spot in the same post.
-class AddSpotButton extends StatelessWidget {
-  const AddSpotButton({super.key, required this.onTap});
+/// A bare "+" — opens the menu between "เพิ่มเนื้อหา" (another item under
+/// this spot) and "เพิ่มจุดถัดไป" (a whole new spot), rather than doing
+/// either one itself.
+class AddMenuButton extends StatelessWidget {
+  const AddMenuButton({super.key, required this.onTap});
 
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    // A filled circle, same height as the two pills beside it on the bar —
+    // a dashed square read as an empty placeholder next to them.
     return SizedBox(
-      height: 54,
-      width: double.infinity,
+      height: 52,
+      width: 52,
       child: Material(
-        color: AppColors.screen,
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.postDraftBg,
+        shape: const CircleBorder(),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: CustomPaint(
-            painter:
-                const PostDashedBorder(color: AppColors.postDashed, radius: 16),
-            child: const Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add, size: 21, color: AppColors.foreground),
-                  SizedBox(width: 8),
-                  Text(
-                    'เพิ่มจุดต่อไป',
-                    style: TextStyle(
-                      color: AppColors.foreground,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          customBorder: const CircleBorder(),
+          child: const Center(
+            child: Icon(Icons.add, size: 24, color: AppColors.foreground),
           ),
         ),
       ),
@@ -47,15 +32,21 @@ class AddSpotButton extends StatelessWidget {
   }
 }
 
-/// The bar pinned to the bottom: keep it for later, or share it now.
+/// The bar pinned to the bottom: add another spot, keep it for later, or
+/// share it now.
 class PostActionBar extends StatelessWidget {
   const PostActionBar({
     super.key,
+    required this.onAddSpot,
     required this.onSaveDraft,
     required this.onShare,
     required this.canShare,
     required this.busy,
   });
+
+  /// Null hides the "+" — the same spot-must-have-something condition the
+  /// button has always used, decided by the caller.
+  final VoidCallback? onAddSpot;
 
   final VoidCallback onSaveDraft;
   final VoidCallback onShare;
@@ -81,6 +72,10 @@ class PostActionBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (onAddSpot != null) ...[
+            AddMenuButton(onTap: onAddSpot!),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             flex: 4,
             child: SizedBox(

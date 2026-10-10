@@ -17,6 +17,7 @@ import '../../auth/presentation/providers/auth_providers.dart';
 import '../../location_access/data/location_sync.dart';
 import '../domain/models/post_draft.dart';
 import 'providers/place_pin_providers.dart';
+import 'widgets/add_spot_menu.dart';
 import 'widgets/create_post_header.dart';
 import 'widgets/create_from_photos_sheet.dart';
 import 'widgets/photo_source_sheet.dart';
@@ -515,6 +516,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   /// "+ เพิ่มเนื้อหา" — another content item under this spot's own heading,
   /// never a new spot of its own.
+  /// The composer's own "+" button — asks whether it's another item under
+  /// the spot on screen, or a whole new spot of its own, then does exactly
+  /// what the equivalent dedicated button always did.
+  Future<void> _openAddSpotMenu() async {
+    final choice = await showAddSpotMenu(context);
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case AddSpotChoice.content:
+        _addItem(_currentBlockIndex);
+      case AddSpotChoice.nextSpot:
+        _addBlock();
+    }
+  }
+
   void _addItem(int index) {
     final block = _blocks[index];
     if (block.items.length >= 20) {
@@ -2071,7 +2086,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                             _transferPhoto(move.$1, move.$2, index),
                         onDropBeforeImage: (move, position) =>
                             _transferPhoto(move.$1, move.$2, index, position),
-                        onAddItem: () => _addItem(index),
                         onRemoveItem: (itemIndex) =>
                             _removeItem(index, itemIndex),
                         onPickImageInItem: (itemIndex) =>
@@ -2153,8 +2167,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         ),
                       );
                     }),
-                    const SizedBox(height: 16),
-                    AddSpotButton(onTap: _addBlock),
                   ],
                 ),
               ),
@@ -2170,6 +2182,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   ),
                 ),
               PostActionBar(
+                onAddSpot: _blocks[_currentBlockIndex].toTopic().isEmpty
+                    ? null
+                    : _openAddSpotMenu,
                 onSaveDraft: _saveDraftAndClose,
                 onShare: _next,
                 canShare: !_publishing && !_arranging && _draft.isPublishable,

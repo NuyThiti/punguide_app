@@ -70,8 +70,21 @@ class TripDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<TripDetailScreen> createState() => _TripDetailScreenState();
 }
 
+/// The pinned bar's own height, above the status-bar inset.
+const _topBarHeight = 44.0;
+
 class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   int _selectedDay = 0;
+
+  /// Shared with the post's sticky bar so it can fade its background in as the
+  /// cover scrolls out from under it.
+  final _postScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _postScroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,17 +117,9 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 
     final owned = viewer.valueOrNull?.id == trip.requireValue.ownerId;
 
-    if (trip.requireValue.type == TripType.content) {
-      if (!owned) return null;
-      return _PlanActionBar(
-          label: 'แก้ไขโพสต์',
-          color: AppColors.createTop,
-          onTap: () async {
-            await context.pushNamed(AppRoute.shareSettings.name,
-                params: {'tripId': widget.tripId});
-            if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
-          });
-    }
+    // A post carries its one action in the hero instead — Remix for a
+    // visitor, edit for the owner — so it gets no bottom bar at all.
+    if (trip.requireValue.type == TripType.content) return null;
     return _PlanActionBar(
       label: owned ? 'แก้ไข' : 'Remix Trip',
       color: owned ? AppColors.brandOrange : AppColors.brandPurple,
@@ -131,21 +136,61 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   /// author, the title and the trip's facts, the plan this post links to, then
   /// Trip Overview and the spots.
   Widget _contentBody(ApiTrip trip) {
+
+    // The bar is stacked over the scroll view rather than slivered into it:
+    // it has to stay put while the cover and the spots slide under it, and a
+    // `SliverAppBar` would squash the Remix pill as it collapsed.
+    return Stack(
+      children: [
+        _contentScroll(trip),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: _StickyTopBar(
+            scroll: _postScroll,
+            trip: trip,
+            onBack: _leave,
+            onShare: () => _todo('แชร์โพสต์ยังไม่เปิดใช้งาน'),
+            onFollow: () => _todo('ติดตามยังไม่เปิดใช้งาน'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Whether the viewer wrote this post, or null while `/auth/me` is still
+  /// answering — guessing "visitor" there would flash Remix on the owner's
+  /// own post before it flips to edit. Signed out, or a failed session read,
+  /// is not the owner.
+  bool? _ownsPost(ApiTrip trip) {
+    final viewer = ref.watch(currentUserProvider);
+    if (viewer.isLoading) return null;
+    return viewer.valueOrNull?.id == trip.ownerId;
+  }
+
+  Widget _contentScroll(ApiTrip trip) {
     final blurb = trip.description?.trim() ?? '';
 
     return CustomScrollView(
+      controller: _postScroll,
       physics: const BouncingScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: _PostHero(
             trip: trip,
-            onBack: _leave,
-            onShare: () => _todo('แชร์โพสต์ยังไม่เปิดใช้งาน'),
-            onFollow: () => _todo('ติดตามยังไม่เปิดใช้งาน'),
+            owned: _ownsPost(trip),
             onRemix: () => context.goNamed(
               AppRoute.remixTrip.name,
               params: {'tripId': widget.tripId},
             ),
+            onEdit: () async {
+              await context.pushNamed(
+                AppRoute.shareSettings.name,
+                params: {'tripId': widget.tripId},
+              );
+              if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
+            },
           ),
         ),
         SliverPadding(
@@ -278,23 +323,115 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 ///
 /// The trip's owner, not the signed-in viewer — `customer` is the account the
 /// trip belongs to.
-/// The cover hero: who wrote the post, what it is called, the trip's facts,
-/// and the plan it links to.
-class _PostHero extends StatelessWidget {
-  const _PostHero({
+/// The post's top bar, pinned over the scrolling page.
+///
+/// Transparent while it sits on the cover photo, fading to a dark bar as the
+/// cover slides out from under it — otherwise white text and glass buttons
+/// would end up on the white content below.
+class _StickyTopBar extends StatefulWidget {
+  const _StickyTopBar({
+    required this.scroll,
     required this.trip,
     required this.onBack,
     required this.onShare,
     required this.onFollow,
-    required this.onRemix,
   });
 
+  final ScrollController scroll;
   final ApiTrip trip;
   final VoidCallback onBack;
   final VoidCallback onShare;
   final VoidCallback onFollow;
 
+  @override
+  State<_StickyTopBar> createState() => _StickyTopBarState();
+}
+
+class _StickyTopBarState extends State<_StickyTopBar> {
+  /// How far the cover has gone, 0 to 1. Only this widget rebuilds on scroll —
+  /// lifting it into the screen's state would rebuild the whole page per frame.
+  double _past = 0;
+
+  /// Roughly the cover below the bar, so the background is solid by the time
+  /// the page's own white has reached it.
+  static const _fadeOver = 170.0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    widget.scroll.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!widget.scroll.hasClients) return;
+    final next = (widget.scroll.offset / _fadeOver).clamp(0.0, 1.0);
+    // A hair of hysteresis: a setState per scroll frame is wasted work.
+    if ((next - _past).abs() < 0.02 && next != 0 && next != 1) return;
+    if (next != _past) setState(() => _past = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: ColoredBox(
+        color: const Color(0xFF14110F).withValues(alpha: 0.92 * _past),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(_edgeInset(context), 10, _edgeInset(context), 0),
+            child: SizedBox(
+              height: _topBarHeight - 2,
+              child: Row(
+                children: [
+                  _RoundGlassButton(
+                    icon: Icons.arrow_back_ios_new,
+                    tooltip: 'ย้อนกลับ',
+                    onTap: widget.onBack,
+                  ),
+                  Expanded(
+                    child: _PostAuthor(
+                      trip: widget.trip,
+                      onFollow: widget.onFollow,
+                    ),
+                  ),
+                  _RoundGlassButton(
+                    icon: Icons.ios_share,
+                    tooltip: 'แชร์',
+                    onTap: widget.onShare,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The cover hero: who wrote the post, what it is called, the trip's facts,
+/// and the plan it links to.
+class _PostHero extends StatelessWidget {
+  const _PostHero({
+    required this.trip,
+    required this.owned,
+    required this.onRemix,
+    required this.onEdit,
+  });
+
+  final ApiTrip trip;
+
+  /// Null while it is not yet known who is looking.
+  final bool? owned;
   final VoidCallback onRemix;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -337,22 +474,9 @@ class _PostHero extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        _RoundGlassButton(
-                          icon: Icons.arrow_back_ios_new,
-                          tooltip: 'ย้อนกลับ',
-                          onTap: onBack,
-                        ),
-                        Expanded(child: _PostAuthor(trip: trip, onFollow: onFollow)),
-                        _RoundGlassButton(
-                          icon: Icons.ios_share,
-                          tooltip: 'แชร์',
-                          onTap: onShare,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
+                    // The row itself lives in the pinned bar above; this is
+                    // the space it occupies over the cover.
+                    const SizedBox(height: _topBarHeight + 14),
                     Text(
                       trip.title,
                       textAlign: TextAlign.center,
@@ -364,34 +488,67 @@ class _PostHero extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    // The slot holds its height while the viewer is unknown,
+                    // so the hero does not jump when the right button lands.
                     SizedBox(
                       width: double.infinity,
                       height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: onRemix,
-                        icon: const Icon(Icons.shuffle, size: 18),
-                        label: const Text(
-                          'Remix Trip',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                      child: switch (owned) {
+                        null => null,
+                        true => _HeroAction(
+                            label: 'แก้ไขโพสต์',
+                            icon: Icons.edit_outlined,
+                            color: AppColors.createTop,
+                            onTap: onEdit,
                           ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.brandPurple,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(99),
+                        false => _HeroAction(
+                            label: 'Remix Trip',
+                            icon: Icons.shuffle,
+                            color: AppColors.brandPurple,
+                            onTap: onRemix,
                           ),
-                        ),
-                      ),
+                      },
                     ),
                   ],
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The hero's one pill: Remix for a visitor, edit for the owner.
+class _HeroAction extends StatelessWidget {
+  const _HeroAction({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(99),
         ),
       ),
     );
