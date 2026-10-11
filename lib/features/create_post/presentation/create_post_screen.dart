@@ -1460,8 +1460,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     );
     if (shared == true && mounted) {
       _published = true;
-      _message('บันทึกโพสต์เรียบร้อยแล้ว');
-      _close();
+      // "อยู่ต่อ" on the done screen pops straight back here, which is
+      // exactly when the composer itself should close.
+      await context.pushNamed(
+        AppRoute.postDone.name,
+        params: {'tripId': _draftId!},
+      );
+      if (mounted) _close();
     }
   }
 

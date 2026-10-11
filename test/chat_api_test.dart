@@ -46,6 +46,31 @@ void main() {
       expect((blocks.last as UnknownChatBlock).type, 'weather_forecast');
     });
 
+    test('a nearby trip carries its kind and its distance', () {
+      final trip = ChatTripResult.fromJson(<String, dynamic>{
+        'tripId': 't1',
+        'title': 'ของกินย่านพระนคร',
+        'tripType': 'content',
+        'distanceKm': 2.3,
+      });
+
+      expect(trip.tripType, TripType.content);
+      expect(trip.distanceKm, 2.3);
+    });
+
+    test('a trip found by destination has no distance to show', () {
+      // Only a "near me" turn has a point to measure from; elsewhere the
+      // field is absent and must not become 0.0 km.
+      final trip = ChatTripResult.fromJson(<String, dynamic>{
+        'tripId': 't1',
+        'title': 'เชียงใหม่ 3 วัน',
+      });
+
+      expect(trip.distanceKm, isNull);
+      // The older shape, before tripType existed, still reads as a plan.
+      expect(trip.tripType, TripType.planTrip);
+    });
+
     test('missing numbers stay null rather than becoming zero', () {
       final trip = ChatTripResult.fromJson(<String, dynamic>{
         'tripId': 't1',

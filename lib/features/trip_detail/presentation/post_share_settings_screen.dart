@@ -45,13 +45,10 @@ class _PostShareSettingsScreenState
   late List<TravelStyle> _styles;
   late List<String> _customStyles;
   late PostAboutTrip _about;
-  late bool _allowRemix;
+  late bool _remixEnabled;
+  late RemixAudience _remixAudience;
 
-  // Hidden until the API can store it: `PATCH /trips/:id` rejects
-  // `allowRemix`, so a visible switch would look saved when it isn't. Flip
-  // this back on (and send `_allowRemix` in `_share`) once the backend adds
-  // the field.
-  static const _showRemixToggle = false;
+  static const _showRemixToggle = true;
 
   // Richer display-only data for the connected plan's card — the trip's own
   // `linkedTrip` has it; a freshly picked `PostTripLink` does not, so this is
@@ -80,7 +77,8 @@ class _PostShareSettingsScreenState
       budget: trip.budgetLimit,
       currency: trip.budgetCurrency ?? 'THB',
     );
-    _allowRemix = trip.allowRemix;
+    _remixEnabled = trip.remixEnabled;
+    _remixAudience = trip.remixAudience;
   }
 
   Future<void> _pickAudience() async {
@@ -161,8 +159,8 @@ class _PostShareSettingsScreenState
         visibility: _audience == PostAudience.public
             ? TripVisibility.public
             : TripVisibility.private,
-        // `_allowRemix` stays on screen only: the API has no such property
-        // yet and rejects the whole PATCH if it is sent.
+        remixEnabled: _remixEnabled,
+        remixAudience: _remixAudience,
       );
       if (mounted) Navigator.of(context).pop(true);
     } catch (_) {
@@ -229,10 +227,18 @@ class _PostShareSettingsScreenState
                     if (_showRemixToggle) ...[
                       const SizedBox(height: 12),
                       _RemixToggleRow(
-                        value: _allowRemix,
+                        value: _remixEnabled,
                         onChanged: (value) =>
-                            setState(() => _allowRemix = value),
+                            setState(() => _remixEnabled = value),
                       ),
+                      if (_remixEnabled) ...[
+                        const SizedBox(height: 12),
+                        _RemixAudienceCard(
+                          selected: _remixAudience,
+                          onSelect: (value) =>
+                              setState(() => _remixAudience = value),
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -447,6 +453,151 @@ class _RemixToggleRow extends StatelessWidget {
             activeThumbColor: AppColors.postPurple,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Display text for [RemixAudience] — the API model carries the wire value
+/// only, so the label/description/icon the design wants live here instead.
+extension _RemixAudienceDisplay on RemixAudience {
+  String get label => switch (this) {
+        RemixAudience.everyone => 'ทุกคน',
+        RemixAudience.followers => 'คนที่ติดตาม',
+        RemixAudience.link => 'คนที่มีลิงก์',
+      };
+
+  String get description => switch (this) {
+        RemixAudience.everyone => 'ทุกคน Remix ได้เลย',
+        RemixAudience.followers => 'เฉพาะคนที่ติดตามคุณอยู่',
+        RemixAudience.link => 'ต้องได้ลิงก์นี้ถึงจะ remix ได้',
+      };
+
+  IconData get icon => switch (this) {
+        RemixAudience.everyone => Icons.public,
+        RemixAudience.followers => Icons.people_outline,
+        RemixAudience.link => Icons.link,
+      };
+}
+
+/// The three rows under "เปิดให้ remix", one shared card the way the
+/// reference design groups them rather than three separate chips.
+class _RemixAudienceCard extends StatelessWidget {
+  const _RemixAudienceCard({required this.selected, required this.onSelect});
+
+  final RemixAudience selected;
+  final ValueChanged<RemixAudience> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.postDraftBg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          for (final option in RemixAudience.values) ...[
+            if (option != RemixAudience.values.first)
+              const SizedBox(height: 18),
+            _RemixOptionRow(
+              option: option,
+              selected: option == selected,
+              onTap: () => onSelect(option),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RemixOptionRow extends StatelessWidget {
+  const _RemixOptionRow({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final RemixAudience option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _RadioDot(selected: selected),
+          const SizedBox(width: 10),
+          Icon(
+            option.icon,
+            size: 20,
+            color: selected ? AppColors.postPurple : AppColors.muted,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  option.label,
+                  style: const TextStyle(
+                    color: AppColors.foreground,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  option.description,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RadioDot extends StatelessWidget {
+  const _RadioDot({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? AppColors.postPurple : AppColors.postDashed,
+            width: 1.5,
+          ),
+        ),
+        child: selected
+            ? Center(
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.postPurple,
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }

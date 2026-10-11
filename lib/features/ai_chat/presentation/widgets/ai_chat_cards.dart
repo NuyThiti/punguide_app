@@ -81,12 +81,32 @@ class AiChatTripResults extends StatelessWidget {
                     SizedBox(
                       height: 108,
                       width: double.infinity,
-                      child: trip.imageUrl == null
-                          ? const ColoredBox(color: AppColors.optionIconBg)
-                          : CoverImage(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (trip.imageUrl == null)
+                            const ColoredBox(color: AppColors.optionIconBg)
+                          else
+                            CoverImage(
                               source: trip.imageUrl!,
                               fit: BoxFit.cover,
                             ),
+                          // Which of the two kinds of published thing this is
+                          // — the same pair the feed and the ไปกัน board
+                          // badge, named the same way.
+                          Positioned(
+                            left: 8,
+                            top: 8,
+                            child: _TypeBadge(type: trip.tripType),
+                          ),
+                          if (trip.distanceKm != null)
+                            Positioned(
+                              right: 8,
+                              top: 8,
+                              child: _DistanceBadge(km: trip.distanceKm!),
+                            ),
+                        ],
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -126,6 +146,63 @@ class AiChatTripResults extends StatelessWidget {
         if (trip.durationDays != null) '${trip.durationDays} วัน',
         if (trip.placeCount != null) '${trip.placeCount} ที่',
       ];
+}
+
+/// "คู่มือ" or "แผนทริป", in the words the rest of the app already uses.
+class _TypeBadge extends StatelessWidget {
+  const _TypeBadge({required this.type});
+
+  final TripType type;
+
+  @override
+  Widget build(BuildContext context) {
+    final guide = type == TripType.content;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        guide ? 'คู่มือ' : 'แผนทริป',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// How far the trip is from where the traveller said they are.
+///
+/// Only a "near me" turn sends this, and it is straight-line — so it is
+/// captioned "ตรง" exactly like the place rows, rather than reading as a
+/// driving distance it is not.
+class _DistanceBadge extends StatelessWidget {
+  const _DistanceBadge({required this.km});
+
+  final double km;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '${km.toStringAsFixed(1)} กม. (ตรง)',
+        style: const TextStyle(
+          color: AppColors.foreground,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 }
 
 /// Places, with the two honesty notes the API insists on: a straight-line

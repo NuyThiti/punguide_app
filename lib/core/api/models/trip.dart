@@ -343,7 +343,8 @@ class ApiTrip {
     this.placeCount = 0,
     this.linkedTrip,
     this.description,
-    this.allowRemix = false,
+    this.remixEnabled = true,
+    this.remixAudience = RemixAudience.everyone,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -377,7 +378,11 @@ class ApiTrip {
         budgetCurrency: Json.string(json, 'budgetCurrency'),
         placeCount: Json.integer(json, 'placeCount') ?? 0,
         linkedTrip: LinkedTrip.maybeFromJson(json['linkedTrip']),
-        allowRemix: Json.boolean(json, 'allowRemix'),
+        // Every trip predating this field was backfilled server-side to
+        // these same defaults, so a trip read before the server catches up
+        // (or a stale local cache) reads the same way.
+        remixEnabled: Json.boolean(json, 'remixEnabled', fallback: true),
+        remixAudience: RemixAudience.from(json['remixAudience']),
         mediaSummary: MediaSummary.fromJson(Json.asMap(json['mediaSummary'])),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
@@ -422,13 +427,15 @@ class ApiTrip {
   /// when none was written.
   final String? description;
 
-  /// Whether other travellers may remix this post into a plan of their own.
-  ///
-  /// Guessed wire shape — no such field exists in the API contract yet; this
-  /// is a placeholder for the "เปิดให้ remix" toggle until the backend
-  /// confirms the real key. Read-only for now: `PATCH /trips/:id` rejects
-  /// `allowRemix` with a 400, so the client never sends it.
-  final bool allowRemix;
+  /// Whether other travellers may remix this trip at all — the "เปิดให้
+  /// remix" toggle. Scoped further by [remixAudience] when it's on.
+  final bool remixEnabled;
+
+  /// Who [remixEnabled] actually lets in: everyone who can see the trip,
+  /// only the owner's followers, or only someone arriving via its share
+  /// link. Independent of [TripVisibility] — that controls who sees the
+  /// trip at all, this controls who among them may copy it.
+  final RemixAudience remixAudience;
 
   final double totalBudget;
   final BudgetTier? budgetTier;

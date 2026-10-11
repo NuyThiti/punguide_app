@@ -16,6 +16,7 @@ import 'package:pluno/features/create_post/presentation/widgets/post_block.dart'
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 import 'package:pluno/features/create_post/presentation/widgets/trip_spot_pagination.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
+import 'package:pluno/features/remix_trip/presentation/post_done_screen.dart';
 import 'package:pluno/features/trip_detail/presentation/post_share_settings_screen.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
@@ -153,6 +154,12 @@ Widget _harness(
             name: AppRoute.shareSettings.name,
             builder: (_, state) =>
                 PostShareSettingsScreen(tripId: state.params['tripId']!),
+          ),
+          GoRoute(
+            path: '/trips/:tripId/remix/done',
+            name: AppRoute.postDone.name,
+            builder: (_, state) =>
+                PostDoneScreen(tripId: state.params['tripId']!),
           ),
         ],
       ),
@@ -383,6 +390,15 @@ Future<void> _tapSpotOption(WidgetTester tester, Finder chip) async {
 }
 
 Future<void> _finishPublish(WidgetTester tester) async {
+  // Share now lands on "PunGuide Done!" before the composer actually closes
+  // — "อยู่ต่อ" is what does the closing the old flow did on its own.
+  for (var i = 0; i < 100 && find.text('อยู่ต่อ').evaluate().isEmpty; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+  }
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('อยู่ต่อ'));
   for (var i = 0; i < 100 && find.text('home').evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 50));
     await tester

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'enums.dart';
 import 'json.dart';
 
 /// The envelope version the app was written against.
@@ -122,6 +123,8 @@ class ChatTripResult {
   const ChatTripResult({
     required this.tripId,
     required this.title,
+    this.tripType = TripType.planTrip,
+    this.distanceKm,
     this.destination,
     this.summary,
     this.imageUrl,
@@ -138,6 +141,8 @@ class ChatTripResult {
   factory ChatTripResult.fromJson(Map<String, dynamic> json) => ChatTripResult(
         tripId: Json.requiredString(json, 'tripId'),
         title: Json.requiredString(json, 'title'),
+        tripType: TripType.from(json['tripType']),
+        distanceKm: Json.number(json, 'distanceKm'),
         destination: Json.string(json, 'destination'),
         summary: Json.string(json, 'summary'),
         imageUrl: Json.string(json, 'imageUrl'),
@@ -153,6 +158,18 @@ class ChatTripResult {
 
   final String tripId;
   final String title;
+
+  /// A day-by-day plan or a written-up post. Both are things other travellers
+  /// published, so the badge separates them rather than the section does.
+  final TripType tripType;
+
+  /// Straight-line kilometres from the point the traveller shared.
+  ///
+  /// Only a "near me" turn carries this — a search by destination has nothing
+  /// to measure from, and the field is null there. So a card shows a distance
+  /// exactly when one was really computed.
+  final double? distanceKm;
+
   final String? destination;
   final String? summary;
   final String? imageUrl;

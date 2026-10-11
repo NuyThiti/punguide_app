@@ -281,6 +281,8 @@ class TripsApi {
     List<TripContentRequest>? contents,
     TripStatus? status,
     TripVisibility? visibility,
+    bool? remixEnabled,
+    RemixAudience? remixAudience,
   }) async {
     final body = await _client.patch<Map<String, dynamic>>(
       '/trips/$tripId',
@@ -319,8 +321,10 @@ class TripsApi {
         // The first switch to public stamps publishedAt; going private again
         // does not clear it.
         'visibility': visibility?.wire,
-        // No `allowRemix` here: the server whitelists PATCH keys and answers
-        // 400 "property allowRemix should not exist" — see `ApiTrip.allowRemix`.
+        // Independent toggles: a leftover `remixAudience` from before the
+        // owner turned remix off is intentional — see `ApiTrip.remixAudience`.
+        'remixEnabled': remixEnabled,
+        'remixAudience': remixAudience?.wire,
       }),
     );
     return ApiTrip.fromJson(Json.asMap(body));

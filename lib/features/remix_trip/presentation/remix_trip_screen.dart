@@ -47,9 +47,12 @@ class RemixTripScreen extends ConsumerWidget {
                     final remix =
                         await ref.read(tripActionsProvider).remixTrip(trip);
                     if (!context.mounted) return;
-                    context.goNamed(
-                      AppRoute.editTrip.name,
+                    // Pushed, not go'd: "อยู่ต่อ" on the done screen pops
+                    // straight back to this trip, which `go` would discard.
+                    context.pushNamed(
+                      AppRoute.postDone.name,
                       params: {'tripId': remix.id},
+                      queryParams: {'reason': 'remix'},
                     );
                   },
                   icon: const Icon(Icons.call_split),

@@ -66,6 +66,23 @@ enum TripVisibility {
   static TripVisibility? from(Object? value) => _lookup(values, value);
 }
 
+/// Who else may remix a trip once its owner has turned remix on —
+/// "เปิดให้ remix"'s own three-way choice, separate from [TripVisibility].
+enum RemixAudience {
+  everyone('everyone'),
+  followers('followers'),
+  link('link');
+
+  const RemixAudience(this.wire);
+
+  final String wire;
+
+  /// Unset or unrecognised decodes to [everyone] — the same default the
+  /// server backfilled onto every trip that predates this field.
+  static RemixAudience from(Object? value) =>
+      _lookup(values, value) ?? everyone;
+}
+
 /// How a trip came to exist.
 enum PlanMode {
   ai('ai'),

@@ -18,6 +18,7 @@ import '../../features/paigun/presentation/paigun_filter_screen.dart';
 import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
+import '../../features/remix_trip/presentation/post_done_screen.dart';
 import '../../features/remix_trip/presentation/remix_trip_screen.dart';
 import '../../features/saved_trips/presentation/saved_trips_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
@@ -42,6 +43,7 @@ enum AppRoute {
   myTrips,
   savedTrips,
   remixTrip,
+  postDone,
   puntok,
   profile,
   locationAccess,
@@ -169,6 +171,19 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _instantPage(
         state,
         RemixTripScreen(tripId: state.params['tripId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/trips/:tripId/remix/done',
+      name: AppRoute.postDone.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        PostDoneScreen(
+          tripId: state.params['tripId']!,
+          reason: state.queryParams['reason'] == 'remix'
+              ? PostDoneReason.remix
+              : PostDoneReason.published,
+        ),
       ),
     ),
     GoRoute(

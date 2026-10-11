@@ -249,19 +249,49 @@ void main() {
     expect(find.text('ยังไม่มีแผนให้เชื่อม สร้างแพลนก่อนได้เลย'), findsOneWidget);
   });
 
-  testWidgets('hides the remix toggle until the API can store it',
+  testWidgets(
+      'shows the remix toggle, and the audience options once it is on',
+      (tester) async {
+    await _pumpScreen(tester, trip: {..._postJson(), 'remixEnabled': false});
+
+    expect(find.text('เปิดให้ remix'), findsOneWidget);
+    expect(find.byType(Switch), findsOneWidget);
+    // Off, so the audience choice (which only matters once remix is on)
+    // stays off screen rather than showing a choice that does nothing yet.
+    expect(find.text('ทุกคน'), findsNothing);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ทุกคน'), findsOneWidget);
+    expect(find.text('คนที่ติดตาม'), findsOneWidget);
+    expect(find.text('คนที่มีลิงก์'), findsOneWidget);
+  });
+
+  testWidgets(
+      'a trip missing the remix fields defaults to on and everyone — the '
+      "server's own backfill for every trip older than this feature",
       (tester) async {
     await _pumpScreen(tester);
 
-    expect(find.text('เปิดให้ remix'), findsNothing);
-    expect(find.byType(Switch), findsNothing);
+    expect(find.text('ทุกคน'), findsOneWidget);
   });
 
-  testWidgets('sharing sends the connected plan but not allowRemix',
+  testWidgets(
+      'sharing sends the connected plan, the remix toggle and its audience',
       (tester) async {
-    await _pumpScreen(tester, plans: [
-      _plan(id: 'plan-1', title: 'เดินเล่นพระนคร'),
-    ]);
+    // Taller than the default test surface: with a connected plan's card
+    // above it, the audience list otherwise lands right on the viewport's
+    // own edge once scrolled into view.
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpScreen(
+      tester,
+      trip: {..._postJson(), 'remixEnabled': false},
+      plans: [_plan(id: 'plan-1', title: 'เดินเล่นพระนคร')],
+    );
 
     await tester.tap(find.text('เชื่อมแพลนของฉัน'));
     await tester.pumpAndSettle();
@@ -270,13 +300,19 @@ void main() {
     await tester.tap(find.text('ตกลง'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('คนที่ติดตาม'));
+    await tester.tap(find.text('คนที่ติดตาม'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Share'));
     await tester.pumpAndSettle();
 
     final body = adapter.bodyOf('PATCH /trips/trip-1')!;
     expect(body['linkedTripId'], 'plan-1');
-    // The API rejects the whole PATCH if this key is present.
-    expect(body.containsKey('allowRemix'), isFalse);
+    expect(body['remixEnabled'], true);
+    expect(body['remixAudience'], 'followers');
     expect(body['visibility'], 'public');
   });
 

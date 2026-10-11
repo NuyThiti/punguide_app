@@ -43,8 +43,9 @@ const _placesTurn = ''
     'data: {"schemaVersion":1,"conversationId":"room-1","messageId":"msg-2",'
     '"status":"complete","text":"มีทริปที่คนอื่นแชร์ไว้ด้วยครับ","blocks":['
     '{"type":"trip_results","totalMatches":9,"trips":['
-    '{"tripId":"t1","title":"เชียงใหม่ชิล ๆ"},'
-    '{"tripId":"t2","title":"คาเฟ่ฮอปปิ้งเชียงใหม่"}]},'
+    '{"tripId":"t1","title":"เชียงใหม่ชิล ๆ","tripType":"plan_trip"},'
+    '{"tripId":"t2","title":"คาเฟ่ฮอปปิ้งเชียงใหม่","tripType":"content",'
+    '"distanceKm":2.3}]},'
     '{"type":"place_results","nearLabel":"นิมมานเหมินท์","totalMatches":6,'
     '"places":[{"placeId":"p1","name":"ร้านกาแฟริมคลอง"}]}],'
     '"suggestedReplies":[],"warnings":[],"error":null}\n';
@@ -249,6 +250,21 @@ void main() {
     expect(find.text('2 จาก 9'), findsOneWidget);
     expect(find.text('เชียงใหม่ชิล ๆ'), findsOneWidget);
     expect(find.text('ร้านกาแฟริมคลอง'), findsOneWidget);
+  });
+
+  testWidgets('a nearby trip is badged by kind and shows how far it is',
+      (tester) async {
+    await _pumpChat(tester, _adapter(stream: _placesTurn));
+    await _send(tester, 'หาคาเฟ่ใกล้ ๆ หน่อย');
+
+    // The two kinds of published thing, named the way the rest of the app
+    // names them.
+    expect(find.text('แผนทริป'), findsOneWidget);
+    expect(find.text('คู่มือ'), findsOneWidget);
+
+    // Straight-line, and captioned as such. Only the trip that carried a
+    // distance shows one — the other has nothing to measure from.
+    expect(find.text('2.3 กม. (ตรง)'), findsOneWidget);
   });
 
   testWidgets('a trips turn that found nothing shows no empty rail',
