@@ -248,9 +248,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    // The same decoration the ไปกัน board puts on a card — distance and the
-    // Top PunGuide badge — over Home's own unfiltered rows.
-    final nearby = {
+    // The badge and the bookmark the ไปกัน board puts on a card, over Home's
+    // own unfiltered rows. Not the distance: Home is the general feed, so no
+    // `distanceLabelOf` goes in and no card here wears the chip.
+    final decorated = {
       for (final row
           in ref.watch(homeBoardRowsProvider).valueOrNull ?? const [])
         row.trip.id: row,
@@ -258,9 +259,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return PunGuideGrid(
       trips: items,
-      distanceLabelOf: (trip) => nearby[trip.id]?.distanceLabel,
-      featuredOf: (trip) => nearby[trip.id]?.featured ?? false,
-      savedOf: (trip) => nearby[trip.id]?.isSaved,
+      featuredOf: (trip) => decorated[trip.id]?.featured ?? false,
+      savedOf: (trip) => decorated[trip.id]?.isSaved,
       onOpen: (trip) => context.goNamed(
         AppRoute.tripDetail.name,
         params: {'tripId': trip.id},

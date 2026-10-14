@@ -255,7 +255,7 @@ void main() {
     // looked up to name it. `textContaining` for the address: the same pull
     // also seeds the device fix, so the row may print a 0.0km to itself.
     expect(find.text('สนามหลวง'), findsOneWidget);
-    expect(find.textContaining('กรุงเทพมหานคร 10200'), findsOneWidget);
+    expect(find.textContaining('เขตพระนคร กรุงเทพ 10200'), findsOneWidget);
     expect(adapter.paths, isNot(contains('GET /places/suggest')));
 
     await tester.tap(find.text('ยืนยันตำแหน่งนี้'));
@@ -264,7 +264,9 @@ void main() {
     expect(find.text('paigun board'), findsOneWidget);
     final origin = container.read(paigunOriginProvider);
     expect(origin.label, 'สนามหลวง');
-    expect(origin.address, 'กรุงเทพมหานคร 10200');
+    // District *and* province: the province alone says nothing a traveller
+    // already standing in Bangkok did not know.
+    expect(origin.address, 'เขตพระนคร กรุงเทพ 10200');
     expect(origin.latitude, 13.75);
     expect(origin.longitude, 100.5);
     expect(tester.takeException(), isNull);
@@ -316,9 +318,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    // Not the whole line, which repeats the name and overruns the row.
-    expect(find.text('เชียงใหม่'), findsOneWidget);
-    expect(find.text('ภูเก็ต 83000'), findsOneWidget);
+    // Not the whole line, which repeats the name and overruns the row — the
+    // last two levels of it, which is what tells two districts apart.
+    expect(find.text('อำเภอเมืองเชียงใหม่ เชียงใหม่'), findsOneWidget);
+    expect(find.text('อำเภอเมืองภูเก็ต ภูเก็ต 83000'), findsOneWidget);
   });
 
   testWidgets('searching pins the chosen place and moves the origin to it',
@@ -360,9 +363,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // The address is trimmed to the segment the design prints.
-    expect(find.text('Bangkok 10200'), findsOneWidget);
+    // Comma-separated: the postcode's own segment is the city, the one before
+    // it the district.
+    expect(find.text('Phra Nakhon, Bangkok 10200'), findsOneWidget);
 
-    await tester.tap(find.text('Bangkok 10200'));
+    await tester.tap(find.text('Phra Nakhon, Bangkok 10200'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('ยืนยันตำแหน่งนี้'));
@@ -370,11 +375,11 @@ void main() {
 
     final origin = container.read(paigunOriginProvider);
     expect(origin.label, 'เขตพระนคร');
-    expect(origin.address, 'Bangkok 10200');
+    expect(origin.address, 'Phra Nakhon, Bangkok 10200');
     expect(origin.latitude, 13.7563);
 
     // And it is kept, so the next launch opens here.
-    expect((await store.read())?.address, 'Bangkok 10200');
+    expect((await store.read())?.address, 'Phra Nakhon, Bangkok 10200');
   });
 
   testWidgets('confirming also sends the pin to the account', (tester) async {
@@ -427,7 +432,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('เชียงใหม่ 50200'));
+    await tester.tap(find.text('อำเภอเมืองเชียงใหม่ เชียงใหม่ 50200'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('ยืนยันตำแหน่งนี้'));

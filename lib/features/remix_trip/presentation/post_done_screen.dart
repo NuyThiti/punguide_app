@@ -91,7 +91,7 @@ class PostDoneScreen extends StatelessWidget {
                       height: 52,
                       child: FilledButton(
                         onPressed: () => context.goNamed(
-                          AppRoute.editTrip.name,
+                          AppRoute.tripDetail.name,
                           params: {'tripId': tripId},
                         ),
                         style: FilledButton.styleFrom(

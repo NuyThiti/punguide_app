@@ -17,34 +17,30 @@ final homeFeedProvider =
 );
 
 class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
+  /// The whole public feed, newest first.
+  ///
+  /// Deliberately an empty query: Home is the general feed, not a near-me
+  /// one. No filter, because the ไปกัน wizard's answers belong to that board
+  /// alone — and no coordinates either, so the server has no reason to
+  /// measure and every row comes back without `distanceKm`. Where the
+  /// traveller is standing is the ไปกัน board's business, not Home's.
+  static const _query = TripFeedQuery();
+
   @override
   Future<List<TripListItem>> build() async {
     // Signing in or out changes the per-viewer flags on every row.
     ref.watch(authSessionProvider);
-    final query = _query(ref.watch(paigunOriginProvider));
     final api = await ref.watch(plunoApiProvider.future);
-    return api.trips.feed(query);
+    return api.trips.feed(_query);
   }
 
   Future<void> refresh() async {
-    final query = _query(ref.read(paigunOriginProvider));
     state = const AsyncLoading<List<TripListItem>>();
     state = await AsyncValue.guard(() async {
       final api = await ref.read(plunoApiProvider.future);
-      return api.trips.feed(query);
+      return api.trips.feed(_query);
     });
   }
-
-  /// The whole public feed, newest first — no filter, because this is Home's
-  /// wall and the ไปกัน wizard's answers belong to that board alone.
-  ///
-  /// The coordinates are the exception: they narrow nothing, they are what
-  /// makes the server return `distanceKm`, which is the "2.3 Km" chip on a
-  /// card here as much as there.
-  static TripFeedQuery _query(PaigunOrigin origin) => TripFeedQuery(
-        latitude: origin.latitude,
-        longitude: origin.longitude,
-      );
 
   /// Bookmarks or un-bookmarks one trip, flipping the row before the request
   /// so the tap feels instant, and putting it back if the server refuses.
@@ -135,8 +131,12 @@ class _DestinationGroup {
   String? coverImage;
 }
 
-/// Home's rows wearing the board's decoration — the distance chip and the Top
-/// PunGuide badge — so a card reads the same on both screens.
+/// Home's rows wearing the Top PunGuide badge, and whatever the traveller has
+/// bookmarked since they were fetched.
+///
+/// No distance comes out of this: Home asks for the feed without coordinates,
+/// so `distanceKm` is null on every row and the card leaves the chip off. The
+/// ไปกัน board builds its own rows, with the measurement.
 ///
 /// Deliberately built from Home's own unfiltered feed rather than from a wall
 /// of the board: a filter the traveller set over on ไปกัน must not quietly

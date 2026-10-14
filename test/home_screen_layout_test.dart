@@ -9,6 +9,7 @@ import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/features/home/presentation/widgets/home_assistant_fab.dart';
 import 'package:pluno/shared/widgets/app_bottom_nav.dart';
 
+import 'support/fake_api.dart';
 import 'support/home_feed_fixtures.dart';
 
 Widget _harness(List<TripListItem> trips) {
@@ -203,6 +204,49 @@ void main() {
     expect(find.byType(AiChatScreen), findsOneWidget);
   });
 
+  testWidgets('home asks for the general feed, with no coordinates',
+      (tester) async {
+    _phone(tester);
+
+    final adapter = feedAdapter(<Map<String, dynamic>>[feedTripJson()]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: paigunOverrides(adapter),
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                name: AppRoute.home.name,
+                builder: (_, __) => const HomeScreen(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Home is the general feed: no lat/lng, so the server never measures and
+    // no row comes back with a distance. Where the traveller is standing is
+    // the ไปกัน board's business.
+    final queries = adapter.queriesOf('GET /trips');
+    expect(queries, hasLength(1));
+    expect(queries.single, isEmpty);
+  });
+
+  testWidgets('a Home card wears no distance chip', (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(
+      // A row the server did measure: Home must still leave the chip off.
+      _harness([feedTrip(id: 'near', distanceKm: 2.3)]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Km'), findsNothing);
+  });
+
   testWidgets('home renders an empty state when the feed is empty',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);
@@ -216,4 +260,10 @@ void main() {
     // With no trips there is nothing to derive a destination rail from.
     expect(find.text('Top Destination'), findsOneWidget);
   });
+}
+
+void _phone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
 }

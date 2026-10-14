@@ -74,7 +74,7 @@ Future<void> _pumpScreen(WidgetTester tester,
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(200, trip ?? _postJson())],
     'GET /trips/mine': [FakeReply(200, plans ?? const <Map<String, dynamic>>[])],
-    'PATCH /trips/trip-1': [FakeReply(200, _postJson())],
+    'PUT /trips/posts/trip-1': [FakeReply(200, _postJson())],
   });
   await tester.pumpWidget(_harness());
   await tester.pumpAndSettle();
@@ -120,6 +120,23 @@ void main() {
 
     expect(find.text('Only me'), findsOneWidget);
     expect(find.text('Public'), findsNothing);
+  });
+
+  testWidgets(
+      'a shared post taken down by Save Draft shows the dropdown it was '
+      'saved as, not the visibility the takedown forced',
+      (tester) async {
+    await _pumpScreen(tester, trip: {
+      ..._postJson(),
+      // Save Draft forces this to private server-side — `draftVisibility`
+      // is what actually remembers the dropdown's own last value.
+      'visibility': 'private',
+      'draftVisibility': 'public',
+      'publishedAt': '2026-09-09T00:00:00.000Z',
+    });
+
+    expect(find.text('Public'), findsOneWidget);
+    expect(find.text('Only me'), findsNothing);
   });
 
   testWidgets(
@@ -309,7 +326,7 @@ void main() {
     await tester.tap(find.text('Share'));
     await tester.pumpAndSettle();
 
-    final body = adapter.bodyOf('PATCH /trips/trip-1')!;
+    final body = adapter.bodyOf('PUT /trips/posts/trip-1')!;
     expect(body['linkedTripId'], 'plan-1');
     expect(body['remixEnabled'], true);
     expect(body['remixAudience'], 'followers');
@@ -323,7 +340,7 @@ void main() {
     await tester.tap(find.text('Share'));
     await tester.pumpAndSettle();
 
-    final body = adapter.bodyOf('PATCH /trips/trip-1')!;
+    final body = adapter.bodyOf('PUT /trips/posts/trip-1')!;
     expect(body['linkedTripId'], isNull);
     expect(body.containsKey('linkedTripId'), isTrue);
   });

@@ -53,6 +53,40 @@ class MediaApi {
     return Media.fromJson(Json.asMap(body));
   }
 
+  /// Uploads a photo before any post exists to attach it to — the server
+  /// owns it by account instead, and folds it into whatever post's
+  /// `contents`/`coverMediaId` names its `mediaId` next time that post is
+  /// saved. Same 15 MB cap and response shape as [upload]; also usable
+  /// straight away as a `POST /trips/:id/contents/generate` photo.
+  Future<Media> uploadUnattached({
+    String? filePath,
+    List<int>? bytes,
+    String? filename,
+    String? altText,
+    String? caption,
+  }) async {
+    final form = await buildUploadForm(
+      filePath: filePath,
+      bytes: bytes,
+      filename: filename,
+      fields: <String, String>{
+        if (altText != null) 'altText': altText,
+        if (caption != null) 'caption': caption,
+      },
+    );
+    final body = await _client.upload<Map<String, dynamic>>(
+      '/media',
+      form: form,
+    );
+    return Media.fromJson(Json.asMap(body));
+  }
+
+  /// Drops a photo uploaded via [uploadUnattached] that was never saved into
+  /// a post — for one already saved, [delete] (the trip-scoped route) is
+  /// what applies instead.
+  Future<void> deleteUnattached(String mediaId) =>
+      _client.delete<void>('/media/$mediaId');
+
   /// Pulls a place's own photo into the gallery.
   Future<Media> addFromPlace(
     String tripId, {

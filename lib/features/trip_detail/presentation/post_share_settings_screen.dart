@@ -58,14 +58,23 @@ class _PostShareSettingsScreenState
   void _seed(ApiTrip trip) {
     if (_seeded) return;
     _seeded = true;
-    // A draft that has never gone out has no visibility of its own yet —
-    // default that one to Public. One reopened for editing keeps whatever it
-    // was actually shared as, rather than silently flipping it back.
-    _audience = trip.publishedAt == null
-        ? PostAudience.public
-        : (trip.visibility == TripVisibility.public
+    // `draftVisibility` is what the traveller actually chose the last time
+    // this post was saved as a draft — including a Save Draft that took an
+    // already-shared post down, which forces `visibility` itself to private
+    // and would otherwise read back as "Only me" no matter what was picked.
+    // Absent that, a draft that has never gone out has no visibility of its
+    // own yet, so it defaults to Public; one reopened for editing keeps
+    // whatever it was actually shared as, rather than silently flipping it
+    // back.
+    _audience = trip.draftVisibility != null
+        ? (trip.draftVisibility == TripVisibility.public
             ? PostAudience.public
-            : PostAudience.onlyMe);
+            : PostAudience.onlyMe)
+        : (trip.publishedAt == null
+            ? PostAudience.public
+            : (trip.visibility == TripVisibility.public
+                ? PostAudience.public
+                : PostAudience.onlyMe));
     final linked = trip.linkedTrip;
     _trip = linked == null ? null : PostTripLink(id: linked.id, title: linked.title);
     _connectedPreview = linked;
@@ -145,8 +154,11 @@ class _PostShareSettingsScreenState
     setState(() => _sharing = true);
     try {
       final api = await ref.read(plunoApiProvider.future);
-      await api.trips.update(
-        widget.tripId,
+      // No `contents`/`coverMediaId` here — this screen never touches
+      // either, and leaving them out keeps whatever the composer last saved.
+      await api.trips.savePost(
+        postId: widget.tripId,
+        action: PostSaveAction.share,
         title: _title,
         travelStyles: _styles,
         customStyles: _customStyles,

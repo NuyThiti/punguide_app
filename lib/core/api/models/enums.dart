@@ -83,6 +83,19 @@ enum RemixAudience {
       _lookup(values, value) ?? everyone;
 }
 
+/// What a post editor save is for — `POST /trips/posts` /
+/// `PUT /trips/posts/:id`'s own `action` field. Draft forces the stored
+/// `visibility` to private server-side and remembers the traveller's actual
+/// choice as `draftVisibility`; share stores `visibility` as sent.
+enum PostSaveAction {
+  draft('draft'),
+  share('share');
+
+  const PostSaveAction(this.wire);
+
+  final String wire;
+}
+
 /// How a trip came to exist.
 enum PlanMode {
   ai('ai'),

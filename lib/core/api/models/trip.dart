@@ -345,6 +345,7 @@ class ApiTrip {
     this.description,
     this.remixEnabled = true,
     this.remixAudience = RemixAudience.everyone,
+    this.draftVisibility,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -383,6 +384,9 @@ class ApiTrip {
         // (or a stale local cache) reads the same way.
         remixEnabled: Json.boolean(json, 'remixEnabled', fallback: true),
         remixAudience: RemixAudience.from(json['remixAudience']),
+        // Owner-only, and only ever set once a shared post has been saved as
+        // a draft again — absent means "never" either way.
+        draftVisibility: TripVisibility.from(json['draftVisibility']),
         mediaSummary: MediaSummary.fromJson(Json.asMap(json['mediaSummary'])),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
@@ -436,6 +440,14 @@ class ApiTrip {
   /// link. Independent of [TripVisibility] — that controls who sees the
   /// trip at all, this controls who among them may copy it.
   final RemixAudience remixAudience;
+
+  /// The visibility a post was saved with the last time it was saved as a
+  /// draft — set when Save Draft takes an already-shared post down (forcing
+  /// [visibility] to private) so the dropdown has something truthful to
+  /// restore to besides the now-forced value. Null for a post that has
+  /// never been saved as a draft after being shared, including one that was
+  /// never shared at all.
+  final TripVisibility? draftVisibility;
 
   final double totalBudget;
   final BudgetTier? budgetTier;

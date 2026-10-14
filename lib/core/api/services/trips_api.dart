@@ -330,6 +330,79 @@ class TripsApi {
     return ApiTrip.fromJson(Json.asMap(body));
   }
 
+  /// The post editor's own save — one call for both Save Draft and Share,
+  /// first time and every time after.
+  ///
+  /// [postId] null is the first save: `POST /trips/posts` with an
+  /// `Idempotency-Key` built from [idempotencyKey] (replaying the same key
+  /// after a dropped request returns the same post, never a duplicate).
+  /// [postId] set is every save after: `PUT /trips/posts/:postId`, no
+  /// idempotency key needed. Neither sends `type` or `status` — the server
+  /// infers `type: "content"` and derives `status` from [action] itself.
+  ///
+  /// [action] decides what the server actually stores for [visibility]:
+  /// `draft` forces it to private regardless of what is sent and remembers
+  /// the sent value as `ApiTrip.draftVisibility` instead (so Save Draft on
+  /// an already-shared post takes it down without losing the traveller's
+  /// chosen visibility); `share` stores [visibility] as sent.
+  ///
+  /// [contents] replaces the whole set when sent — there is no per-item
+  /// merge. Every other field left out keeps whatever the post already has;
+  /// this is what lets `PostShareSettingsScreen`'s own save leave `contents`
+  /// and `coverMediaId` untouched.
+  Future<ApiTrip> savePost({
+    String? postId,
+    required PostSaveAction action,
+    required TripVisibility visibility,
+    String? title,
+    String? destination,
+    String? description,
+    String? specialNotes,
+    Patch<String>? coverMediaId,
+    List<TripContentRequest>? contents,
+    Patch<String>? linkedTripId,
+    bool? remixEnabled,
+    RemixAudience? remixAudience,
+    int? guestCount,
+    double? budgetLimit,
+    String? budgetCurrency,
+    List<TravelStyle>? travelStyles,
+    List<String>? customStyles,
+    String? idempotencyKey,
+  }) async {
+    final body = Json.compact(<String, dynamic>{
+      'action': action.wire,
+      'visibility': visibility.wire,
+      'title': title,
+      'destination': destination,
+      'description': description,
+      'specialNotes': specialNotes,
+      'coverMediaId': coverMediaId,
+      'contents': TripContentRequest.serializeAll(contents),
+      'linkedTripId': linkedTripId,
+      'remixEnabled': remixEnabled,
+      'remixAudience': remixAudience?.wire,
+      'guestCount': guestCount,
+      'budgetLimit': budgetLimit,
+      'budgetCurrency': budgetCurrency,
+      'travelStyles': wireList(travelStyles),
+      'customStyles': customStyles,
+    });
+    final response = postId == null
+        ? await _client.post<Map<String, dynamic>>(
+            '/trips/posts',
+            body: body,
+            headers: idempotencyKey == null
+                ? null
+                : PlunoHeaders.idempotent(idempotencyKey),
+          )
+        : await _client.put<Map<String, dynamic>>(
+            '/trips/posts/$postId',
+            body: body,
+          );
+    return ApiTrip.fromJson(Json.asMap(response));
+  }
+
   /// Deletes the trip and everything attached to it: days, stops, segments,
   /// media, expenses, accommodations.
   Future<void> delete(String tripId) => _client.delete<void>('/trips/$tripId');

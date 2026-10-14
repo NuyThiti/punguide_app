@@ -195,7 +195,8 @@ Future<void> _pumpComposer(WidgetTester tester,
   client.replies
       .putIfAbsent('GET /trips/mine', () => [const FakeReply(200, [])]);
 
-  if (client.replies.containsKey('POST /trips')) {
+  if (client.replies.containsKey('POST /trips/posts') ||
+      client.replies.containsKey('POST /trips')) {
     client.replies['GET /places/search'] = [
       const FakeReply(200, [
         {'id': 'place-1', 'mapId': 'map-1', 'name': 'เชียงใหม่'}
@@ -409,8 +410,12 @@ Future<void> _finishPublish(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-      'uncertain upload reconciles gallery without reuploading successful files',
+      'an uncertain upload from import is retried plainly at Save/Share, '
+      'not reconciled against a gallery',
       (tester) async {
+    // Unattached media has no gallery to reconcile an ambiguous failure
+    // against the way a trip's own did, so the only recovery left is a plain
+    // retry — this is the behaviour change from the old gallery-picker flow.
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
       _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
@@ -423,33 +428,8 @@ void main() {
         FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
         const FakeReply(500, {'message': 'unknown upload result'})
       ],
-      'GET /trips/trip-new/media': [
-        const FakeReply(200, {
-          'tripId': 'trip-new',
-          'total': 2,
-          'page': 1,
-          'limit': 100,
-          'items': [
-            {
-              'id': _a,
-              'urls': {
-                'large': 'https://example.com/a.jpg',
-                'thumbnail': 'https://example.com/a.jpg'
-              },
-              'caption': 'รูปแรก'
-            },
-            {
-              'id': _b,
-              'urls': {
-                'large': 'https://example.com/b.jpg',
-                'thumbnail': 'https://example.com/b.jpg'
-              },
-              'caption': 'รูปที่ตรวจพบ'
-            },
-          ]
-        })
-      ],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /media': [FakeReply(201, _image(_b, 'https://example.com/b.jpg'))],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     await _tapImport(tester);
@@ -457,39 +437,30 @@ void main() {
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
         'วันหยุด';
     await _confirmPlace(tester);
-    // The import uploaded both and the second answered 500, so it is already
-    // the uncertain one before anything is published.
+    // The import uploaded both through the old assistant route, and the
+    // second answered 500 — it is still visible locally either way.
     expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'),
         hasLength(2));
-    expect(adapter.paths, isNot(contains('PATCH /trips/trip-new')));
+    expect(adapter.paths, isNot(contains('PUT /trips/posts/trip-new')));
     await _tapNext(tester);
+    // One more real round trip than most saves (the retry upload ahead of
+    // the save itself), so `_tapNext`'s own bounded wait is not quite enough.
     for (var i = 0;
-        i < 10 && find.text('ตรวจรูปที่อัปโหลดไม่ทราบผล').evaluate().isEmpty;
+        i < 20 && !adapter.paths.contains('PUT /trips/posts/trip-new');
         i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('ตรวจรูปที่อัปโหลดไม่ทราบผล'), findsOneWidget);
-    await tester.tap(find.text('รูปที่ตรวจพบ'));
-    for (var i = 0;
-        i < 10 && find.text('เชื่อมแพลนของฉัน').evaluate().isEmpty;
-        i++) {
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
     }
     await _tapShare(tester);
     await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
-    expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'),
-        hasLength(2));
-    expect(adapter.paths.where((p) => p == 'POST /trips'), hasLength(1));
-    expect(
-        adapter.requests
-            .firstWhere((r) =>
-                r.method == 'PATCH' &&
-                r.path == '/trips/trip-new' &&
-                r.data.containsKey('contents'))
-            .data['contents'][0]['mediaIds'],
-        [_a, _b]);
+    // Save retried the one that never finished — through the bare endpoint,
+    // since that is the only one `_uploadPhoto` ever uses now.
+    expect(adapter.paths.where((p) => p == 'POST /media'), hasLength(1));
+    final body =
+        adapter.requests.firstWhere((r) => r.method == 'PUT').data;
+    expect(body['contents'][0]['mediaIds'], [_a, _b]);
   });
 
   testWidgets('the assistant drafts the post out of the uploaded photos',
@@ -1236,7 +1207,7 @@ void main() {
           'warnings': [],
         })
       ],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
 
     await _pumpComposer(tester, adapter: adapter);
@@ -1257,7 +1228,7 @@ void main() {
     // Confirmed only because a person tapped it, and it carries the id and
     // coordinates the suggestion came with.
     expect(
-        adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['location'], {
+        adapter.bodyOf('PUT /trips/posts/trip-new')!['contents'][0]['location'], {
       'status': 'confirmed',
       'name': 'วัดเจดีย์หลวง',
       'placeId': 'ChIJ-wat',
@@ -1266,14 +1237,14 @@ void main() {
     });
   });
 
-  testWidgets('draft creation retry reuses key and original creation payload',
+  testWidgets('save retry after a failed first attempt reuses the same key',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [
+      'POST /trips/posts': [
         const FakeReply(500, {'message': 'unknown create result'}),
         FakeReply(201, createdTripJson())
       ],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())]
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())]
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
@@ -1288,13 +1259,16 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
     final creates = adapter.requests
-        .where((r) => r.method == 'POST' && r.path == '/trips')
+        .where((r) => r.method == 'POST' && r.path == '/trips/posts')
         .toList();
     expect(creates, hasLength(2));
+    // Replaying the same key after a dropped request is what keeps a retry
+    // from minting a second post — the data itself is free to differ, since
+    // there is no separate provisional-create step anymore to hold it still:
+    // whatever the traveller edited between attempts goes up on the retry.
     expect(creates[0].headers['Idempotency-Key'],
         creates[1].headers['Idempotency-Key']);
-    expect(creates[0].data, creates[1].data);
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['title'], 'แก้ข้อความ');
+    expect(creates[1].data['title'], 'แก้ข้อความ');
   });
 
   testWidgets(
@@ -1309,8 +1283,7 @@ void main() {
       'POST /trips/trip-new/media': [
         FakeReply(201, _image(_a, 'https://example.com/a.jpg'))
       ],
-      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     await _tapImport(tester);
@@ -1327,7 +1300,7 @@ void main() {
       'title': 'ร่างจากรูป',
       'destination': 'ยังไม่ระบุ'
     });
-    final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
+    final patched = adapter.bodyOf('PUT /trips/posts/trip-new')!;
     // Post Title and Post Location were never typed — both are optional, and
     // publishing never stops to ask for them. Each resolves from the one
     // thing the photo-only post actually has: its confirmed location.
@@ -1335,10 +1308,10 @@ void main() {
     expect(patched['destination'], 'เชียงใหม่');
     expect(
         adapter.requests
-            .firstWhere((r) => r.method == 'POST')
+            .firstWhere((r) => r.method == 'POST' && r.path == '/trips')
             .headers['Idempotency-Key'],
         isNotEmpty);
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'], [
+    expect(patched['contents'], [
       {
         'content': '',
         'mediaIds': [_a],
@@ -1347,14 +1320,14 @@ void main() {
     ]);
     // No cover was chosen, so the post leads with the one picture it has
     // rather than going out with a blank where the image belongs.
-    expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _a});
+    expect(patched['coverMediaId'], _a);
   });
 
   testWidgets('a post with no pictures publishes without a cover',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
@@ -1373,15 +1346,14 @@ void main() {
 
     // There is nothing to lead with, and a cover is not worth inventing.
     expect(adapter.paths, isNot(contains('PUT /trips/trip-new/cover')));
-    expect(adapter.paths, contains('PATCH /trips/trip-new'));
+    expect(adapter.paths, contains('PUT /trips/posts/trip-new'));
   });
 
   testWidgets(
       'owner edit preserves media order and only confirms suggestion on tap',
       (tester) async {
     final adapter = FakeAdapter({
-      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())]
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())]
     });
     final trip = ApiTrip.fromJson({
       ...createdTripJson(),
@@ -1415,18 +1387,17 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
     // Nothing is re-uploaded, and the trip had no cover of its own, so it is
-    // led by the picture that now reads first. Two round trips now: the
-    // content sync (cover + the first PATCH), then the share screen's own
-    // read-back and its own PATCH.
+    // led by the picture that now reads first — folded straight into the one
+    // save, not a separate cover call. Two round trips: the content sync,
+    // then the share screen's own read-back and its own save.
     expect(adapter.paths.where((p) => p != 'GET /trips/mine'), [
-      'PUT /trips/trip-new/cover',
-      'PATCH /trips/trip-new',
+      'PUT /trips/posts/trip-new',
       'GET /trips/trip-new',
-      'PATCH /trips/trip-new',
+      'PUT /trips/posts/trip-new',
     ]);
-    expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _b});
-    final section =
-        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single;
+    final firstSave = adapter.bodyOf('PUT /trips/posts/trip-new')!;
+    expect(firstSave['coverMediaId'], _b);
+    final section = (firstSave['contents'] as List).single;
     expect(section['mediaIds'], [_b, _a]);
     expect(
         section['location'], {'status': 'confirmed', 'name': 'ร้านที่แนะนำ'});
@@ -1436,10 +1407,10 @@ void main() {
     expect(section.containsKey('images'), isFalse);
   });
 
-  testWidgets('removed cover is dereferenced before deleting media',
+  testWidgets('removing the cover frees its media and drops it from contents',
       (tester) async {
     final adapter = FakeAdapter({
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
       'DELETE /trips/trip-new/media/$_a': [const FakeReply(204, null)]
     });
     final trip = ApiTrip.fromJson({
@@ -1462,21 +1433,21 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
     tester.widget<PostBlock>(find.byType(PostBlock)).onRemoveImage!(0);
+    // The cleanup delete is fire-and-forget off the removal itself, not
+    // something Next/Share trigger — it has already gone out by here.
     await tester.pumpAndSettle();
     await _tapNext(tester);
     await _tapShare(tester);
     await _finishPublish(tester);
     expect(adapter.paths.where((p) => p != 'GET /trips/mine'), [
-      'PATCH /trips/trip-new',
       'DELETE /trips/trip-new/media/$_a',
-      'PATCH /trips/trip-new',
+      'PUT /trips/posts/trip-new',
       'GET /trips/trip-new',
-      'PATCH /trips/trip-new',
+      'PUT /trips/posts/trip-new',
     ]);
-    final firstWrite = adapter.requests
-        .firstWhere((r) => r.path == '/trips/trip-new' && r.method == 'PATCH');
+    final firstWrite = adapter.requests.firstWhere(
+        (r) => r.path == '/trips/posts/trip-new' && r.method == 'PUT');
     expect(firstWrite.data['contents'][0]['mediaIds'], [_b]);
-    expect(firstWrite.data.containsKey('visibility'), isFalse);
   });
 
   testWidgets('unavailable reference blocks publish until explicitly removed',
@@ -1653,6 +1624,75 @@ void main() {
     expect(find.text('ร่างที่เก็บไว้'), findsOneWidget);
   });
 
+  testWidgets(
+      'adding a photo to a spot touches no network until Share or Save Draft',
+      (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    final adapter = FakeAdapter({});
+    await _pumpComposer(tester, adapter: adapter);
+
+    await tester.ensureVisible(
+        find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
+    await tester.tap(
+        find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+
+    // The photo is on screen, but nothing has gone anywhere yet.
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths,
+        isNotEmpty);
+    expect(adapter.paths, isEmpty);
+  });
+
+  testWidgets('Save Draft on an untouched composer never touches the network',
+      (tester) async {
+    final adapter = FakeAdapter({});
+    await _pumpComposer(tester, adapter: adapter);
+
+    await _scrollTo(tester, find.text('Save Draft'));
+    await tester.tap(find.text('Save Draft'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.paths, isEmpty);
+  });
+
+  testWidgets('Save Draft syncs the draft to the server, the same as Share',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    tester
+        .widget<PostBlock>(find.byType(PostBlock))
+        .items!
+        .first
+        .bodyController
+        .text = 'เล่าเฉย ๆ';
+    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+
+    await _scrollTo(tester, find.text('Save Draft'));
+    await tester.tap(find.text('Save Draft'));
+    // Bounded, not `pumpAndSettle`: syncing runs before the composer closes,
+    // same as `_tapNext`.
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    // One call does it all now — content, cover and identity together — so
+    // the first-ever save is the create itself, not a create-then-patch pair.
+    expect(adapter.paths.where((p) => p.contains('/trips')), ['POST /trips/posts']);
+    // Synced and closed — landed back on the host app, not left open.
+    expect(find.text('home'), findsOneWidget);
+  });
+
   for (final denied in [false, true]) {
     testWidgets(
         denied
@@ -1690,8 +1730,8 @@ void main() {
     ImagePickerPlatform.instance = _CoverImagePicker();
     addTearDown(() => ImagePickerPlatform.instance = previousPicker);
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'POST /trips/trip-new/media': [
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'POST /media': [
         const FakeReply(201, {
           'mediaId': 'aaaaaaaa-0000-4000-8000-000000000001',
           'urls': {
@@ -1707,8 +1747,7 @@ void main() {
           }
         }),
       ],
-      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     for (var i = 0; i < 2; i++) {
@@ -1718,6 +1757,14 @@ void main() {
           find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
       await tester.pumpAndSettle();
       await tester.tap(find.text('เลือกจากคลังภาพ'));
+      // Bounded, not `pumpAndSettle`: the eager upload behind the pick runs
+      // through real async work (EXIF off an isolate, then the upload
+      // itself), which needs `runAsync` to actually drain.
+      for (var j = 0; j < 20; j++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+      }
       await tester.pumpAndSettle();
     }
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
@@ -1729,21 +1776,19 @@ void main() {
     expect(find.text('รูปหน้าปก'), findsOneWidget);
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
         'assets/images/puntok_london.jpg');
-    if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
+    if (adapter.replies.containsKey('POST /trips/posts')) await _confirmPlace(tester);
     await _tapNext(tester);
     for (var i = 0;
-        i < 100 && !adapter.paths.contains('PATCH /trips/trip-new');
+        i < 100 && !adapter.paths.contains('POST /trips/posts');
         i++) {
       await tester.pump(const Duration(milliseconds: 100));
       await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 10)));
     }
-    expect(adapter.paths, contains('PUT /trips/trip-new/cover'));
     await tester.pumpAndSettle();
-    expect(adapter.bodyOf('PUT /trips/trip-new/cover'),
-        {'mediaId': 'bbbbbbbb-0000-4000-8000-000000000002'});
-    expect(adapter.paths.indexOf('PUT /trips/trip-new/cover'),
-        lessThan(adapter.paths.indexOf('PATCH /trips/trip-new')));
+    // Folded straight into the one save now, not a separate cover call.
+    expect(adapter.bodyOf('POST /trips/posts')!['coverMediaId'],
+        'bbbbbbbb-0000-4000-8000-000000000002');
     await _tapShare(tester);
     await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
@@ -1755,13 +1800,12 @@ void main() {
     ImagePickerPlatform.instance = _CoverImagePicker();
     addTearDown(() => ImagePickerPlatform.instance = previousPicker);
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'POST /trips/trip-new/media': [
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'POST /media': [
         FakeReply(201, _image(_a, 'https://example.com/cover.jpg')),
         FakeReply(201, _image(_b, 'https://example.com/story.jpg')),
       ],
-      'PUT /trips/trip-new/cover': [FakeReply(200, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -1796,12 +1840,11 @@ void main() {
     await _finishPublish(tester);
 
     // It reached the trip as its cover even though no section carried it, and
-    // no section claims it as one of its pictures.
-    expect(adapter.bodyOf('PUT /trips/trip-new/cover'), {'mediaId': _a});
-    expect(adapter.paths.indexOf('PUT /trips/trip-new/cover'),
-        lessThan(adapter.paths.indexOf('PATCH /trips/trip-new')));
-    final sections = adapter.bodyOf('PATCH /trips/trip-new')!['contents'];
-    for (final section in sections as List) {
+    // no section claims it as one of its pictures — folded into the one
+    // create call, since this is the first-ever save.
+    final body = adapter.bodyOf('POST /trips/posts')!;
+    expect(body['coverMediaId'], _a);
+    for (final section in body['contents'] as List) {
       expect((section as Map)['mediaIds'] ?? const [], isNot(contains(_a)));
     }
   });
@@ -1862,8 +1905,8 @@ void main() {
 
   testWidgets('publishing generates trip info without a popup', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     // The spot's own heading, not its story — the post's title falls back to
@@ -1871,58 +1914,63 @@ void main() {
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
         'เรื่องราว';
     await tester.pumpAndSettle();
-    if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
+    if (adapter.replies.containsKey('POST /trips/posts')) await _confirmPlace(tester);
     await _tapNext(tester);
     expect(find.byType(AlertDialog), findsNothing);
-    expect(adapter.bodyOf('POST /trips'), {
-      'type': 'content',
-      'title': 'เรื่องราว',
-      'destination': 'เชียงใหม่',
-    });
+    final body = adapter.bodyOf('POST /trips/posts')!;
+    expect(body['title'], 'เรื่องราว');
+    expect(body['destination'], 'เชียงใหม่');
+    // No `type`/`status` here — the server infers both now.
+    expect(body.containsKey('type'), isFalse);
+    expect(body.containsKey('status'), isFalse);
     await _tapShare(tester);
     await _finishPublish(tester);
     expect(find.text('home'), findsOneWidget);
   });
 
-  testWidgets('publish retries PATCH on the same draft after failure',
+  testWidgets('publish retries on the same draft after a failed update',
       (tester) async {
+    // One combined call now does what used to be create-then-patch, so
+    // there is no longer a create-succeeded-but-content-failed state to
+    // retry into — the retry case worth its own test is a reopened draft's
+    // own update failing and being retried without creating a second post.
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [
+      'GET /places/search': [
+        const FakeReply(200, [
+          {'id': 'place-1', 'mapId': 'map-1', 'name': 'เชียงใหม่'}
+        ])
+      ],
+      'GET /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [
         const FakeReply(500, {'message': 'ลองอีกครั้ง'}),
         FakeReply(200, createdTripJson()),
       ],
     });
-    await _pumpComposer(tester, adapter: adapter);
+    final trip = ApiTrip.fromJson({
+      ...createdTripJson(),
+      'type': 'content',
+      'contents': const <Map<String, dynamic>>[],
+    });
+    await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await tester.pumpAndSettle();
-    if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
+    await _confirmPlace(tester);
     await _tapNext(tester);
-    expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
-    expect(adapter.bodyOf('POST /trips'), {
-      'type': 'content',
-      // No heading was set, so the title falls back past the body text —
-      // which is never part of the chain — straight to the location's name.
-      'title': 'เชียงใหม่',
-      'destination': 'เชียงใหม่',
-    });
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'], [
+    // Failed — stayed on the composer rather than going on to share settings.
+    expect(find.text('เชื่อมแพลนของฉัน'), findsNothing);
+    expect(adapter.paths.where((path) => path == 'PUT /trips/posts/trip-new'),
+        hasLength(1));
+    await _tapNext(tester);
+    expect(adapter.bodyOf('PUT /trips/posts/trip-new')!['contents'], [
       {
         'content': 'เดินเล่น',
         'mediaIds': <String>[],
         'location': {'status': 'confirmed', 'name': 'เชียงใหม่'}
       },
     ]);
-    if (adapter.replies.containsKey('POST /trips')) await _confirmPlace(tester);
-    await _tapNext(tester);
-    expect(adapter.paths.where((path) => path == 'POST /trips'), hasLength(1));
-    // The retried content-sync PATCH, twice (one 500, one success) — the
-    // share screen's own PATCH, once more on top of that, comes after Share.
-    expect(adapter.paths.where((path) => path == 'PATCH /trips/trip-new'),
-        hasLength(2));
     await _tapShare(tester);
     await _finishPublish(tester);
-    expect(adapter.paths.where((path) => path == 'PATCH /trips/trip-new'),
+    expect(adapter.paths.where((path) => path == 'PUT /trips/posts/trip-new'),
         hasLength(3));
     expect(adapter.requests.last.data['visibility'], 'public');
     expect(find.text('home'), findsOneWidget);
@@ -2043,8 +2091,8 @@ void main() {
       'a manual Post Title outranks a content heading, which stays its own',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     // Content #1 writes its own heading and gets a confirmed place — both of
@@ -2071,24 +2119,21 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    expect(adapter.bodyOf('POST /trips'), {
-      'type': 'content',
-      'title': 'San Francisco Trip',
-      // Picked through `_confirmPlace`, which is the only place stubbed.
-      'destination': 'เชียงใหม่',
-    });
+    final body = adapter.bodyOf('POST /trips/posts')!;
+    expect(body['title'], 'San Francisco Trip');
+    // Picked through `_confirmPlace`, which is the only place stubbed.
+    expect(body['destination'], 'เชียงใหม่');
     // The content's own heading is untouched — a manual Post Title answers
     // for the post without ever reaching into content-level state.
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'][0]['title'],
-        'Hotel Zelos');
+    expect(body['contents'][0]['title'], 'Hotel Zelos');
   });
 
   testWidgets(
       'Post Location fallback follows content #1 after a reorder',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     // A spot with only a place and no text/photo never makes the post
@@ -2128,7 +2173,7 @@ void main() {
 
     // The post never had a manual location of its own, so it follows
     // whichever content is first on screen now — Chiang Mai, not เชียงใหม่.
-    expect(adapter.bodyOf('POST /trips')!['destination'], 'Chiang Mai');
+    expect(adapter.bodyOf('POST /trips/posts')!['destination'], 'Chiang Mai');
   });
 
   testWidgets('Save Draft never asks for Post Title or Post Location',
@@ -2196,8 +2241,8 @@ void main() {
   testWidgets('Next jumps back to an earlier invalid spot and flags it',
       (tester) async {
     final adapter = _placesAdapter();
-    adapter.replies['POST /trips'] = [FakeReply(201, createdTripJson())];
-    adapter.replies['PATCH /trips/trip-new'] = [FakeReply(200, createdTripJson())];
+    adapter.replies['POST /trips/posts'] = [FakeReply(201, createdTripJson())];
+    adapter.replies['PUT /trips/posts/trip-new'] = [FakeReply(200, createdTripJson())];
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await _confirmPlace(tester);
@@ -2462,12 +2507,12 @@ void main() {
     ImagePickerPlatform.instance = _CoverImagePicker();
     addTearDown(() => ImagePickerPlatform.instance = previousPicker);
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'POST /trips/trip-new/media': [
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'POST /media': [
         FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
         FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
       ],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -2501,7 +2546,7 @@ void main() {
     await _finishPublish(tester);
 
     expect(find.text('home'), findsOneWidget);
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['contents'], [
+    expect(adapter.bodyOf('POST /trips/posts')!['contents'], [
       {
         'title': '1st Nagisa Park',
         'content': 'ทุ่งดอกไม้ริมทะเลสาบ',
@@ -2788,8 +2833,8 @@ void main() {
 
   testWidgets('the Title sheet sets where the post is about', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -2852,7 +2897,7 @@ void main() {
     await _finishPublish(tester);
 
     // The locality of the post's own place, not the spot's pin.
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['destination'],
+    expect(adapter.bodyOf('POST /trips/posts')!['destination'],
         'กรุงเทพมหานคร');
   });
 
@@ -2968,8 +3013,8 @@ void main() {
   testWidgets('About trip goes up as description and budgetLimit',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -2982,7 +3027,7 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
+    final patched = adapter.bodyOf('POST /trips/posts')!;
     // The blurb is public, so it is `description` — never `specialNotes`,
     // which only the owner can read back.
     expect(patched['description'], 'ทริปเดินกินย่านเมืองเก่า');
@@ -2992,8 +3037,8 @@ void main() {
 
   testWidgets('an empty About trip sends neither field', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -3003,7 +3048,7 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    final patched = adapter.bodyOf('PATCH /trips/trip-new')!;
+    final patched = adapter.bodyOf('POST /trips/posts')!;
     expect(patched.containsKey('specialNotes'), isFalse);
     expect(patched.containsKey('budgetLimit'), isFalse);
   });
@@ -3011,8 +3056,8 @@ void main() {
   testWidgets('Next syncs content and lands on the Post Share Settings screen',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
@@ -3023,14 +3068,14 @@ void main() {
     // "Share" there only needs to answer for title/visibility/plan/remix,
     // never the spots themselves again.
     expect(find.text('เชื่อมแพลนของฉัน'), findsOneWidget);
-    expect(adapter.paths, contains('PATCH /trips/trip-new'));
+    expect(adapter.paths, contains('POST /trips/posts'));
   });
 
   testWidgets('backing out of the Post Share Settings screen leaves it unpublished',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
@@ -3043,7 +3088,7 @@ void main() {
     // Back on the composer — the content sync already happened (same as any
     // other draft autosave), but nothing was shared.
     expect(find.text('Next'), findsOneWidget);
-    expect(adapter.paths.where((p) => p == 'PATCH /trips/trip-new'),
+    expect(adapter.paths.where((p) => p == 'POST /trips/posts'),
         hasLength(1));
   });
 
@@ -3185,8 +3230,8 @@ void main() {
 
   testWidgets('the spot extras go up with their section', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -3204,7 +3249,7 @@ void main() {
     await _finishPublish(tester);
 
     final section =
-        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
             as Map;
     expect(section['tripHack'], 'ไปเช้าคนน้อยกว่า');
   });
@@ -3212,8 +3257,8 @@ void main() {
   testWidgets('time and transport ride along on the same section',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -3235,7 +3280,7 @@ void main() {
     await _finishPublish(tester);
 
     final section =
-        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
             as Map;
     // Wall clock, not a timestamp — the post says "we went at six".
     expect(section['visitedAt'], '06:00');
@@ -3247,8 +3292,8 @@ void main() {
 
   testWidgets('ติดต่อ rides along on the section as one line', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -3270,7 +3315,7 @@ void main() {
     await _finishPublish(tester);
 
     final section =
-        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
             as Map;
     // Stored as typed — a name and a number together, not split into fields.
     expect(section['contactInfo'], 'คุณบุญอนันต์ 081-234-5678');
@@ -3278,8 +3323,8 @@ void main() {
 
   testWidgets('a spot with no extras sends none of their keys', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
@@ -3289,7 +3334,7 @@ void main() {
     await _finishPublish(tester);
 
     final section =
-        (adapter.bodyOf('PATCH /trips/trip-new')!['contents'] as List).single
+        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
             as Map;
     for (final key in [
       'visitedAt',
@@ -3336,8 +3381,8 @@ void main() {
 
   testWidgets('a custom Trip Activity goes up as customStyles', (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
 
@@ -3361,14 +3406,14 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    expect(adapter.bodyOf('PATCH /trips/trip-new')!['customStyles'], ['ดำน้ำ']);
+    expect(adapter.bodyOf('POST /trips/posts')!['customStyles'], ['ดำน้ำ']);
   });
 
   testWidgets('the chosen plan is what goes up as linkedTripId',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
       'GET /trips/mine': [
         FakeReply(200, [
           {
@@ -3414,8 +3459,8 @@ void main() {
   testWidgets('confirming with no plan chosen unlinks rather than staying put',
       (tester) async {
     final adapter = FakeAdapter({
-      'POST /trips': [FakeReply(201, createdTripJson())],
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
     });
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
@@ -3448,7 +3493,7 @@ void main() {
       },
     });
     final adapter = FakeAdapter({
-      'PATCH /trips/trip-new': [FakeReply(200, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
       // The share screen reads the trip straight back and seeds its own
       // connect-plan state off whatever `linkedTrip` that answers with.
       'GET /trips/trip-new': [

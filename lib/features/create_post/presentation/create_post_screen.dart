@@ -1,4 +1,5 @@
-import '../../../shared/widgets/cover_image.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/services/trip_photo_grouper.dart';
@@ -74,7 +75,7 @@ class _PublishResume {
   /// clean up once it stops being the cover.
   bool coverMediaIsOurs = false;
   bool coverOffPage = false;
-  Set<String> uncertain = {}, legacy = {}, unavailable = {};
+  Set<String> uncertain = {}, legacy = {}, unavailable = {}, savedMediaIds = {};
   Map<String, TripPhoto> metadata = {};
 }
 
@@ -150,6 +151,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   bool _arranging = false;
   int _arrangement = 0;
   final Map<String, Media> _uploaded = {};
+
+  /// Media ids the last successful save actually referenced (contents and
+  /// cover both) — a removed photo whose id is in here was already saved
+  /// into the post, so it needs the trip-scoped delete route; one that isn't
+  /// was only ever uploaded unattached, and needs the bare one instead.
+  final Set<String> _savedMediaIds = {};
   String? _coverPath;
 
   /// The cover came from the header, so it belongs to no spot. Nothing on the
@@ -253,6 +260,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         }
         _postDestination.text = resume.postDestination;
         _uncertainUploads.addAll(resume.uncertain);
+        _savedMediaIds.addAll(resume.savedMediaIds);
         _legacyUrls.addAll(resume.legacy);
         _unavailablePaths.addAll(resume.unavailable);
         _photoMetadata.addAll(resume.metadata);
@@ -311,6 +319,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               _unavailablePaths.add(path);
             } else {
               _uploaded[path] = Media(mediaId: id, urls: image.urls!);
+              // Already part of this trip's own saved contents — a removal
+              // from here on needs the trip-scoped delete, not the bare one.
+              _savedMediaIds.add(id);
             }
             final metadata =
                 section.photoMetadata.where((m) => m.mediaId == id);
@@ -339,6 +350,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         }
       }
       _savedCoverId = trip.coverImage?.mediaId;
+      if (_savedCoverId != null) _savedMediaIds.add(_savedCoverId!);
       if (_blocks.isEmpty) _blocks.add(_BlockFields());
     }
     // เผยแพร่ lights up as soon as there is something to post, so what is
@@ -634,6 +646,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         item.imagePaths.add(image.path);
         _syncCover();
       });
+      // Uploads the moment it's picked — the server owns it by account until
+      // a save names its `mediaId`, so this needs no trip to exist yet. A
+      // failure here is never surfaced: the photo stays visible locally, and
+      // Save Draft/Share retry it themselves.
+      try {
+        final api = await ref.read(plunoApiProvider.future);
+        await _uploadPhoto(api, image.path, image.path);
+      } catch (_) {}
+      // A frame to settle on: nothing visible changes, but a save started
+      // right after this (or a test's `pumpAndSettle`) needs something to
+      // wait on besides a bare, otherwise-untracked `Future`.
+      if (mounted) setState(() {});
       if (metadata != null && metadata.hasLocation) {
         await _suggestPlaceFromPhoto(block, item, metadata);
       }
@@ -1453,7 +1477,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _scrollToLocationField(invalid.first);
       return;
     }
-    if (!await _syncForShare() || !mounted) return;
+    if (!await _savePost(action: PostSaveAction.draft) || !mounted) return;
     final shared = await context.pushNamed<bool>(
       AppRoute.shareSettings.name,
       params: {'tripId': _draftId!},
@@ -1604,6 +1628,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ..uncertain = Set.of(_uncertainUploads)
           ..legacy = Set.of(_legacyUrls)
           ..unavailable = Set.of(_unavailablePaths)
+          ..savedMediaIds = Set.of(_savedMediaIds)
           ..metadata = Map.of(_photoMetadata);
     ref.read(_localDraftProvider(_storageKey).notifier).state = _draft;
     ref.read(_localCoverProvider(_storageKey).notifier).state = _coverPath;
@@ -1622,16 +1647,19 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
   }
 
-  /// Everything short of the step the share screen now owns: creates the
-  /// draft trip if there isn't one yet, uploads every photo, writes the
-  /// content and the post's own title/destination/styles/about. Deliberately
-  /// leaves `linkedTripId` and `visibility` untouched (left out of the PATCH
-  /// entirely, not cleared) — connecting a plan and choosing who sees the
-  /// post are answered on `PostShareSettingsScreen`, not here.
+  /// The one save the composer makes — Save Draft and the checkpoint before
+  /// `PostShareSettingsScreen` both call this with `action: draft`; nothing
+  /// here ever sends `action: share` since going live is that screen's own
+  /// Share button, not this one. Deliberately leaves `linkedTripId`,
+  /// `remixEnabled` and `remixAudience` untouched (left out of the body
+  /// entirely, not cleared) — connecting a plan, remix and choosing who
+  /// sees the post are answered there, not here.
   ///
-  /// Returns whether it's safe to go on to that screen — `_draftId` is
-  /// guaranteed set when this returns `true`.
-  Future<bool> _syncForShare() async {
+  /// First save is `POST /trips/posts`; every one after is
+  /// `PUT /trips/posts/:id` — `TripsApi.savePost` picks between them off
+  /// whether `_draftId` is set. Returns whether it's safe to go on to that
+  /// screen — `_draftId` is guaranteed set when this returns `true`.
+  Future<bool> _savePost({required PostSaveAction action}) async {
     if (_publishing || _arranging || !_draft.isPublishable) return false;
     if (_audience == PostAudience.followers) {
       _message('ขณะนี้รองรับสาธารณะและเฉพาะฉัน กรุณาเลือกผู้ชมอีกครั้ง');
@@ -1656,18 +1684,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         throw const FormatException(
             'มีรูปที่ไม่พร้อมใช้งาน กรุณาเอารูปนั้นออกหรือเลือกใหม่ก่อนปันไกด์');
       final api = await ref.read(plunoApiProvider.future);
-      if (_draftId == null) {
-        _creationTitle ??= title;
-        _creationDestination ??= destination;
-        final created = await api.trips.createDraft(
-            type: TripType.content,
-            title: _creationTitle!,
-            destination: _creationDestination!,
-            idempotencyKey: _createKey);
-        _draftId = created.id;
-      }
       final contents = <TripContentRequest>[];
       final occurrences = <String, int>{};
+      final referencedIds = <String>{};
       for (final topic in draft.topics) {
         final topicItems = topic.contentItems
             .where((item) => !item.isEmpty)
@@ -1690,26 +1709,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             final key = occurrence == 0 || path.startsWith('http')
                 ? path
                 : '$path::$occurrence';
-            if (_uncertainUploads.contains(key) &&
-                !await _resolveUpload(key, path)) return false;
-            if (!_uploaded.containsKey(key)) {
-              if (_uploaded.length >= 200) {
-                throw const FormatException(
-                    'มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
-              }
-              final prepared = await preparePostPhoto(path);
-              try {
-                _uploaded[key] = await api.media.upload(_draftId!,
-                    bytes: prepared.$1, filename: prepared.$2);
-              } on ApiException catch (error) {
-                if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500) {
-                  _uncertainUploads.add(key);
-                }
-                rethrow;
-              }
-            }
+            // Almost always already done — `_pickPhoto` uploads the instant
+            // a photo is picked. This only fires for one that never
+            // finished (a failed or still-in-flight eager upload).
+            await _uploadPhoto(api, key, path);
             final id = _uploaded[key]!.mediaId;
             ids.add(id);
+            referencedIds.add(id);
             final m = _photoMetadata[path];
             if (m != null && (m.captureTimestamp != null || m.hasLocation)) {
               metadata.add(PhotoMetadata(
@@ -1757,9 +1763,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
       TripContentRequest.serializeAll(contents);
 
-      // A cover off the page is in no section, so the loop above never saw it.
-      if (_coverPath != null && _coverOffPage) {
-        await _uploadCover(api, _coverPath!);
+      // A cover off the page is in no section, so the loop above never saw
+      // it — upload it now the same way any other photo would be.
+      if (_coverPath != null && !_legacyUrls.contains(_coverPath)) {
+        await _uploadPhoto(api, _coverPath!, _coverPath!);
       }
       final chosen = _coverPath == null ? null : _uploaded[_coverPath]?.mediaId;
       // Nothing chosen: lead with the post's own first picture rather than
@@ -1769,64 +1776,53 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       // with no pictures at all simply goes out without one.
       final coverId =
           chosen ?? (_savedCoverId == null ? _leadPhotoOf(contents) : null);
-      var covered = coverId;
-      if (covered != null) {
-        try {
-          await api.media.setCover(_draftId!, covered);
-        } on ApiException {
-          // A cover the traveller chose is part of what they asked for, so it
-          // still stops the publish. One the app picked for them must not:
-          // going out without a cover is a far smaller loss than the post not
-          // going out at all.
-          if (chosen != null) rethrow;
-          _message('ตั้งรูปหน้าปกอัตโนมัติไม่สำเร็จ แต่โพสต์เผยแพร่แล้ว');
-          covered = null;
-        }
-      }
-      if (covered != null) {
-        _savedCoverId = covered;
-        // Ours only if this composer actually uploaded it. A post reopened for
-        // editing can be covered with a picture it already had, and that one
-        // is not ours to delete later.
-        _coverMediaIsOurs =
-            _uploaded.values.any((media) => media.mediaId == covered);
-      } else if (_coverMediaIsOurs &&
-          _savedCoverId != null &&
-          !contents.any((s) => s.mediaIds?.contains(_savedCoverId) ?? false)) {
-        // The server rejects deleting media still referenced by saved contents.
-        await api.trips.update(_draftId!, contents: contents);
-        final removed = _savedCoverId!;
-        await api.media.delete(_draftId!, removed);
-        _uploaded.removeWhere((_, m) => m.mediaId == removed);
-        _savedCoverId = null;
-        _coverMediaIsOurs = false;
-      }
+      if (coverId != null) referencedIds.add(coverId);
+
       final overview = _about.overview.trim();
-      await api.trips.update(_draftId!,
-          type: TripType.content,
-          title: title,
-          destination: destination,
-          // Only when something was chosen: an empty list would clear whatever
-          // the trip already carries.
-          travelStyles: _styles.isEmpty ? null : _styles,
-          // The brief merges per key, so an empty list would clear whatever the
-          // trip already carries rather than leaving it alone.
-          customStyles: _customStyles.isEmpty ? null : _customStyles,
-          // About trip's overview is the post's blurb, so it goes in
-          // `description`, which every reader sees. `specialNotes` beside it
-          // is the owner's private note and must not carry public prose.
-          description: overview.isEmpty ? null : overview,
-          // Stored exactly as typed: the server does no per-head arithmetic,
-          // so "ต่อคน" stays the app's reading of the same number.
-          budgetLimit: _about.budget,
-          budgetCurrency: _about.budget == null ? null : _about.currency,
-          contents: contents);
+      final result = await api.trips.savePost(
+        postId: _draftId,
+        action: action,
+        visibility: _audience == PostAudience.public
+            ? TripVisibility.public
+            : TripVisibility.private,
+        title: title,
+        destination: destination,
+        // About trip's overview is the post's blurb, so it goes in
+        // `description`, which every reader sees. `specialNotes` beside it
+        // is the owner's private note and must not carry public prose.
+        description: overview.isEmpty ? null : overview,
+        coverMediaId:
+            coverId == null ? const Patch<String>.clear() : Patch<String>.value(coverId),
+        contents: contents,
+        // Stored exactly as typed: the server does no per-head arithmetic,
+        // so "ต่อคน" stays the app's reading of the same number.
+        budgetLimit: _about.budget,
+        budgetCurrency: _about.budget == null ? null : _about.currency,
+        // Only when something was chosen: an empty list would clear whatever
+        // the post already carries.
+        travelStyles: _styles.isEmpty ? null : _styles,
+        customStyles: _customStyles.isEmpty ? null : _customStyles,
+        // Only meaningful (and only ever sent) on the very first save, the
+        // one `postId == null` turns into `POST /trips/posts`.
+        idempotencyKey: _createKey,
+      );
+      _draftId = result.id;
+      _savedCoverId = coverId;
+      // Ours only if this composer actually uploaded it. A post reopened for
+      // editing can be covered with a picture it already had, and that one
+      // is not ours to delete later.
+      _coverMediaIsOurs =
+          coverId != null && _uploaded.values.any((m) => m.mediaId == coverId);
+      _savedMediaIds
+        ..clear()
+        ..addAll(referencedIds);
       if (!mounted) return false;
       return true;
     } on ApiException catch (error) {
       if (mounted) {
-        _message(
-            '${_uncertainUploads.isNotEmpty ? 'มีรูปที่ไม่ทราบผลอัปโหลด ครั้งถัดไปต้องตรวจ gallery ก่อนส่งซ้ำ: ' : _draftId == null ? '' : 'ยังเผยแพร่ไม่สำเร็จ ลองอีกครั้งได้: '}${error.message}');
+        _message(_uncertainUploads.isNotEmpty
+            ? 'มีรูปที่ไม่ทราบผลอัปโหลด กดอีกครั้งเพื่อลองใหม่: ${error.message}'
+            : 'บันทึกไม่สำเร็จ ลองอีกครั้งได้: ${error.message}');
       }
       return false;
     } on FormatException catch (error) {
@@ -1855,71 +1851,83 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     return null;
   }
 
-  /// Puts the header's cover in the trip's gallery. Keyed by its own path,
-  /// like every other upload, so a retry after a failure reuses it rather than
+  /// Uploads [path] through the bare, trip-less endpoint and records it in
+  /// [_uploaded] under [key] — the same occurrence-qualified key the content
+  /// loop and the cover both resolve against. A path already uploaded is
+  /// left alone, so calling this again (the eager pick-time call, then
+  /// again as a save-time fallback if that one never finished) is free.
+  ///
+  /// On an ambiguous failure (a timeout or a 5xx may still have stored the
+  /// file) the key is marked uncertain and retried plainly next time —
+  /// unattached media has no gallery to reconcile against the way a trip's
+  /// own did, so that reconciliation step is gone along with the trip-scoped
+  /// upload it was built for.
+  ///
+  /// Two callers can easily race for the same [key] — the eager upload
+  /// `_pickPhoto` starts right away, and the fallback the content loop and
+  /// the cover step both fall back to if that one is still in flight — so a
+  /// second call for a key already uploading joins the first instead of
   /// sending the file twice.
-  Future<void> _uploadCover(PlunoApi api, String path) async {
-    if (_uncertainUploads.contains(path) && !await _resolveUpload(path, path)) {
-      return;
-    }
-    if (_uploaded.containsKey(path)) return;
+  Future<void> _uploadPhoto(PlunoApi api, String key, String path) {
+    if (_uploaded.containsKey(key)) return Future.value();
+    return _uploading.putIfAbsent(key, () {
+      // `Map.remove` returns the removed value — a `Future<void>` here, i.e.
+      // this very in-flight future. `whenComplete`'s callback must return
+      // `void`, not that: returning it would make this future wait on
+      // itself to complete, which it never will — the block body (as
+      // opposed to `=>`) is what discards the return value.
+      return _doUploadPhoto(api, key, path).whenComplete(() {
+        _uploading.remove(key);
+      });
+    });
+  }
+
+  final Map<String, Future<void>> _uploading = {};
+
+  Future<void> _doUploadPhoto(PlunoApi api, String key, String path) async {
     if (_uploaded.length >= 200) {
       throw const FormatException(
           'มีไฟล์อัปโหลดครบ 200 รูปแล้ว กรุณาจัดการ gallery ก่อนเพิ่มรูป');
     }
     final prepared = await preparePostPhoto(path);
     try {
-      _uploaded[path] = await api.media
-          .upload(_draftId!, bytes: prepared.$1, filename: prepared.$2);
+      _uploaded[key] =
+          await api.media.uploadUnattached(bytes: prepared.$1, filename: prepared.$2);
+      _uncertainUploads.remove(key);
     } on ApiException catch (error) {
-      // Same rule the section photos follow: a timeout or a 5xx may still have
-      // stored the file, so the next attempt checks the gallery first.
       if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500) {
-        _uncertainUploads.add(path);
+        _uncertainUploads.add(key);
       }
       rethrow;
     }
   }
 
-  Future<bool> _resolveUpload(String key, String path) async {
-    final api = await ref.read(plunoApiProvider.future);
-    final images = <GalleryImage>[];
-    for (var page = 1;; page++) {
-      final gallery =
-          await api.media.gallery(_draftId!, page: page, limit: 100);
-      images.addAll(gallery.items);
-      if (!gallery.hasNextPage) break;
-    }
-    if (!mounted) return false;
-    final selected = await showModalBottomSheet<String>(
-        context: context,
-        builder: (context) => SafeArea(
-                child: ListView(children: [
-              SizedBox(height: 180, child: CoverImage(source: path)),
-              const ListTile(
-                  title: Text('ตรวจรูปที่อัปโหลดไม่ทราบผล'),
-                  subtitle: Text(
-                      'เลือกรูปที่ตรงกันใน gallery หากตรวจแล้วไม่มีรูปนี้จึงส่งซ้ำ')),
-              for (final image in images)
-                ListTile(
-                    leading: SizedBox(
-                        width: 56,
-                        child: Image.network(image.urls.thumbnail,
-                            errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.image))),
-                    title: Text(image.caption ?? 'รูปใน gallery'),
-                    onTap: () => Navigator.pop(context, image.id)),
-              TextButton(
-                  onPressed: () => Navigator.pop(context, 'retry'),
-                  child: const Text('ตรวจแล้วไม่มีรูปนี้ ส่งใหม่')),
-            ])));
-    if (!mounted || selected == null) return false;
-    if (selected != 'retry') {
-      final image = images.firstWhere((i) => i.id == selected);
-      _uploaded[key] = Media(mediaId: image.id, urls: image.urls);
-    }
-    _uncertainUploads.remove(key);
-    return true;
+  /// Frees server-side storage for a photo no longer referenced anywhere in
+  /// the draft. Fire-and-forget: a failed cleanup is not worth surfacing,
+  /// and there is no auto-cleanup job on the server either way yet.
+  void _forgetUploadIfOrphaned(String path) {
+    final stillUsed = _blocks
+        .any((block) => block.items.any((item) => item.imagePaths.contains(path)));
+    if (stillUsed) return;
+    final media = _uploaded.remove(path);
+    if (media == null) return;
+    final mediaId = media.mediaId;
+    final saved = _savedMediaIds.remove(mediaId);
+    unawaited(_deleteUpload(mediaId, saved: saved));
+  }
+
+  /// [saved] picks the route: a media id the last save actually referenced
+  /// is attached to the post now and needs the trip-scoped delete; one that
+  /// isn't was only ever uploaded unattached.
+  Future<void> _deleteUpload(String mediaId, {required bool saved}) async {
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      if (saved && _draftId != null) {
+        await api.media.delete(_draftId!, mediaId);
+      } else {
+        await api.media.deleteUnattached(mediaId);
+      }
+    } catch (_) {}
   }
 
   /// Floated clear of the pinned action bar: a docked snack bar lands exactly
@@ -1974,11 +1982,21 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _saveLocal();
   }
 
-  /// Keeps what has been written and leaves. The draft lives in this app run,
-  /// not on the server: a post only becomes a trip when it is shared.
-  void _saveDraftAndClose() {
+  /// Keeps what has been written and leaves. Syncs to the server the same
+  /// way Share does — draft, photos, identity and contents all go up now —
+  /// so a draft reopened on another device, or after this one is killed,
+  /// resumes from here rather than from whatever the last Share happened to
+  /// catch. Nothing worth sending yet (an untouched composer) skips the
+  /// round trip entirely.
+  Future<void> _saveDraftAndClose() async {
     _saveLocal();
-    _message('เก็บร่างไว้ในเครื่องแล้ว');
+    if (_draft.isPublishable) {
+      final synced = await _savePost(action: PostSaveAction.draft);
+      // `_savePost` has already shown its own message on failure.
+      if (!synced || !mounted) return;
+    }
+    if (!mounted) return;
+    _message('บันทึกร่างเรียบร้อยแล้ว');
     _close(keepDraft: true);
   }
 
@@ -2096,15 +2114,19 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         onPickImageInItem: (itemIndex) =>
                             _pickPhoto(index, itemIndex),
                         onClearImagesInItem: (itemIndex) => setState(() {
+                          final removed = List.of(
+                              _blocks[index].items[itemIndex].imagePaths);
                           _blocks[index].items[itemIndex].imagePaths.clear();
+                          removed.forEach(_forgetUploadIfOrphaned);
                           _syncCover();
                         }),
                         onRemoveImageInItem: (itemIndex, photoIndex) =>
                             setState(() {
-                          _blocks[index]
+                          final removed = _blocks[index]
                               .items[itemIndex]
                               .imagePaths
                               .removeAt(photoIndex);
+                          _forgetUploadIfOrphaned(removed);
                           _syncCover();
                         }),
                         onMoveImageInItem: (itemIndex, photoIndex) =>
@@ -2142,11 +2164,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           });
                         },
                         onRemoveImage: (photoIndex) => setState(() {
-                          _blocks[index]
+                          final removed = _blocks[index]
                               .items
                               .first
                               .imagePaths
                               .removeAt(photoIndex);
+                          _forgetUploadIfOrphaned(removed);
                           _syncCover();
                         }),
                         place: _blocks[index].items.first.place,
@@ -2154,7 +2177,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         onExtra: (itemIndex, extra) =>
                             _editExtra(index, itemIndex, extra),
                         onClearImage: () => setState(() {
+                          final removed =
+                              List.of(_blocks[index].items.first.imagePaths);
                           _blocks[index].items.first.imagePaths.clear();
+                          removed.forEach(_forgetUploadIfOrphaned);
                           _syncCover();
                         }),
                         onPickPlace: () => _pickPlace(index),

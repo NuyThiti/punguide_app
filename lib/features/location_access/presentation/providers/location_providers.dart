@@ -275,18 +275,22 @@ PickedLocation pickedFromStored(UserLocation stored) => PickedLocation(
       placeId: stored.placeId,
     );
 
-/// The tail of a Google address, as the design prints it: "Bangkok 10200".
+/// The tail of a Google address, as the design prints it: "เขตพระนคร
+/// กรุงเทพมหานคร 10200".
 ///
-/// Google writes an English address "…, Phra Nakhon, Bangkok 10200, Thailand"
-/// but a Thai one with no commas at all — "เขตพระนคร กรุงเทพมหานคร 10200".
-/// Splitting on commas therefore trims the first and leaves the second whole,
-/// so the postcode leads instead: the word in front of it is the city, in
-/// either language.
+/// Keeps the **last two levels** before the postcode — district and province,
+/// or city and state — because one alone is too coarse to recognise: a header
+/// reading "กรุงเทพมหานคร 10200" says nothing a traveller in Bangkok did not
+/// already know, and "CA 94103" names a state rather than a city.
 ///
-/// Some places come back with no postcode at all — the API answers "Chiang
-/// Mai" as "เทศบาลนครเชียงใหม่ อำเภอเมืองเชียงใหม่ เชียงใหม่" — and there the
-/// last word is the province, which is the part worth keeping. Returns null
-/// when there is nothing usable.
+/// The two shapes Google writes have to be read differently. An English
+/// address splits on commas — "1 Na Phra Lan, Phra Nakhon, Bangkok 10200,
+/// Thailand" — so the segment holding the postcode is the city and the one
+/// before it the district. A Thai one carries no commas at all —
+/// "เขตพระนคร กรุงเทพมหานคร 10200" — so each level is a word and the last two
+/// before the postcode are the ones to keep.
+///
+/// Returns null when there is nothing usable.
 String? _shortAddress(String? address) {
   final text = (address ?? '').trim();
   if (text.isEmpty) return null;
@@ -295,15 +299,32 @@ String? _shortAddress(String? address) {
   // the postcode is always near the end.
   final postcodes = _postcode.allMatches(text);
   if (postcodes.isNotEmpty) {
-    final postcode = postcodes.last;
-    final words = text
-        .substring(0, postcode.start)
+    final postcode = postcodes.last.group(0)!;
+    final ahead = text.substring(0, postcodes.last.start);
+
+    if (ahead.contains(',')) {
+      // "1 Na Phra Lan, Phra Nakhon, Bangkok " — the tail is the city the
+      // postcode belongs to, the segment before it the district.
+      final segments = ahead
+          .split(',')
+          .map((segment) => segment.trim())
+          .where((segment) => segment.isNotEmpty)
+          .toList();
+      if (segments.isEmpty) return postcode;
+      final kept = segments.length >= 2
+          ? segments.sublist(segments.length - 2)
+          : segments;
+      return '${_city(kept.join(', '))} $postcode';
+    }
+
+    final words = ahead
         .split(RegExp(r'[,\s]+'))
         .where((word) => word.isNotEmpty)
         .toList();
-    return words.isEmpty
-        ? postcode.group(0)
-        : '${words.last} ${postcode.group(0)}';
+    if (words.isEmpty) return postcode;
+    final kept =
+        words.length >= 2 ? words.sublist(words.length - 2) : words;
+    return '${_city(kept.join(' '))} $postcode';
   }
 
   final parts = text
@@ -313,15 +334,24 @@ String? _shortAddress(String? address) {
       .toList();
   if (parts.isEmpty) return null;
 
-  // Comma-separated: the last segment is the country, the one before it the
-  // city. Written as one run of words instead: the last of them is the
-  // province, everything ahead of it being street and district.
-  if (parts.length >= 2) return parts[parts.length - 2];
+  // Comma-separated with no postcode: the last segment is the country, so the
+  // two before it are the district and city.
+  if (parts.length >= 3) {
+    return _city(parts.sublist(parts.length - 3, parts.length - 1).join(', '));
+  }
+  if (parts.length == 2) return _city(parts.first);
 
   final words = parts.first.split(RegExp(r'\s+'))
     ..removeWhere((word) => word.isEmpty);
-  return words.isEmpty ? null : words.last;
+  if (words.isEmpty) return null;
+  return _city(
+    words.length >= 2 ? words.sublist(words.length - 2).join(' ') : words.last,
+  );
 }
+
+/// Bangkok is the one province whose formal name is twice the length of the
+/// name everyone writes, and the design writes the short one.
+String _city(String value) => value.replaceAll('กรุงเทพมหานคร', 'กรุงเทพ');
 
 /// Thai postcodes are five digits, and so are Google's for most of the world.
 final _postcode = RegExp(r'\b\d{5}\b');
