@@ -40,6 +40,20 @@ const transportByLabel = <String, TransportMode>{
   'แนะนำให้หน่อย': TransportMode.recommend,
 };
 
+/// The create wizard's own การเดินทาง chips, which are worded differently from
+/// the plan editor's [transportByLabel].
+///
+/// `เครื่องบิน` has no `TransportMode`: that enum is about getting *around* a
+/// destination, not reaching it, so the chip is dropped and the planner is
+/// left to recommend. `แบบประหยัด` is read as public transit.
+const wizardTransportByLabel = <String, TransportMode>{
+  'รถส่วนตัว': TransportMode.privateCar,
+  'เช่ารถขับ': TransportMode.rentalCar,
+  'มอเตอร์ไซค์': TransportMode.motorbike,
+  'รถสาธารณะท้องถิ่น': TransportMode.publicTransit,
+  'แบบประหยัด': TransportMode.publicTransit,
+};
+
 /// The pace chips keep their English names on the hero, matching the design.
 const intensityLabels = <TripIntensity, String>{
   TripIntensity.slowLife: 'Slow Life',
@@ -68,7 +82,7 @@ const travelTypeLabels = <TravelType, String>{
   TravelType.walk: 'เดิน',
   TravelType.bicycle: 'จักรยาน',
   TravelType.tukTuk: 'ตุ๊กตุ๊ก',
-  TravelType.privateTransfer: 'รถรับส่งส่วนตัว',
+  TravelType.privateTransfer: 'รถตู้ / รถเหมา',
   TravelType.rentalCar: 'รถเช่า',
   TravelType.boat: 'เรือ',
   TravelType.train: 'รถไฟ',

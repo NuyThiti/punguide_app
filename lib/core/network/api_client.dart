@@ -233,8 +233,16 @@ class PlunoApiClient {
     Object? body,
     Map<String, dynamic>? query,
     Map<String, String>? headers,
+
+    /// Overrides [ApiConfig.receiveTimeout] for one call. The planner holds
+    /// the connection open while it thinks, which outlasts the default.
+    Duration? receiveTimeout,
   }) =>
-      _send<T>('POST', path, body: body, query: query, headers: headers);
+      _send<T>('POST', path,
+          body: body,
+          query: query,
+          headers: headers,
+          receiveTimeout: receiveTimeout);
 
   Future<T> patch<T>(
     String path, {
@@ -313,6 +321,7 @@ class PlunoApiClient {
     Object? body,
     Map<String, dynamic>? query,
     Map<String, String>? headers,
+    Duration? receiveTimeout,
   }) async {
     final result = await _sendNullable<T>(
       method,
@@ -320,6 +329,7 @@ class PlunoApiClient {
       body: body,
       query: query,
       headers: headers,
+      receiveTimeout: receiveTimeout,
     );
     if (result == null) {
       throw ApiException(
@@ -338,13 +348,18 @@ class PlunoApiClient {
     Object? body,
     Map<String, dynamic>? query,
     Map<String, String>? headers,
+    Duration? receiveTimeout,
   }) async {
     try {
       final response = await _dio.request<dynamic>(
         path,
         data: body,
         queryParameters: _pruneQuery(query),
-        options: Options(method: method, headers: headers),
+        options: Options(
+          method: method,
+          headers: headers,
+          receiveTimeout: receiveTimeout,
+        ),
       );
       final data = response.data;
       if (data == null || (data is String && data.isEmpty)) return null;

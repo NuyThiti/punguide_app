@@ -599,6 +599,8 @@ class _PostBlockContentItem extends StatelessWidget {
               onPickImage: onPickImage,
               onPickPlace: onPickPlace,
               onExtra: onExtra,
+              locationPinned: pinned,
+              details: item.details,
             ),
           ],
         ),
@@ -839,16 +841,27 @@ class _BlockPhoto extends StatelessWidget {
 /// get there, who to call, the one tip worth passing on. Independent per
 /// item, so the same row appears once under every content item in a
 /// section, not once for the whole heading.
+///
+/// Each of the five (location, time, transport, contact, hack) drops off the
+/// row the moment it has an answer — [PostSpotDetailRows] above already
+/// turned into its own tappable chip, so the add-icon stays only for
+/// whichever extras are still blank. The photo chip is the one exception:
+/// there is no single "filled" state to replace it with, since a spot takes
+/// more than one picture.
 class _ItemExtrasRow extends StatelessWidget {
   const _ItemExtrasRow({
     required this.onPickImage,
     required this.onPickPlace,
     required this.onExtra,
+    required this.locationPinned,
+    required this.details,
   });
 
   final VoidCallback onPickImage;
   final VoidCallback onPickPlace;
   final ValueChanged<PostSpotExtra> onExtra;
+  final bool locationPinned;
+  final PostSpotDetails details;
 
   @override
   Widget build(BuildContext context) {
@@ -861,38 +874,48 @@ class _ItemExtrasRow extends StatelessWidget {
           tooltip: 'รูปภาพ',
           onTap: onPickImage,
         ),
-        const SizedBox(width: 8),
-        PostAddChip(
-          icon: Icons.location_on_outlined,
-          tooltip: 'Add Location',
-          onTap: onPickPlace,
-        ),
-        const SizedBox(width: 8),
-        PostAddChip(
-          icon: Icons.schedule,
-          tooltip: PostSpotExtra.recommendTime.label,
-          onTap: () => onExtra(PostSpotExtra.recommendTime),
-        ),
-        const SizedBox(width: 8),
-        PostAddChip(
-          icon: Icons.directions_car_outlined,
-          tooltip: PostSpotExtra.howToGetHere.label,
-          onTap: () => onExtra(PostSpotExtra.howToGetHere),
-        ),
-        const SizedBox(width: 8),
-        PostAddChip(
-          icon: Icons.call_outlined,
-          label: PostSpotExtra.contact.label,
-          tooltip: PostSpotExtra.contact.label,
-          onTap: () => onExtra(PostSpotExtra.contact),
-        ),
-        const SizedBox(width: 8),
-        PostAddChip(
-          icon: Icons.info_outline,
-          label: PostSpotExtra.tripHack.label,
-          tooltip: PostSpotExtra.tripHack.label,
-          onTap: () => onExtra(PostSpotExtra.tripHack),
-        ),
+        if (!locationPinned) ...[
+          const SizedBox(width: 8),
+          PostAddChip(
+            icon: Icons.location_on_outlined,
+            tooltip: 'Add Location',
+            onTap: onPickPlace,
+          ),
+        ],
+        if (!details.hasTime) ...[
+          const SizedBox(width: 8),
+          PostAddChip(
+            icon: Icons.schedule,
+            tooltip: PostSpotExtra.recommendTime.label,
+            onTap: () => onExtra(PostSpotExtra.recommendTime),
+          ),
+        ],
+        if (!details.hasTransport) ...[
+          const SizedBox(width: 8),
+          PostAddChip(
+            icon: Icons.directions_car_outlined,
+            tooltip: PostSpotExtra.howToGetHere.label,
+            onTap: () => onExtra(PostSpotExtra.howToGetHere),
+          ),
+        ],
+        if (!details.hasContact) ...[
+          const SizedBox(width: 8),
+          PostAddChip(
+            icon: Icons.call_outlined,
+            label: PostSpotExtra.contact.label,
+            tooltip: PostSpotExtra.contact.label,
+            onTap: () => onExtra(PostSpotExtra.contact),
+          ),
+        ],
+        if (!details.hasHack) ...[
+          const SizedBox(width: 8),
+          PostAddChip(
+            icon: Icons.info_outline,
+            label: PostSpotExtra.tripHack.label,
+            tooltip: PostSpotExtra.tripHack.label,
+            onTap: () => onExtra(PostSpotExtra.tripHack),
+          ),
+        ],
       ]),
     );
   }

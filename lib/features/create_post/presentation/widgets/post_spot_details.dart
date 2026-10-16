@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/api/api_providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/models/post_draft.dart';
 import 'composer_sheet.dart';
@@ -152,31 +154,41 @@ class _DetailChip extends StatelessWidget {
   }
 }
 
-/// Recommend Time — either the hour the writer went, or the place's own hours.
+/// Which the Recommend Time sheet is showing.
+enum _TimeMode { visited, manual, google }
+
+/// Recommend Time — the hour the writer went, hours typed by hand, or (when
+/// the spot is pinned to a real place) the place's own Google hours, offered
+/// as a third, non-default way in rather than replacing the other two.
 Future<PostSpotDetails?> showRecommendTimeSheet(
   BuildContext context, {
   required PostSpotDetails current,
+  String? placeId,
 }) {
   return showModalBottomSheet<PostSpotDetails>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _RecommendTimeSheet(current: current),
+    builder: (_) => _RecommendTimeSheet(current: current, placeId: placeId),
   );
 }
 
-class _RecommendTimeSheet extends StatefulWidget {
-  const _RecommendTimeSheet({required this.current});
+class _RecommendTimeSheet extends ConsumerStatefulWidget {
+  const _RecommendTimeSheet({required this.current, this.placeId});
 
   final PostSpotDetails current;
+  final String? placeId;
 
   @override
-  State<_RecommendTimeSheet> createState() => _RecommendTimeSheetState();
+  ConsumerState<_RecommendTimeSheet> createState() =>
+      _RecommendTimeSheetState();
 }
 
-class _RecommendTimeSheetState extends State<_RecommendTimeSheet> {
-  late bool _hoursTab = widget.current.visitedAt == null &&
-      (widget.current.opensAt != null || widget.current.closesAt != null);
+class _RecommendTimeSheetState extends ConsumerState<_RecommendTimeSheet> {
+  late _TimeMode _mode = widget.current.visitedAt == null &&
+          (widget.current.opensAt != null || widget.current.closesAt != null)
+      ? _TimeMode.manual
+      : _TimeMode.visited;
 
   late TimeOfDay _visited =
       widget.current.visitedAt ?? const TimeOfDay(hour: 6, minute: 0);
@@ -188,12 +200,18 @@ class _RecommendTimeSheetState extends State<_RecommendTimeSheet> {
   /// Which of เปิด / ปิด the wheel is editing.
   bool _editingOpens = true;
 
+  /// Which weekday the google tab is reading its pair off — `0` is Monday,
+  /// same order Google's own `weekdayDescriptions` comes in. Null until the
+  /// traveller has either opened that tab or picked a day of their own; while
+  /// null the tab defaults to today.
+  int? _googleDay;
+
   TimeOfDay get _wheelValue =>
-      !_hoursTab ? _visited : (_editingOpens ? _opens : _closes);
+      _mode == _TimeMode.visited ? _visited : (_editingOpens ? _opens : _closes);
 
   void _setWheel(TimeOfDay value) {
     setState(() {
-      if (!_hoursTab) {
+      if (_mode == _TimeMode.visited) {
         _visited = value;
       } else if (_editingOpens) {
         _opens = value;
@@ -203,20 +221,44 @@ class _RecommendTimeSheetState extends State<_RecommendTimeSheet> {
     });
   }
 
+  TimeOfDay _parseClock(String hhmm) {
+    final parts = hhmm.split(':');
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final placeId = widget.placeId;
+    final hasPlace = placeId != null && placeId.isNotEmpty;
+    final asyncDetails =
+        hasPlace ? ref.watch(placeDetailsProvider(placeId)) : null;
+
+    final details = asyncDetails?.valueOrNull;
+    final googleHours =
+        details?.currentOpeningHours ?? details?.regularOpeningHours;
+    final googleDays = googleHours?.weekdayDescriptions ?? const <String>[];
+    // Nothing to offer at all: Google simply has no hours for this place, so
+    // the tab itself stays off rather than opening onto an empty promise.
+    final hasGoogleHours = googleDays.length == 7;
+
+    final selectedDay = _googleDay ?? (DateTime.now().weekday - 1);
+    final googleLinePair =
+        hasGoogleHours ? openCloseFromLine(googleDays[selectedDay]) : null;
+    final googlePair = googleLinePair == null
+        ? null
+        : (_parseClock(googleLinePair.$1), _parseClock(googleLinePair.$2));
+
     return ComposerSheet(
       title: 'Recommend Time',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _Segmented(
-            left: 'เวลาที่ฉันไป',
-            right: 'เวลาเปิด - ปิด',
-            rightSelected: _hoursTab,
-            onChanged: (hours) => setState(() => _hoursTab = hours),
+          _ModeTabs(
+            mode: _mode,
+            showGoogle: hasGoogleHours,
+            onChanged: (mode) => setState(() => _mode = mode),
           ),
-          if (_hoursTab) ...[
+          if (_mode == _TimeMode.manual) ...[
             const SizedBox(height: 16),
             Row(
               children: [
@@ -240,36 +282,158 @@ class _RecommendTimeSheetState extends State<_RecommendTimeSheet> {
               ],
             ),
           ],
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 190,
-            child: CupertinoDatePicker(
-              key: ValueKey('$_hoursTab-$_editingOpens'),
-              mode: CupertinoDatePickerMode.time,
-              use24hFormat: true,
-              minuteInterval: 1,
-              initialDateTime: DateTime(
-                2026,
-                1,
-                1,
-                _wheelValue.hour,
-                _wheelValue.minute,
-              ),
-              onDateTimeChanged: (value) => _setWheel(
-                TimeOfDay(hour: value.hour, minute: value.minute),
+          if (_mode == _TimeMode.google) ...[
+            const SizedBox(height: 16),
+            _GoogleHours(
+              days: googleDays,
+              openNow: googleHours?.openNow,
+              selected: selectedDay,
+              onSelect: (day) => setState(() => _googleDay = day),
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 190,
+              child: CupertinoDatePicker(
+                key: ValueKey('$_mode-$_editingOpens'),
+                mode: CupertinoDatePickerMode.time,
+                use24hFormat: true,
+                minuteInterval: 1,
+                initialDateTime: DateTime(
+                  2026,
+                  1,
+                  1,
+                  _wheelValue.hour,
+                  _wheelValue.minute,
+                ),
+                onDateTimeChanged: (value) => _setWheel(
+                  TimeOfDay(hour: value.hour, minute: value.minute),
+                ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 12),
           _SheetActions(
             onCancel: () => Navigator.of(context).pop(),
-            onConfirm: () => Navigator.of(context).pop(
-              _hoursTab
-                  ? widget.current.copyWith(opensAt: _opens, closesAt: _closes)
-                  : widget.current.copyWith(visitedAt: _visited),
-            ),
+            onConfirm: switch (_mode) {
+              _TimeMode.visited => () => Navigator.of(context)
+                  .pop(widget.current.copyWith(visitedAt: _visited)),
+              _TimeMode.manual => () => Navigator.of(context).pop(
+                  widget.current.copyWith(opensAt: _opens, closesAt: _closes)),
+              _TimeMode.google => googlePair == null
+                  ? null
+                  : () => Navigator.of(context).pop(widget.current.copyWith(
+                      opensAt: googlePair.$1, closesAt: googlePair.$2)),
+            },
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The weekly hours Google has for a pinned place — each day tappable, so a
+/// line other than today's can be the one ตกลง actually writes.
+class _GoogleHours extends StatelessWidget {
+  const _GoogleHours({
+    required this.days,
+    required this.openNow,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<String> days;
+  final bool? openNow;
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (openNow != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.postPurpleSoft,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  openNow! ? 'เปิดอยู่ตอนนี้' : 'ปิดแล้วตอนนี้',
+                  style: const TextStyle(
+                    color: AppColors.postPurple,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 170),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.screen,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < days.length; i++)
+                  _DayRow(
+                    text: days[i],
+                    selected: i == selected,
+                    onTap: () => onSelect(i),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DayRow extends StatelessWidget {
+  const _DayRow({
+    required this.text,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.postPurpleSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            color: selected ? AppColors.postPurple : AppColors.muted,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
@@ -545,59 +709,83 @@ class _ContactSheet extends StatefulWidget {
 }
 
 class _ContactSheetState extends State<_ContactSheet> {
-  late final TextEditingController _text =
-      TextEditingController(text: widget.current.contactInfo);
+  late final TextEditingController _phone;
+  late final TextEditingController _website;
+
+  @override
+  void initState() {
+    super.initState();
+    final (phone, website) = _splitContactInfo(widget.current.contactInfo);
+    _phone = TextEditingController(text: phone);
+    _website = TextEditingController(text: website);
+  }
+
+  /// Reverses `_contactInfoText`'s own `' · '` join — the same separator the
+  /// AI assistant's suggestion already combines a phone and a website with,
+  /// so a spot it filled in reopens with each half in its own field. A
+  /// single segment with no separator (older freeform text, or the
+  /// assistant's phone-only answer) goes to whichever field it reads like —
+  /// a website if it looks like one, the phone field otherwise, so nothing
+  /// ever silently disappears.
+  static (String, String) _splitContactInfo(String raw) {
+    final parts = raw
+        .split(' · ')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return ('', '');
+    if (parts.length == 1) {
+      final only = parts.first;
+      final looksLikeWebsite = only.startsWith('http://') ||
+          only.startsWith('https://') ||
+          only.startsWith('www.');
+      return looksLikeWebsite ? ('', only) : (only, '');
+    }
+    return (parts.first, parts.skip(1).join(' · '));
+  }
 
   @override
   void dispose() {
-    _text.dispose();
+    _phone.dispose();
+    _website.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return ComposerSheet(
-      title: 'ติดต่อ',
+      title: 'Contact',
+      onClose: () => Navigator.of(context).pop(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 14),
-            child: Text(
-              'ชื่อผู้ติดต่อ เบอร์โทร เพจ หรือทั้งหมดรวมกัน',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12),
-            ),
+          _ContactField(
+            label: 'เบอร์ติดต่อ',
+            icon: Icons.call_outlined,
+            controller: _phone,
+            hintText: '085 809 0835',
+            keyboardType: TextInputType.phone,
+            autofocus: true,
           ),
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 13),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              color: AppColors.screen,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.line),
-            ),
-            child: TextField(
-              controller: _text,
-              autofocus: true,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                counterText: '',
-                isDense: true,
-                border: InputBorder.none,
-                hintText: 'เช่น คุณบุญอนันต์ 081-234-5678',
-                hintStyle: TextStyle(color: AppColors.postFieldHint),
-              ),
-              style: const TextStyle(fontSize: 14),
-            ),
+          const SizedBox(height: 14),
+          _ContactField(
+            label: 'เว็บไซต์',
+            icon: Icons.link,
+            controller: _website,
+            hintText: 'https://...',
+            keyboardType: TextInputType.url,
           ),
           const SizedBox(height: 20),
           _SheetActions(
             onCancel: () => Navigator.of(context).pop(),
             onConfirm: () => Navigator.of(context).pop(
-              widget.current.copyWith(contactInfo: _text.text.trim()),
+              widget.current.copyWith(
+                contactInfo: [
+                  if (_phone.text.trim().isNotEmpty) _phone.text.trim(),
+                  if (_website.text.trim().isNotEmpty) _website.text.trim(),
+                ].join(' · '),
+              ),
             ),
           ),
         ],
@@ -606,19 +794,79 @@ class _ContactSheetState extends State<_ContactSheet> {
   }
 }
 
+class _ContactField extends StatelessWidget {
+  const _ContactField({
+    required this.label,
+    required this.icon,
+    required this.controller,
+    required this.hintText,
+    this.keyboardType,
+    this.autofocus = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final TextEditingController controller;
+  final String hintText;
+  final TextInputType? keyboardType;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SheetLabel(label),
+        Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            color: AppColors.screen,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.muted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  autofocus: autofocus,
+                  keyboardType: keyboardType,
+                  maxLength: 240,
+                  decoration: InputDecoration(
+                    counterText: '',
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: hintText,
+                    hintStyle: const TextStyle(color: AppColors.postFieldHint),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Two tabs in one pill, the way Recommend Time splits its job.
-class _Segmented extends StatelessWidget {
-  const _Segmented({
-    required this.left,
-    required this.right,
-    required this.rightSelected,
+/// Two or three tabs in one pill, the way Recommend Time splits its job — a
+/// third, "ตามเวลาเปิดจริง" tab joins the other two only once the spot is
+/// pinned to a place Google might know the hours of.
+class _ModeTabs extends StatelessWidget {
+  const _ModeTabs({
+    required this.mode,
+    required this.showGoogle,
     required this.onChanged,
   });
 
-  final String left;
-  final String right;
-  final bool rightSelected;
-  final ValueChanged<bool> onChanged;
+  final _TimeMode mode;
+  final bool showGoogle;
+  final ValueChanged<_TimeMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -630,8 +878,19 @@ class _Segmented extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: _tab(left, !rightSelected, () => onChanged(false))),
-          Expanded(child: _tab(right, rightSelected, () => onChanged(true))),
+          Expanded(
+            child: _tab('เวลาที่ฉันไป', mode == _TimeMode.visited,
+                () => onChanged(_TimeMode.visited)),
+          ),
+          Expanded(
+            child: _tab('เวลาเปิด - ปิด', mode == _TimeMode.manual,
+                () => onChanged(_TimeMode.manual)),
+          ),
+          if (showGoogle)
+            Expanded(
+              child: _tab('ตามเวลาเปิดจริง', mode == _TimeMode.google,
+                  () => onChanged(_TimeMode.google)),
+            ),
         ],
       ),
     );
@@ -802,7 +1061,9 @@ class _SheetActions extends StatelessWidget {
   const _SheetActions({required this.onCancel, required this.onConfirm});
 
   final VoidCallback onCancel;
-  final VoidCallback onConfirm;
+
+  /// Null disables ตกลง — the Google-hours tab with nothing yet to apply.
+  final VoidCallback? onConfirm;
 
   @override
   Widget build(BuildContext context) {

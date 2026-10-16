@@ -44,7 +44,15 @@ final suggestedPlacesProvider =
     FutureProvider.family<List<Place>, SuggestQuery>((ref, query) async {
   final api = await ref.watch(plunoApiProvider.future);
   if (query.isSearching) {
-    return api.places.search(query.search.trim(), limit: _maxResults);
+    return api.places.search(
+      query.search.trim(),
+      limit: _maxResults,
+      // Required by the server — leaving it out is a 400, because the client
+      // drops null query params. And it must be true here: the cards show the
+      // photo, and a place searched with it off is cached without one, which
+      // then follows it onto every plan stop that links it.
+      resolvePhotos: true,
+    );
   }
   return api.places.suggest(
     latitude: query.latitude,

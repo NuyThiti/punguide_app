@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pluno/core/router/app_router.dart';
@@ -311,6 +312,93 @@ void main() {
     });
   });
 
+  group('the AI half and the design icons', () {
+    /// The three header fields and, once AI is chosen, the sparkle.
+    Iterable<String> svgPaths(WidgetTester tester) => tester
+        .widgetList<SvgPicture>(find.byType(SvgPicture))
+        .map((picture) => picture.bytesLoader)
+        .whereType<SvgAssetLoader>()
+        .map((loader) => loader.assetName);
+
+    testWidgets('the header fields use the design\'s own icons',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+
+      expect(
+        svgPaths(tester),
+        containsAll(<String>[
+          'assets/icons/field_location.svg',
+          'assets/icons/field_calendar.svg',
+          'assets/icons/field_guests.svg',
+        ]),
+      );
+    });
+
+    testWidgets('the sparkle rides the AI half, and only while it is chosen',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+
+      // สร้างด้วยตัวเอง is the opening choice, so no sparkle yet.
+      expect(svgPaths(tester), isNot(contains('assets/icons/ai_sparkle.svg')));
+
+      await tester.tap(find.text('AI จัดแผนให้'));
+      await tester.pumpAndSettle();
+      expect(svgPaths(tester), contains('assets/icons/ai_sparkle.svg'));
+
+      await tester.tap(find.text('สร้างด้วยตัวเอง'));
+      await tester.pumpAndSettle();
+      expect(svgPaths(tester), isNot(contains('assets/icons/ai_sparkle.svg')));
+    });
+
+    testWidgets('the chosen AI pill is actually filled', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('AI จัดแผนให้'));
+      await tester.pumpAndSettle();
+
+      final filled = tester
+          .widgetList<AnimatedContainer>(find.byType(AnimatedContainer))
+          .map((c) => c.decoration)
+          .whereType<BoxDecoration>()
+          .where((d) => d.gradient != null);
+      expect(filled, isNotEmpty, reason: 'the AI half should carry a gradient');
+
+      // A BoxDecoration's colour modulates its gradient's alpha, so pairing a
+      // gradient with Colors.transparent paints nothing at all — which is
+      // invisible to a tree-only assertion and cost a device round trip once.
+      for (final decoration in filled) {
+        expect(
+          decoration.color,
+          isNull,
+          reason: 'a gradient must not be paired with a colour',
+        );
+      }
+    });
+
+    testWidgets('step two carries the explore banner', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await _setDestination(tester);
+
+      expect(find.text('ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ'), findsNothing);
+      await tester.tap(find.text('ถัดไป'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ'), findsOneWidget);
+      expect(svgPaths(tester), contains('assets/icons/explore_compass.svg'));
+
+      // There is no trip yet, so the explorer cannot open on anything.
+      await tester.tap(find.text('สำรวจ'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('สร้างแผนก่อน แล้วจึงสำรวจสถานที่แนะนำได้'),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('POST /trips', () {
     Future<void> fillAndSubmit(
       WidgetTester tester, {
@@ -470,6 +558,128 @@ void main() {
       expect(body['durationDays'], 3);
       expect(body.containsKey('startDate'), isFalse);
       expect(body.containsKey('endDate'), isFalse);
+    });
+  });
+
+  group('AI จัดแผนให้', () {
+    Map<String, dynamic> planResponse() => <String, dynamic>{
+          'draft': <String, dynamic>{
+            'title': 'เที่ยวดานัง 3 วัน',
+            'destination': 'ดานัง, เวียดนาม',
+            'planMode': 'ai',
+            'numPeople': 1,
+            'budgetTier': 'comfort',
+            'styles': <String>['culture'],
+            'intensity': 'chill',
+            'transport': <String>['recommend'],
+            'days': <Map<String, dynamic>>[
+              {
+                'dayNumber': 1,
+                'daySummary': 'วันแรก',
+                'activities': <Map<String, dynamic>>[
+                  {
+                    'title': 'สะพานมังกร',
+                    'category': 'sightseeing',
+                    'orderIndex': 0,
+                    'time': '09:00'
+                  },
+                ],
+              },
+            ],
+          },
+          'resolvedBrief': <String, dynamic>{
+            'durationDays': 3,
+            'numPeople': 1,
+            'defaultsApplied': <String>[],
+            'warnings': <String>[],
+          },
+          'generation': <String, dynamic>{
+            'attempts': 1,
+            'resolvedWithoutErrors': true,
+            'modelWarnings': <String>[],
+            'violations': <dynamic>[],
+          },
+        };
+
+    Future<void> runWizard(WidgetTester tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await _setDestination(tester);
+      await tester.tap(find.text('AI จัดแผนให้'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ถัดไป'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Comfort'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('สร้างแผน'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks the planner with what the wizard collected',
+        (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(200, planResponse()),
+      ];
+      await runWizard(tester);
+
+      final body = adapter.bodyOf('POST /trips/plan/generate');
+      expect(body, isNotNull);
+      expect(body!['trip']['destination'], 'ดานัง, เวียดนาม');
+      expect(body['trip']['guests']['adults'], 1);
+      final prefs = body['preferences'] as Map<String, dynamic>;
+      expect(prefs['budget']['tier'], 'comfort');
+      // Transport is required and non-empty for an AI plan; nothing chosen
+      // becomes the enum's own "recommend".
+      expect(prefs['transport'], isNotEmpty);
+    });
+
+    testWidgets('nothing is written until the plan is kept', (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(200, planResponse()),
+      ];
+      await runWizard(tester);
+
+      // The review sheet is up and no trip exists yet.
+      expect(find.text('เที่ยวดานัง 3 วัน'), findsOneWidget);
+      expect(adapter.bodyOf('POST /trips/create'), isNull);
+
+      await tester.tap(find.text('ทิ้งแผนนี้'));
+      await tester.pumpAndSettle();
+      expect(adapter.bodyOf('POST /trips/create'), isNull);
+    });
+
+    testWidgets('บันทึกแผน posts the draft and opens the trip', (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(200, planResponse()),
+      ];
+      adapter.replies['POST /trips/create'] = [
+        FakeReply(201, createdTripJson()),
+      ];
+      await runWizard(tester);
+      await tester.tap(find.text('บันทึกแผน'));
+      await tester.pumpAndSettle();
+
+      final saved = adapter.bodyOf('POST /trips/create');
+      expect(saved, isNotNull);
+      // The draft goes back untouched — planMode and the fields an AI plan
+      // insists on must survive the round trip.
+      expect(saved!['planMode'], 'ai');
+      expect(saved['transport'], isNotEmpty);
+      expect(saved['numPeople'], 1);
+      expect(find.text('edit trip-new'), findsOneWidget);
+    });
+
+    testWidgets('a spent quota says so instead of failing blankly',
+        (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(429, <String, dynamic>{'message': 'Too many requests'}),
+      ];
+      await runWizard(tester);
+
+      expect(
+        find.textContaining('ครบโควตาชั่วโมงนี้แล้ว'),
+        findsOneWidget,
+      );
     });
   });
 }

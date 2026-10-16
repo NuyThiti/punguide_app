@@ -16,6 +16,7 @@ import 'package:pluno/features/create_post/presentation/widgets/post_block.dart'
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 import 'package:pluno/features/create_post/presentation/widgets/trip_spot_pagination.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
+import 'package:pluno/shared/formatting/spot_detail_text.dart';
 import 'package:pluno/features/remix_trip/presentation/post_done_screen.dart';
 import 'package:pluno/features/trip_detail/presentation/post_share_settings_screen.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
@@ -2650,9 +2651,9 @@ void main() {
     expect(find.text('Akha Ama Coffee'), findsOneWidget);
     expect(find.text('9/1 Mata Apartment, Chiang Mai 50200, Thailand'),
         findsOneWidget);
-    // The row's own pin, plus the item's "add location" chip alongside the
-    // Trip Hack group — both use the same glyph.
-    expect(find.byIcon(Icons.location_on_outlined), findsNWidgets(2));
+    // Only the row's own pin now — once a place is pinned, the item's own
+    // "add location" chip (the same glyph) drops off the extras row.
+    expect(find.byIcon(Icons.location_on_outlined), findsOneWidget);
     expect(adapter.paths, contains('GET /places/search'));
 
     // Taking the pin off happens back in the sheet, since the row itself
@@ -3215,6 +3216,143 @@ void main() {
     expect(find.text('06.00 - 14.30 น.'), findsOneWidget);
   });
 
+  testWidgets(
+      'Recommend Time offers the pinned place’s own Google hours as a third way in',
+      (tester) async {
+    const placeUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    final adapter = FakeAdapter({
+      'GET /places/search': [
+        const FakeReply(200, [
+          {'id': placeUuid, 'mapId': 'map-1', 'name': 'เชียงใหม่'}
+        ])
+      ],
+      'GET /places/$placeUuid': [
+        FakeReply(200, {
+          'externalRef': 'ext-1',
+          'name': 'เชียงใหม่',
+          'currentOpeningHours': {
+            'openNow': true,
+            'weekdayDescriptions': List.filled(7, 'วันจันทร์: 09:00–18:00'),
+          },
+        }),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+
+    // A visit hour first, so picking the place next has nothing of its own
+    // to auto-fill — keeping the sheet's own google tab the only source of
+    // whatever the opening-hours fields end up holding.
+    await _tapSpotOption(tester, find.byTooltip('เวลาที่แนะนำ'));
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await _confirmPlace(tester);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('6:00 AM'));
+    await tester.pumpAndSettle();
+    expect(find.text('ตามเวลาเปิดจริง'), findsOneWidget);
+
+    await tester.tap(find.text('ตามเวลาเปิดจริง'));
+    await tester.pumpAndSettle();
+    expect(find.text('วันจันทร์: 09:00–18:00'), findsWidgets);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    // The visit hour still owns the chip — the manual way in is untouched...
+    expect(find.text('6:00 AM'), findsOneWidget);
+
+    // ...but the google hours landed in their own fields underneath it.
+    await tester.tap(find.text('6:00 AM'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เวลาเปิด - ปิด'));
+    await tester.pumpAndSettle();
+    expect(find.text('09:00'), findsOneWidget);
+    expect(find.text('18:00'), findsOneWidget);
+  });
+
+  testWidgets('the google tab can pick a day other than today',
+      (tester) async {
+    const placeUuid = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+    const weekdayNames = [
+      'วันจันทร์',
+      'วันอังคาร',
+      'วันพุธ',
+      'วันพฤหัสบดี',
+      'วันศุกร์',
+      'วันเสาร์',
+      'วันอาทิตย์',
+    ];
+    String pad(int n) => n.toString().padLeft(2, '0');
+    String line(int i) =>
+        '${weekdayNames[i]}: ${pad(6 + i)}:00–${pad(10 + i)}:00';
+    final labels = [for (var i = 0; i < 7; i++) line(i)];
+    final adapter = FakeAdapter({
+      'GET /places/search': [
+        const FakeReply(200, [
+          {'id': placeUuid, 'mapId': 'map-1', 'name': 'เชียงใหม่'}
+        ])
+      ],
+      'GET /places/$placeUuid': [
+        FakeReply(200, {
+          'externalRef': 'ext-2',
+          'name': 'เชียงใหม่',
+          'currentOpeningHours': {'openNow': true, 'weekdayDescriptions': labels},
+        }),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await _confirmPlace(tester);
+    await tester.pumpAndSettle();
+
+    // A day other than whatever today happens to be in this run.
+    final altIndex = (DateTime.now().weekday - 1 + 1) % 7;
+
+    // Picking the place already auto-filled today's hours, so the add-chip
+    // for Recommend Time is gone — only the filled chip (same glyph) reopens
+    // the sheet now.
+    await _tapSpotOption(tester, find.byIcon(Icons.schedule));
+    await tester.tap(find.text('ตามเวลาเปิดจริง'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(labels[altIndex]));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(labels[altIndex]));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(hoursRangeText(
+        '${pad(6 + altIndex)}:00', '${pad(10 + altIndex)}:00')!));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เวลาเปิด - ปิด'));
+    await tester.pumpAndSettle();
+    expect(find.text('${pad(6 + altIndex)}:00'), findsOneWidget);
+    expect(find.text('${pad(10 + altIndex)}:00'), findsOneWidget);
+  });
+
+  testWidgets('the google tab stays off a place with no hours of its own',
+      (tester) async {
+    const placeUuid = 'cccccccc-dddd-4eee-8fff-000000000000';
+    final adapter = FakeAdapter({
+      'GET /places/search': [
+        const FakeReply(200, [
+          {'id': placeUuid, 'mapId': 'map-1', 'name': 'เชียงใหม่'}
+        ])
+      ],
+      'GET /places/$placeUuid': [
+        const FakeReply(
+            200, {'externalRef': 'ext-3', 'name': 'เชียงใหม่'}),
+      ],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    await _confirmPlace(tester);
+    await tester.pumpAndSettle();
+
+    await _tapSpotOption(tester, find.byTooltip('เวลาที่แนะนำ'));
+    expect(find.text('ตามเวลาเปิดจริง'), findsNothing);
+  });
+
   testWidgets('ยกเลิก on an extra leaves the spot as it was', (tester) async {
     await _pumpComposer(tester);
 
@@ -3290,7 +3428,8 @@ void main() {
     expect(section['transportCurrency'], 'THB');
   });
 
-  testWidgets('ติดต่อ rides along on the section as one line', (tester) async {
+  testWidgets('Contact sheet joins the phone and website fields into one line',
+      (tester) async {
     final adapter = FakeAdapter({
       'POST /trips/posts': [FakeReply(201, createdTripJson())],
       'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
@@ -3298,15 +3437,18 @@ void main() {
     await _pumpComposer(tester, adapter: adapter);
 
     await _tapSpotOption(tester, find.text('ติดต่อ'));
-    expect(find.text('ชื่อผู้ติดต่อ เบอร์โทร เพจ หรือทั้งหมดรวมกัน'),
-        findsOneWidget);
+    expect(find.text('Contact'), findsOneWidget);
+    expect(find.text('เบอร์ติดต่อ'), findsOneWidget);
+    expect(find.text('เว็บไซต์'), findsOneWidget);
     await tester.enterText(
-        find.widgetWithText(TextField, 'เช่น คุณบุญอนันต์ 081-234-5678'),
-        'คุณบุญอนันต์ 081-234-5678');
+        find.widgetWithText(TextField, '085 809 0835'), '081-234-5678');
+    await tester.enterText(find.widgetWithText(TextField, 'https://...'),
+        'https://facebook.com/onlokyun');
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    expect(find.text('คุณบุญอนันต์ 081-234-5678'), findsOneWidget);
+    expect(find.text('081-234-5678 · https://facebook.com/onlokyun'),
+        findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
@@ -3317,8 +3459,27 @@ void main() {
     final section =
         (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
             as Map;
-    // Stored as typed — a name and a number together, not split into fields.
-    expect(section['contactInfo'], 'คุณบุญอนันต์ 081-234-5678');
+    expect(section['contactInfo'],
+        '081-234-5678 · https://facebook.com/onlokyun');
+  });
+
+  testWidgets(
+      'Contact sheet splits a single existing line back into its own field',
+      (tester) async {
+    await _pumpComposer(tester);
+
+    await _tapSpotOption(tester, find.text('ติดต่อ'));
+    await tester.enterText(
+        find.widgetWithText(TextField, '085 809 0835'), '081-234-5678');
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    // Reopening reads the plain phone number back into the phone field, not
+    // the website one — it doesn't look like a link, so the website field's
+    // hint is still showing rather than the number landing there instead.
+    await _tapSpotOption(tester, find.text('081-234-5678'));
+    expect(find.widgetWithText(TextField, '081-234-5678'), findsOneWidget);
+    expect(find.text('https://...'), findsOneWidget);
   });
 
   testWidgets('a spot with no extras sends none of their keys', (tester) async {

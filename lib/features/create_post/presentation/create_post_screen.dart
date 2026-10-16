@@ -13,6 +13,7 @@ import '../../../core/api/pluno_api.dart';
 import '../../../core/api/models/trip_content.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/formatting/spot_detail_text.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../location_access/data/location_sync.dart';
@@ -1441,22 +1442,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     });
   }
 
-  /// Best-effort: today's line out of Google's own worded hours — "วันจันทร์:
-  /// 10:00–20:00" — read as a plain open/close pair. Null for anything that
-  /// does not look like exactly that (closed today, open 24 hours, a format
-  /// this did not anticipate) rather than guessed at.
+  /// Best-effort: today's hours out of Google's own worded hours, read as a
+  /// plain open/close pair. Null for anything that does not look like exactly
+  /// that (closed today, open 24 hours, a format this did not anticipate)
+  /// rather than guessed at.
   (TimeOfDay, TimeOfDay)? _todayOpenClose(PlaceDetails live) {
     final hours = live.currentOpeningHours ?? live.regularOpeningHours;
-    final days = hours?.weekdayDescriptions ?? const <String>[];
-    // Google always orders this Monday through Sunday regardless of locale,
-    // the same order `DateTime.weekday` counts in.
-    if (days.length != 7) return null;
-    final today = days[DateTime.now().weekday - 1];
-    final clock = RegExp(r'(\d{1,2}):(\d{2})').allMatches(today).toList();
-    if (clock.length < 2) return null;
-    TimeOfDay at(RegExpMatch m) =>
-        TimeOfDay(hour: int.parse(m.group(1)!), minute: int.parse(m.group(2)!));
-    return (at(clock[0]), at(clock[1]));
+    final pair = todayOpenCloseText(hours?.weekdayDescriptions ?? const []);
+    if (pair == null) return null;
+    TimeOfDay parse(String hhmm) {
+      final parts = hhmm.split(':');
+      return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+    }
+
+    return (parse(pair.$1), parse(pair.$2));
   }
 
   /// The bar's Next: every spot's location first, then syncing the draft's
@@ -1968,8 +1967,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final item = _blocks[blockIndex].items[itemIndex];
     final current = item.details;
     final updated = switch (extra) {
-      PostSpotExtra.recommendTime =>
-        await showRecommendTimeSheet(context, current: current),
+      PostSpotExtra.recommendTime => await showRecommendTimeSheet(
+          context,
+          current: current,
+          placeId: item.place?.id ?? item.location?.placeId,
+        ),
       PostSpotExtra.howToGetHere =>
         await showTransportSheet(context, current: current),
       PostSpotExtra.tripHack =>

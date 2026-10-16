@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import 'widgets/add_place_sheet.dart';
 import 'widgets/budget_sheets.dart';
 import 'widgets/plan_budget_tab.dart';
 import 'widgets/suggest_places_sheet.dart';
+import 'widgets/travel_leg_sheet.dart';
 
 /// The deep green the design uses for the active tab and the day numbers. It
 /// is darker than [AppColors.primary], which is the button green.
@@ -93,6 +95,8 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
   @override
   void dispose() {
     _navT.dispose();
+    _autoScroll?.cancel();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -119,6 +123,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     return NotificationListener<ScrollNotification>(
       onNotification: _onScroll,
       child: CustomScrollView(
+        controller: _scroll,
         physics: const BouncingScrollPhysics(),
         slivers: [
           // Pinned first, so the tabs below stack under it rather than over it.
@@ -261,13 +266,18 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
       const SizedBox(height: 16),
       const Divider(height: 1, color: AppColors.line),
       const SizedBox(height: 16),
-      _CollapsibleSection(
-        title: 'ที่พักของคุณ',
-        expanded: _lodgingOpen,
-        onToggle: () => setState(() => _lodgingOpen = !_lodgingOpen),
-        child: _LodgingList(items: lodging),
-      ),
-      const SizedBox(height: 14),
+      // Only when there is something to show: an empty panel that opens onto
+      // "no accommodation yet" is a tap that leads nowhere. It appears once
+      // the budget read (where accommodations come from) has some.
+      if (lodging.isNotEmpty) ...[
+        _CollapsibleSection(
+          title: 'ที่พักของคุณ',
+          expanded: _lodgingOpen,
+          onToggle: () => setState(() => _lodgingOpen = !_lodgingOpen),
+          child: _LodgingList(items: lodging),
+        ),
+        const SizedBox(height: 14),
+      ],
       _CollapsibleSection(
         title: 'ตารางแผน',
         expanded: _scheduleOpen,
@@ -289,16 +299,81 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
           callbacks: _ScheduleCallbacks(
             onExplore: () => _explore(plan),
             onAddPlace: (day) => _addPlaceManually(plan, day),
-            onAddTravel: (day) =>
-                _todo('เพิ่มการเดินทางในวันที่ ${day.number} ยังไม่เปิดใช้งาน'),
-            onEditStop: (stop) =>
-                _todo('แก้ไข "${stop.title}" ยังไม่เปิดใช้งาน'),
+            onAddTravel: _addTravel,
+            onEditLeg: _editLeg,
+            onEditStop: (stop) => _editStop(plan, stop),
             onDeleteStop: _deleteStop,
-            onReorder: _reorderStops,
+            onMoveStop: _moveStop,
+            onDragAt: _onDragAt,
           ),
         ),
       ),
     ];
+  }
+
+  /// Stops on [day] whose arriving leg is still blank — every stop but the
+  /// first, since nothing arrives at the start of a day.
+  List<Activity> _blankLegs(_PlanDay day) => [
+        for (var i = 1; i < day.stops.length; i++)
+          if (day.stops[i].travelFromPrevious == null) day.stops[i],
+      ];
+
+  /// + เพิ่มการเดินทาง: the day's first blank leg, or the last leg when
+  /// every one is already filled in.
+  void _addTravel(_PlanDay day) {
+    if (day.stops.length < 2) {
+      _todo('ต้องมีอย่างน้อย 2 สถานที่ในวันนี้ จึงจะเพิ่มการเดินทางได้');
+      return;
+    }
+    final blank = _blankLegs(day);
+    final index =
+        blank.isEmpty ? day.stops.length - 1 : day.stops.indexOf(blank.first);
+    _editLeg(day, index);
+  }
+
+  /// The leg arriving at the stop at [index]. It is stored on that stop, so
+  /// the sheet saves onto it.
+  Future<void> _editLeg(_PlanDay day, int index) async {
+    if (index < 1 || index >= day.stops.length) return;
+    final from = day.stops[index - 1];
+    final to = day.stops[index];
+
+    final saved = await showTravelLegSheet(
+      context,
+      tripId: widget.tripId,
+      from: LegEnd(position: index, name: from.title),
+      to: LegEnd(position: index + 1, name: to.title),
+      arriving: to,
+      emptyLegs: _blankLegs(day),
+    );
+    if (!saved || !mounted) return;
+    ref.invalidate(apiTripProvider(widget.tripId));
+    // The leg's cost lands in สรุปงบ under ค่าเดินทาง.
+    ref.invalidate(planBudgetProvider(widget.tripId));
+  }
+
+  /// The pencil on a stop: the same form that adds one, filled in.
+  Future<void> _editStop(_PlanView plan, Activity stop) async {
+    _PlanDay? home;
+    for (final day in plan.days) {
+      if (day.stops.any((s) => s.id == stop.id)) home = day;
+    }
+    if (home == null || home.id.isEmpty) return;
+
+    final outcome = await showAddPlaceSheet(
+      context,
+      tripId: widget.tripId,
+      days: [
+        for (final day in plan.days)
+          if (day.id.isNotEmpty)
+            AddPlaceDay(id: day.id, number: day.number, label: day.dateLabel),
+      ],
+      initialDayId: home.id,
+      editing: stop,
+    );
+    if (!mounted || outcome != AddPlaceOutcome.updated) return;
+    ref.invalidate(apiTripProvider(widget.tripId));
+    _todo('บันทึก "${stop.title}" แล้ว');
   }
 
   /// Back to wherever the editor was opened from, falling back to the trip
@@ -353,6 +428,110 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
   /// Without this the row snaps back to the old position for as long as the
   /// request takes and then jumps again when the trip reloads.
   final Map<String, List<String>> _localOrder = {};
+
+  /// The page's scroll view, which a dragged stop scrolls when it nears the
+  /// top or bottom — the days it might be dropped on are often off screen.
+  final _scroll = ScrollController();
+  Timer? _autoScroll;
+  Offset? _dragAt;
+
+  void _onDragAt(Offset? at) {
+    _dragAt = at;
+    if (at == null) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+      return;
+    }
+    _autoScroll ??=
+        Timer.periodic(const Duration(milliseconds: 16), (_) => _stepScroll());
+  }
+
+  void _stepScroll() {
+    final at = _dragAt;
+    if (at == null || !_scroll.hasClients) return;
+    final height = MediaQuery.sizeOf(context).height;
+    // The pinned nav bar and tab bar cover the top ~150pt plus the notch.
+    final topEdge = MediaQuery.paddingOf(context).top + 150 + 60;
+    final bottomEdge = height - 80;
+    double delta = 0;
+    if (at.dy < topEdge) {
+      delta = -((topEdge - at.dy) / 60).clamp(0.0, 1.0) * 14;
+    } else if (at.dy > bottomEdge) {
+      delta = ((at.dy - bottomEdge) / 80).clamp(0.0, 1.0) * 14;
+    }
+    if (delta == 0) return;
+    final position = _scroll.position;
+    final next = (position.pixels + delta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (next != position.pixels) _scroll.jumpTo(next);
+  }
+
+  /// A stop dropped on a day. Within its own day this is a reorder; onto
+  /// another it is `PATCH /items/:id/assign`, which neither PATCH /items nor
+  /// the reorder endpoint can do.
+  Future<void> _moveStop(_StopDrag drag, _PlanDay toDay, int insertAt) async {
+    final fromDay = drag.fromDay;
+    if (toDay.id.isNotEmpty && toDay.id == fromDay.id) {
+      // [insertAt] counts the dragged stop where it still sits; the reorder
+      // wants the index once it has been lifted out.
+      final target = insertAt > drag.fromIndex ? insertAt - 1 : insertAt;
+      if (target == drag.fromIndex) return;
+      return _reorderStops(fromDay, drag.fromIndex, target);
+    }
+
+    // A placeholder day has no itinerary row yet; give it one first.
+    final toId =
+        toDay.id.isNotEmpty ? toDay.id : await _createDay(toDay.number);
+    if (toId == null || !mounted) return;
+
+    final fromIds = [
+      for (final stop in fromDay.stops)
+        if (stop.id != drag.stop.id) stop.id,
+    ];
+    final toIds = [for (final stop in toDay.stops) stop.id]
+      ..insert(insertAt.clamp(0, toDay.stops.length), drag.stop.id);
+
+    setState(() {
+      _localOrder[fromDay.id] = fromIds;
+      if (toDay.id.isNotEmpty) _localOrder[toDay.id] = toIds;
+    });
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.itinerary.assignItem(
+        drag.stop.id,
+        tripDayId: toId,
+        orderIndex: insertAt.clamp(0, toDay.stops.length),
+      );
+    } on ApiException catch (failure) {
+      if (mounted) {
+        setState(() {
+          _localOrder.remove(fromDay.id);
+          _localOrder.remove(toDay.id);
+        });
+        _todo(failure.isUnauthorized
+            ? 'เข้าสู่ระบบก่อนย้ายสถานที่'
+            : 'ย้ายไม่สำเร็จ: ${failure.message}');
+      }
+      return;
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _localOrder.remove(fromDay.id);
+          _localOrder.remove(toDay.id);
+        });
+        _todo('ย้ายไม่สำเร็จ: $error');
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _localOrder.remove(fromDay.id);
+      _localOrder.remove(toDay.id);
+    });
+    ref.invalidate(apiTripProvider(widget.tripId));
+    ref.invalidate(planBudgetProvider(widget.tripId));
+    _todo('ย้าย "${drag.stop.title}" ไปวันที่ ${toDay.number} แล้ว');
+  }
 
   /// Moves a stop inside its day and sends the new order up.
   ///
@@ -499,6 +678,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
     switch (outcome) {
       case AddPlaceOutcome.added:
+      case AddPlaceOutcome.updated:
         ref.invalidate(apiTripProvider(widget.tripId));
       case AddPlaceOutcome.explore:
         await _addPlaces(
@@ -1441,20 +1621,43 @@ class _ScheduleCallbacks {
     required this.onExplore,
     required this.onAddPlace,
     required this.onAddTravel,
+    required this.onEditLeg,
     required this.onEditStop,
     required this.onDeleteStop,
-    required this.onReorder,
+    required this.onMoveStop,
+    required this.onDragAt,
   });
 
   final VoidCallback onExplore;
   final ValueChanged<_PlanDay> onAddPlace;
   final ValueChanged<_PlanDay> onAddTravel;
+
+  /// The leg arriving at the stop at [index] on [day].
+  final void Function(_PlanDay day, int index) onEditLeg;
   final ValueChanged<Activity> onEditStop;
   final ValueChanged<Activity> onDeleteStop;
 
-  /// Which day, and where the stop landed. `onReorderItem` hands over the
-  /// final index, with the dropped row already taken out of the count.
-  final void Function(_PlanDay day, int oldIndex, int newIndex) onReorder;
+  /// A stop was dropped on [toDay], to sit before the stop now at
+  /// [insertAt] — or at the end when [insertAt] equals the day's length.
+  /// [toDay] may be the day it came from.
+  final void Function(_StopDrag drag, _PlanDay toDay, int insertAt) onMoveStop;
+
+  /// Where the pointer is while a stop is being dragged, so the page can
+  /// scroll when it nears an edge; null when the drag ends.
+  final ValueChanged<Offset?> onDragAt;
+}
+
+/// What a dragged stop carries.
+class _StopDrag {
+  const _StopDrag({
+    required this.stop,
+    required this.fromDay,
+    required this.fromIndex,
+  });
+
+  final Activity stop;
+  final _PlanDay fromDay;
+  final int fromIndex;
 }
 
 class _ScheduleList extends StatelessWidget {
@@ -1579,59 +1782,196 @@ class _DayCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            child: _DayHeader(
-              day: day,
-              onAddPlace: () => callbacks.onAddPlace(day),
+          // The header takes a drop too: it is the only target an empty day
+          // has, and on a long day it saves dragging to the bottom.
+          _DayDropZone(
+            day: day,
+            insertAt: day.stops.length,
+            onMoveStop: callbacks.onMoveStop,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+              child: _DayHeader(
+                day: day,
+                onAddPlace: () => callbacks.onAddPlace(day),
+              ),
             ),
           ),
           if (day.stops.isNotEmpty) ...[
             const Divider(height: 1, color: AppColors.line),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // The stops are draggable; the handle on each card starts
-                  // the drag, so the default handles stay off. The leg above a
-                  // stop travels with it, and the server recalculates every
-                  // leg once the new order lands.
-                  ReorderableListView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    buildDefaultDragHandles: false,
-                    onReorderItem: (oldIndex, newIndex) =>
-                        callbacks.onReorder(day, oldIndex, newIndex),
-                    children: [
-                      for (var i = 0; i < day.stops.length; i++)
-                        Column(
-                          key: ValueKey(day.stops[i].id),
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // The leg belongs to the stop it arrives at, so it
-                            // is drawn above every stop but the first.
-                            if (i > 0)
-                              _LegRow(
-                                stop: day.stops[i],
-                                segment: day.segmentInto(day.stops[i]),
-                              ),
-                            _StopCard(
+                  for (var i = 0; i < day.stops.length; i++)
+                    // The leg above a stop travels with it, and the server
+                    // recalculates the legs once the move lands.
+                    _StopDropTarget(
+                      key: ValueKey(day.stops[i].id),
+                      day: day,
+                      index: i,
+                      onMoveStop: callbacks.onMoveStop,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (i > 0)
+                            _LegRow(
                               stop: day.stops[i],
-                              position: i + 1,
-                              onEdit: () => callbacks.onEditStop(day.stops[i]),
-                              onDelete: () =>
-                                  callbacks.onDeleteStop(day.stops[i]),
+                              segment: day.segmentInto(day.stops[i]),
+                              onTap: () => callbacks.onEditLeg(day, i),
                             ),
-                          ],
-                        ),
-                    ],
-                  ),
-                  _AddTravelRow(onTap: () => callbacks.onAddTravel(day)),
+                          _StopCard(
+                            stop: day.stops[i],
+                            position: i + 1,
+                            drag: _StopDrag(
+                              stop: day.stops[i],
+                              fromDay: day,
+                              fromIndex: i,
+                            ),
+                            onDragAt: callbacks.onDragAt,
+                            onEdit: () => callbacks.onEditStop(day.stops[i]),
+                            onDelete: () =>
+                                callbacks.onDeleteStop(day.stops[i]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // A leg needs somewhere to go: with a single stop there is
+                  // no next one, so there is nothing to add. The header still
+                  // takes a dropped stop for this day.
+                  if (day.stops.length > 1)
+                    _DayDropZone(
+                      day: day,
+                      insertAt: day.stops.length,
+                      onMoveStop: callbacks.onMoveStop,
+                      child: _AddTravelRow(
+                        onTap: () => callbacks.onAddTravel(day),
+                      ),
+                    ),
                 ],
               ),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A stop as a drop target: the upper half inserts before it, the lower half
+/// after it, and a line shows which while a stop hovers.
+class _StopDropTarget extends StatefulWidget {
+  const _StopDropTarget({
+    super.key,
+    required this.day,
+    required this.index,
+    required this.onMoveStop,
+    required this.child,
+  });
+
+  final _PlanDay day;
+  final int index;
+  final void Function(_StopDrag drag, _PlanDay toDay, int insertAt) onMoveStop;
+  final Widget child;
+
+  @override
+  State<_StopDropTarget> createState() => _StopDropTargetState();
+}
+
+class _StopDropTargetState extends State<_StopDropTarget> {
+  /// null while nothing hovers; true for "before", false for "after".
+  bool? _before;
+
+  bool _isSelf(_StopDrag drag) =>
+      drag.fromDay.id == widget.day.id && drag.fromIndex == widget.index;
+
+  void _track(DragTargetDetails<_StopDrag> details) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final local = box.globalToLocal(details.offset);
+    final before = local.dy < box.size.height / 2;
+    if (before != _before) setState(() => _before = before);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<_StopDrag>(
+      onWillAcceptWithDetails: (details) => !_isSelf(details.data),
+      onMove: (details) {
+        if (!_isSelf(details.data)) _track(details);
+      },
+      onLeave: (_) => setState(() => _before = null),
+      onAcceptWithDetails: (details) {
+        final before = _before ?? true;
+        setState(() => _before = null);
+        widget.onMoveStop(
+          details.data,
+          widget.day,
+          before ? widget.index : widget.index + 1,
+        );
+      },
+      builder: (context, candidates, _) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          widget.child,
+          if (candidates.isNotEmpty && _before != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: _before! ? -5 : null,
+              bottom: _before! ? null : -5,
+              child: const _DropLine(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A drop that appends to [day] — its header, and the row under its stops.
+class _DayDropZone extends StatelessWidget {
+  const _DayDropZone({
+    required this.day,
+    required this.insertAt,
+    required this.onMoveStop,
+    required this.child,
+  });
+
+  final _PlanDay day;
+  final int insertAt;
+  final void Function(_StopDrag drag, _PlanDay toDay, int insertAt) onMoveStop;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<_StopDrag>(
+      onAcceptWithDetails: (details) => onMoveStop(details.data, day, insertAt),
+      builder: (context, candidates, _) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: candidates.isEmpty
+              ? Colors.transparent
+              : AppColors.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _DropLine extends StatelessWidget {
+  const _DropLine();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        height: 3,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(2),
+        ),
       ),
     );
   }
@@ -1712,10 +2052,17 @@ class _StopCard extends StatelessWidget {
     required this.position,
     required this.onEdit,
     required this.onDelete,
+    this.drag,
+    this.onDragAt,
   });
 
   final Activity stop;
   final int position;
+
+  /// Set on the plan's own cards, which can be dragged within and between
+  /// days; null where the card is only shown.
+  final _StopDrag? drag;
+  final ValueChanged<Offset?>? onDragAt;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -1734,15 +2081,23 @@ class _StopCard extends StatelessWidget {
           Tooltip(
             // Press and hold, not a plain drag: the page's own scroll view
             // wins an immediate one, and the row never leaves the ground.
-            message: 'กดค้างแล้วลากเพื่อจัดเรียงสถานที่',
-            child: ReorderableDelayedDragStartListener(
-              index: position - 1,
-              child: const Padding(
-                padding: EdgeInsets.only(top: 18, right: 6),
-                child:
-                    Icon(Icons.drag_handle, size: 17, color: AppColors.muted),
-              ),
-            ),
+            message: 'กดค้างแล้วลากเพื่อจัดเรียง หรือย้ายไปวันอื่น',
+            child: drag == null
+                ? const _Handle()
+                : LongPressDraggable<_StopDrag>(
+                    data: drag,
+                    hapticFeedbackOnStart: true,
+                    feedback: _DragGhost(stop: stop, position: position),
+                    childWhenDragging: const Opacity(
+                      opacity: 0.3,
+                      child: _Handle(),
+                    ),
+                    onDragUpdate: (details) =>
+                        onDragAt?.call(details.globalPosition),
+                    onDragEnd: (_) => onDragAt?.call(null),
+                    onDraggableCanceled: (_, __) => onDragAt?.call(null),
+                    child: const _Handle(),
+                  ),
           ),
           _StopThumbnail(stop: stop, position: position),
           const SizedBox(width: 11),
@@ -1789,8 +2144,15 @@ class _StopCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    _CostChip(amount: stop.cost),
-                    const Spacer(),
+                    // On a 320pt phone the text column is ~110pt wide, which
+                    // the chip and both buttons overflow — let the chip give.
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _CostChip(amount: stop.cost),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     _SquareIconButton(
                       icon: Icons.delete_outline,
                       color: const Color(0xFFE4574C),
@@ -1810,6 +2172,83 @@ class _StopCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _Handle extends StatelessWidget {
+  const _Handle();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 18, right: 6),
+      child: Icon(Icons.drag_handle, size: 17, color: AppColors.muted),
+    );
+  }
+}
+
+/// What follows the finger: the stop's number and name, lifted.
+class _DragGhost extends StatelessWidget {
+  const _DragGhost({required this.stop, required this.position});
+
+  final Activity stop;
+  final int position;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 260,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primary, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: AppColors.foreground,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$position',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                stop.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.foreground,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1898,12 +2337,16 @@ class _CostChip extends StatelessWidget {
         children: [
           const Icon(Icons.payments_outlined, size: 12, color: AppColors.muted),
           const SizedBox(width: 4),
-          Text(
-            amount.asBaht,
-            style: const TextStyle(
-              color: AppColors.foreground,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              amount.asBaht,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.foreground,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -1949,9 +2392,14 @@ class _SquareIconButton extends StatelessWidget {
 /// The leg arriving at [stop], on the dotted rail the design runs between
 /// cards.
 class _LegRow extends StatelessWidget {
-  const _LegRow({required this.stop, required this.segment});
+  const _LegRow({
+    required this.stop,
+    required this.segment,
+    required this.onTap,
+  });
 
   final Activity stop;
+  final VoidCallback onTap;
 
   /// The server's measurement of the same leg, or null when routing failed.
   final TravelSegment? segment;
@@ -1959,30 +2407,36 @@ class _LegRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _RailRow(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.line),
-        ),
-        child: Row(
-          children: [
-            Icon(legIcon(stop, segment), size: 15, color: AppColors.foreground),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                legLabel(stop, segment),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.foreground,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            children: [
+              Icon(legIcon(stop, segment),
+                  size: 15, color: AppColors.foreground),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  legLabel(stop, segment),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.foreground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-          ],
+              const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+            ],
+          ),
         ),
       ),
     );
@@ -2200,11 +2654,16 @@ class _PlanDay {
   /// server has confirmed it. Ids it does not know are ignored, and stops the
   /// list leaves out keep their place at the end — a stale order must never
   /// drop a stop off the page.
-  _PlanDay reordered(List<String> ids) {
+  /// This day with [ids] in that order, taking stops from [pool] so a stop
+  /// moving in from another day can be shown here before the reload.
+  _PlanDay reordered(List<String> ids, [Map<String, Activity>? pool]) {
     final byId = {for (final stop in stops) stop.id: stop};
     final ordered = <Activity>[
       for (final id in ids)
-        if (byId.containsKey(id)) byId.remove(id)!,
+        if (byId.containsKey(id))
+          byId.remove(id)!
+        else if (pool != null && pool.containsKey(id))
+          pool[id]!,
     ];
     return _PlanDay(
       id: id,
@@ -2212,6 +2671,22 @@ class _PlanDay {
       dateLabel: dateLabel,
       date: date,
       stops: [...ordered, ...stops.where((stop) => byId.containsKey(stop.id))],
+      segments: segments,
+    );
+  }
+
+  /// This day minus any stop another day's local order has claimed.
+  _PlanDay without(Set<String> claimed) {
+    if (!stops.any((stop) => claimed.contains(stop.id))) return this;
+    return _PlanDay(
+      id: id,
+      number: number,
+      dateLabel: dateLabel,
+      date: date,
+      stops: [
+        for (final stop in stops)
+          if (!claimed.contains(stop.id)) stop,
+      ],
       segments: segments,
     );
   }
@@ -2257,13 +2732,25 @@ class _PlanView {
       restaurantCount: restaurantCount,
       perDayBudgetLabel: perDayBudgetLabel,
       anchor: anchor,
-      days: [
-        for (final day in days)
-          if (day.id.isNotEmpty && orders[day.id] != null)
-            day.reordered(orders[day.id]!)
-          else
-            day,
-      ],
+      days: () {
+        // A move between days lists the stop under its new day before the
+        // server has it there, so look stops up across the whole plan, and
+        // drop one from any day that another day's order has claimed.
+        final pool = {
+          for (final day in days)
+            for (final stop in day.stops) stop.id: stop,
+        };
+        final claimed = <String>{
+          for (final entry in orders.entries) ...entry.value,
+        };
+        return [
+          for (final day in days)
+            if (day.id.isNotEmpty && orders[day.id] != null)
+              day.reordered(orders[day.id]!, pool)
+            else
+              day.without(claimed),
+        ];
+      }(),
     );
   }
 

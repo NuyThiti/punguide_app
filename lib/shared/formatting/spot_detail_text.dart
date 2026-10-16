@@ -49,3 +49,26 @@ String spotTimeText({
   if (visitedAt != null) return clock12Text(visitedAt);
   return hoursRangeText(opensAt, closesAt) ?? '';
 }
+
+/// A single `("HH:mm", "HH:mm")` out of one of Google's own worded hours
+/// lines — `"วันจันทร์: 10:00–20:00"`. Null for anything that does not look
+/// like exactly that: closed that day, open 24 hours, or a format this did
+/// not anticipate — a guess here would read as real data to whoever sees it
+/// next.
+(String, String)? openCloseFromLine(String line) {
+  final clock = RegExp(r'(\d{1,2}):(\d{2})').allMatches(line).toList();
+  if (clock.length < 2) return null;
+  String at(RegExpMatch m) => '${m.group(1)!.padLeft(2, '0')}:${m.group(2)!}';
+  return (at(clock[0]), at(clock[1]));
+}
+
+/// Today's pair out of Google's own worded hours —
+/// `["วันจันทร์: 10:00–20:00", ...]`, Monday through Sunday regardless of
+/// locale, the same order `DateTime.weekday` counts in.
+///
+/// Null when the list is not the standard seven lines, on top of whatever
+/// [openCloseFromLine] already refuses to guess at.
+(String, String)? todayOpenCloseText(List<String> weekdayDescriptions) {
+  if (weekdayDescriptions.length != 7) return null;
+  return openCloseFromLine(weekdayDescriptions[DateTime.now().weekday - 1]);
+}

@@ -210,6 +210,30 @@ class ItineraryApi {
         ),
       );
 
+  /// Moves a stop to another day, at [orderIndex] (0-based; the end when
+  /// omitted). `PATCH /items/:id` cannot do this — a stop's day is not one of
+  /// its fields — and [reorderItems] rejects an id from another day.
+  ///
+  /// The server re-routes both the day it left and the day it joined.
+  Future<Activity> assignItem(
+    String itemId, {
+    required String tripDayId,
+    int? orderIndex,
+    bool calculateTravelSegments = true,
+  }) async {
+    final body = await _client.patch<Map<String, dynamic>>(
+      '/items/$itemId/assign',
+      body: <String, dynamic>{
+        'tripDayId': tripDayId,
+        if (orderIndex != null) 'orderIndex': orderIndex,
+      },
+      headers: _writeHeaders(
+        calculateTravelSegments: calculateTravelSegments,
+      ),
+    );
+    return Activity.fromJson(Json.asMap(body));
+  }
+
   /// Reorders a day's stops.
   ///
   /// [itemIds] must be exactly the day's stops — one missing, one extra, or

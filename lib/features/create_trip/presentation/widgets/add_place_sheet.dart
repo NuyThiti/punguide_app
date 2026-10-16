@@ -33,6 +33,9 @@ enum AddPlaceOutcome {
   /// A stop was added, so the caller reloads the trip.
   added,
 
+  /// An existing stop was saved, so the caller reloads the trip.
+  updated,
+
   /// They asked for the place explorer instead. The caller opens it — sheets
   /// stacked on sheets leave the traveller with two scrims to dismiss.
   explore,
@@ -45,6 +48,7 @@ Future<AddPlaceOutcome> showAddPlaceSheet(
   required String tripId,
   required List<AddPlaceDay> days,
   required String initialDayId,
+  Activity? editing,
 }) async {
   final outcome = await showModalBottomSheet<AddPlaceOutcome>(
     context: context,
@@ -58,6 +62,7 @@ Future<AddPlaceOutcome> showAddPlaceSheet(
       tripId: tripId,
       days: days,
       initialDayId: initialDayId,
+      editing: editing,
     ),
   );
   return outcome ?? AddPlaceOutcome.cancelled;
@@ -69,11 +74,16 @@ class AddPlaceSheet extends ConsumerStatefulWidget {
     required this.tripId,
     required this.days,
     required this.initialDayId,
+    this.editing,
   });
 
   final String tripId;
   final List<AddPlaceDay> days;
   final String initialDayId;
+
+  /// The stop being edited. Null means the sheet adds a new one; set, the same
+  /// form opens filled in and saves with `PATCH /items/:id`.
+  final Activity? editing;
 
   @override
   ConsumerState<AddPlaceSheet> createState() => _AddPlaceSheetState();
@@ -96,6 +106,14 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   void initState() {
     super.initState();
     _dayId = widget.initialDayId;
+    final stop = widget.editing;
+    if (stop != null) {
+      _nameController.text = stop.title;
+      _time = _parseTime(stop.time);
+      _category = stop.category;
+      if (stop.cost > 0) _costController.text = _trimCost(stop.cost);
+      _notesController.text = stop.notes ?? '';
+    }
     _nameController.addListener(_refresh);
   }
 
@@ -109,6 +127,22 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   }
 
   void _refresh() => setState(() {});
+
+  bool get _isEditing => widget.editing != null;
+
+  static TimeOfDay? _parseTime(String? hhmm) {
+    if (hhmm == null) return null;
+    final parts = hhmm.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h, minute: m);
+  }
+
+  static String _trimCost(double value) => value == value.roundToDouble()
+      ? value.round().toString()
+      : value.toStringAsFixed(2);
 
   /// The name is the only thing the stop cannot do without — everything else
   /// on this form is optional, which is why the design greys the button out
@@ -151,6 +185,7 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
 
   Future<void> _submit() async {
     if (!_canAdd) return;
+    if (_isEditing) return _save();
     setState(() => _saving = true);
     try {
       final api = await ref.read(plunoApiProvider.future);
@@ -187,6 +222,61 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
     }
   }
 
+  /// Edit mode: send only what changed. A field the traveller emptied is a
+  /// `Patch.clear()`, not a missing key — a missing key means "leave it".
+  Future<void> _save() async {
+    final stop = widget.editing!;
+    setState(() => _saving = true);
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final name = _nameController.text.trim();
+      final notes = _notesController.text.trim();
+      final oldNotes = (stop.notes ?? '').trim();
+      final cost = _cost;
+
+      await api.itinerary.updateItem(
+        stop.id,
+        customName: name == stop.title ? null : Patch.value(name),
+        startTime: _startTime == stop.time
+            ? null
+            : (_startTime == null
+                ? const Patch.clear()
+                : Patch.value(_startTime!)),
+        category: _category == null || _category == stop.category
+            ? null
+            : Patch.value(_category!),
+        costAmount: (cost ?? 0) == stop.cost ? null : (cost ?? 0),
+        costCurrency: (cost ?? 0) == stop.cost ? null : _currency,
+        notes: notes == oldNotes
+            ? null
+            : (notes.isEmpty ? const Patch.clear() : Patch.value(notes)),
+        // The time can reorder nothing, but a renamed or re-placed stop can
+        // move its legs — let the server re-measure on this one write.
+      );
+
+      for (final photo in _photos) {
+        await api.media.upload(
+          widget.tripId,
+          filePath: photo.path,
+          activityId: stop.id,
+        );
+      }
+
+      // Moved to another day: it joins the end of that day.
+      if (_dayId != widget.initialDayId) {
+        await api.itinerary.assignItem(stop.id, tripDayId: _dayId);
+      }
+
+      if (mounted) Navigator.of(context).pop(AddPlaceOutcome.updated);
+    } on ApiException catch (failure) {
+      _fail(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนแก้ไขสถานที่'
+          : 'บันทึกไม่สำเร็จ: ${failure.message}');
+    } catch (error) {
+      _fail('บันทึกไม่สำเร็จ: $error');
+    }
+  }
+
   void _fail(String message) {
     if (!mounted) return;
     setState(() => _saving = false);
@@ -212,11 +302,13 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _ExploreBanner(
-                    onTap: () =>
-                        Navigator.of(context).pop(AddPlaceOutcome.explore),
-                  ),
-                  const SizedBox(height: 18),
+                  if (!_isEditing) ...[
+                    _ExploreBanner(
+                      onTap: () =>
+                          Navigator.of(context).pop(AddPlaceOutcome.explore),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
                   _PhotoPicker(
                     photos: _photos,
                     onAdd: _addPhotos,
@@ -239,10 +331,10 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
       padding: const EdgeInsets.fromLTRB(20, 18, 14, 14),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Text(
-              'เพิ่มสถานที่',
-              style: TextStyle(
+              _isEditing ? 'แก้ไขสถานที่' : 'เพิ่มสถานที่',
+              style: const TextStyle(
                 color: AppColors.foreground,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -371,6 +463,9 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
                           ),
                         ),
                     ],
+                    // Editing may move the stop too: that is a separate
+                    // assign call after the PATCH, since a stop's day is not
+                    // one of its fields.
                     onChanged: (value) {
                       if (value != null) setState(() => _dayId = value);
                     },
@@ -559,7 +654,7 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
                         strokeWidth: 2.5,
                       ),
                     )
-                  : const Text('เพิ่มสถานที่'),
+                  : Text(_isEditing ? 'บันทึก' : 'เพิ่มสถานที่'),
             ),
           ),
         ],

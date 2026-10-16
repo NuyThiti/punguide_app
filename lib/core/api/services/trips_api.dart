@@ -441,6 +441,10 @@ class TripsApi {
       headers: idempotencyKey == null
           ? null
           : PlunoHeaders.idempotent(idempotencyKey),
+      // The planner thinks for 10–30 seconds, and longer on a long trip or
+      // when it has to repair its own answer. The client's usual 30s would
+      // cut that off and look like a failure.
+      receiveTimeout: const Duration(minutes: 3),
     );
     return PlanGenerationResult.fromJson(Json.asMap(body));
   }

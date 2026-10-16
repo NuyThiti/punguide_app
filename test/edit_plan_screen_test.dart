@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pluno/features/create_trip/presentation/widgets/travel_leg_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pluno/core/api/api_providers.dart';
@@ -260,6 +261,20 @@ Finder inBudgetTab(String text) => find.descendant(
       of: find.byType(PlanBudgetTab),
       matching: find.text(text),
     );
+
+/// Long-presses [handle], then walks the drag to [to] in small steps — a
+/// single big move reports one position, which a DragTarget cannot track.
+Future<void> dragStopTo(WidgetTester tester, Finder handle, Offset to) async {
+  final from = tester.getCenter(handle);
+  final gesture = await tester.startGesture(from);
+  await tester.pump(const Duration(milliseconds: 700));
+  const steps = 12;
+  for (var i = 1; i <= steps; i++) {
+    await gesture.moveTo(Offset.lerp(from, to, i / steps)!);
+    await tester.pump(const Duration(milliseconds: 30));
+  }
+  await gesture.up();
+}
 
 void main() {
   setUp(() {
@@ -526,18 +541,7 @@ void main() {
 
     // Each tap replaces the last message, so settle between them: the new
     // SnackBar is queued behind the outgoing one and misses a single pump.
-    // ลบ is wired now and has a test of its own.
-    await tester.tap(find.byIcon(Icons.edit_outlined).first);
-    await tester.pumpAndSettle();
-    expect(find.text('แก้ไข "วัดเชียงทอง" ยังไม่เปิดใช้งาน'), findsOneWidget);
-
-    await tester.tap(find.text('เพิ่มการเดินทาง'));
-    await tester.pumpAndSettle();
-    expect(
-      find.text('เพิ่มการเดินทางในวันที่ 1 ยังไม่เปิดใช้งาน'),
-      findsOneWidget,
-    );
-
+    // ลบ, แก้ไข and เพิ่มการเดินทาง are wired now and have tests of their own.
     // The drag handle is wired now and has a test of its own; a plain tap on
     // it does nothing, which is what a drag affordance should do.
     await tester.tap(find.byIcon(Icons.drag_handle).first);
@@ -699,15 +703,13 @@ void main() {
     final handles = find.byIcon(Icons.drag_handle);
     expect(handles, findsNWidgets(2));
 
-    // Press and hold to grab the row, then travel: one long drag reports a
-    // single move, which the list cannot read as a drop target.
-    final gesture = await tester.startGesture(tester.getCenter(handles.last));
-    await tester.pump(const Duration(milliseconds: 700));
-    for (var i = 0; i < 6; i++) {
-      await gesture.moveBy(const Offset(0, -40));
-      await tester.pump(const Duration(milliseconds: 30));
-    }
-    await gesture.up();
+    // Press and hold to grab the row, then travel in steps to the upper half
+    // of the first stop — which means "drop before it".
+    await dragStopTo(
+      tester,
+      handles.last,
+      tester.getTopLeft(find.text('วัดเชียงทอง').first) + const Offset(20, 4),
+    );
     // The request and the reload leave the framework, so they need real turns.
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 50));
@@ -1427,5 +1429,454 @@ void main() {
     await tester.tap(find.text('สรุปงบ'));
     await tester.pumpAndSettle();
     expect(selectedTab(), 'สรุปงบ');
+  });
+
+  testWidgets('แก้ไข opens the add form filled in, and PATCHes what changed',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+    adapter.replies['PATCH /items/s1'] = [
+      FakeReply(200, <String, dynamic>{
+        'id': 's1',
+        'title': 'วัดเชียงทอง',
+        'category': 'sightseeing',
+        'order': 0,
+        'cost': 300,
+      })
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.edit_outlined).first);
+    await tester.pumpAndSettle();
+
+    // Same sheet as + สถานที่, retitled, with the stop's own values in it.
+    expect(find.text('แก้ไขสถานที่'), findsOneWidget);
+    expect(find.text('บันทึก'), findsOneWidget);
+    // The stop card behind the sheet prints the same time, so look inside it.
+    expect(
+      find.descendant(
+        of: find.byType(AddPlaceSheet),
+        matching: find.text('08:30 AM'),
+      ),
+      findsOneWidget,
+    );
+    final fields =
+        tester.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(fields.first.controller!.text, 'วัดเชียงทอง');
+    expect(fields[1].controller!.text, '300');
+    expect(fields.last.controller!.text, 'วัดคู่บ้านคู่เมือง ศิลปะล้านช้าง');
+
+    // Change the notes only.
+    await tester.enterText(find.byType(TextField).last, 'ไปก่อน 8 โมง');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึก'));
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('PATCH /items/s1')!;
+    expect(body['notes'], 'ไปก่อน 8 โมง');
+    // Untouched fields stay out of the body — a present key means "change it".
+    expect(body.containsKey('customName'), isFalse);
+    expect(body.containsKey('startTime'), isFalse);
+    expect(body.containsKey('costAmount'), isFalse);
+    expect(find.text('แก้ไขสถานที่'), findsNothing);
+  });
+
+  testWidgets('clearing a note while editing sends a clear, not nothing',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+    adapter.replies['PATCH /items/s1'] = [
+      FakeReply(200, <String, dynamic>{
+        'id': 's1',
+        'title': 'วัดเชียงทอง',
+        'category': 'sightseeing',
+        'order': 0,
+        'cost': 300,
+      })
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.edit_outlined).first);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).last, '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึก'));
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('PATCH /items/s1')!;
+    expect(body.containsKey('notes'), isTrue);
+    expect(body['notes'], isNull);
+  });
+
+  /// Day 1 with three stops: s2's leg is filled in, s3's is blank.
+  List<Map<String, dynamic>> threeStops() {
+    final days = _filledDay();
+    (days[0]['activities'] as List).add(<String, dynamic>{
+      'id': 's3',
+      'title': 'พูสี',
+      'category': 'sightseeing',
+      'order': 2,
+      'cost': 0,
+    });
+    return days;
+  }
+
+  Future<void> openPlan(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: threeStops()))
+    ];
+    for (final id in ['s2', 's3']) {
+      adapter.replies['PATCH /items/$id'] = [
+        FakeReply(200, <String, dynamic>{
+          'id': id,
+          'title': id,
+          'category': 'sightseeing',
+          'order': 1,
+          'cost': 0,
+        })
+      ];
+    }
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('+ เพิ่มการเดินทาง opens the first blank leg of the day',
+      (tester) async {
+    await openPlan(tester);
+
+    await tester.tap(find.text('เพิ่มการเดินทาง'));
+    await tester.pumpAndSettle();
+
+    // s2's leg is already filled, so the blank one is ตลาดมืด → พูสี.
+    expect(find.byType(TravelLegSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(TravelLegSheet),
+        matching: find.text('จาก ตลาดมืด'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(TravelLegSheet),
+        matching: find.text('พูสี'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('saving a leg PATCHes the arriving stop, hours as minutes',
+      (tester) async {
+    await openPlan(tester);
+    await tester.tap(find.text('เพิ่มการเดินทาง'));
+    await tester.pumpAndSettle();
+
+    // Nothing to save until a way of travelling is picked.
+    FilledButton save() => tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'บันทึก'));
+    expect(save().onPressed, isNull);
+
+    await tester.tap(find.byKey(travelTypeChipKey(TravelType.tukTuk)));
+    await tester.pumpAndSettle();
+    final fields = find.descendant(
+      of: find.byType(TravelLegSheet),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(fields.at(0), '1.5');
+    await tester.tap(find.text('Min'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hr').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(fields.at(1), '120');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'บันทึก'));
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('PATCH /items/s3')!;
+    expect(body['travelTypeFromPrev'], 'tuk_tuk');
+    expect(body['travelTimeFromPrevMin'], 90);
+    expect(body['travelCostFromPrevAmount'], 120);
+    expect(body['travelCostFromPrevCurrency'], 'THB');
+    // Blank fields clear rather than linger from an earlier edit.
+    expect(body.containsKey('travelNotesFromPrev'), isTrue);
+    expect(body['travelNotesFromPrev'], isNull);
+    expect(find.byType(TravelLegSheet), findsNothing);
+  });
+
+  testWidgets('tapping a filled leg edits it, prefilled', (tester) async {
+    await openPlan(tester);
+
+    await tester.tap(find.text('รถเช่า • 15 นาที • ฿3,500'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('แก้ไขการเดินทาง'), findsOneWidget);
+    final fields = tester
+        .widgetList<TextField>(find.descendant(
+          of: find.byType(TravelLegSheet),
+          matching: find.byType(TextField),
+        ))
+        .toList();
+    expect(fields[0].controller!.text, '15');
+    expect(fields[1].controller!.text, '3500');
+
+    await tester.tap(find.widgetWithText(FilledButton, 'บันทึก'));
+    await tester.pumpAndSettle();
+    expect(adapter.bodyOf('PATCH /items/s2')?['travelTypeFromPrev'],
+        'rental_car');
+  });
+
+  testWidgets('ใช้กับทุกช่วงที่ว่าง fills every blank leg, and only those',
+      (tester) async {
+    await openPlan(tester);
+    // Open the filled s2 leg; s3 is the one blank leg on the day.
+    await tester.tap(find.text('รถเช่า • 15 นาที • ฿3,500'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(travelTypeChipKey(TravelType.walk)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('ใช้กับทุกช่วงที่ว่าง'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.bodyOf('PATCH /items/s2')?['travelTypeFromPrev'], 'walk');
+    expect(adapter.bodyOf('PATCH /items/s3')?['travelTypeFromPrev'], 'walk');
+  });
+
+  testWidgets('+ เพิ่มเติม takes the traveller\'s own word for the leg',
+      (tester) async {
+    await openPlan(tester);
+    await tester.tap(find.text('เพิ่มการเดินทาง'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(travelTypeChipKey(TravelType.other)));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(TravelLegSheet),
+        matching: find.byType(TextField),
+      ).first,
+      'สองแถว',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'บันทึก'));
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('PATCH /items/s3')!;
+    expect(body['travelTypeFromPrev'], 'other');
+    expect(body['travelCustomTypeFromPrev'], 'สองแถว');
+  });
+
+  testWidgets('the travel sheet lays out on a narrow phone', (tester) async {
+    // The sheet on its own: the plan page behind it is not laid out for 320pt
+    // yet, and this is about the sheet.
+    tester.view.physicalSize = const Size(320 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: TravelLegSheet(
+            tripId: 'trip-1',
+            from: const LegEnd(position: 1, name: 'สนามบินนานาชาติหลวงพระบาง'),
+            to: const LegEnd(position: 2, name: 'Manda de Laos Restaurant'),
+            arriving: Activity.fromJson(const <String, dynamic>{
+              'id': 's2',
+              'title': 'Manda de Laos Restaurant',
+              'order': 1,
+              'cost': 0,
+            }),
+            emptyLegs: const <Activity>[],
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ใช้เวลา (ประเมินคร่าวๆได้)'), findsOneWidget);
+    expect(find.text('เครื่องบิน'), findsOneWidget);
+    expect(find.text('บันทึก'), findsOneWidget);
+  });
+
+  testWidgets('dragging a stop onto another day moves it there',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 2400 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays())),
+      FakeReply(200, _tripJson(days: _twoDays())),
+    ];
+    adapter.replies['PATCH /items/s1/assign'] = [
+      FakeReply(200, <String, dynamic>{
+        'id': 's1',
+        'title': 'วัดเชียงทอง',
+        'category': 'sightseeing',
+        'order': 0,
+        'cost': 300,
+      })
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // s1 is first on day 1; drop it on the upper half of day 2's only stop.
+    await dragStopTo(
+      tester,
+      find.byIcon(Icons.drag_handle).first,
+      tester.getTopLeft(find.text('น้ำตกกวางสี').first) + const Offset(20, 4),
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    // A move, not a reorder: neither day's order endpoint is touched.
+    expect(adapter.bodyOf('PATCH /items/s1/assign'), {
+      'tripDayId': 'd2',
+      'orderIndex': 0,
+    });
+    expect(adapter.paths.any((p) => p.contains('/items/order')), isFalse);
+  });
+
+  testWidgets('a stop dropped on a day header goes to the end of that day',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 2400 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays())),
+      FakeReply(200, _tripJson(days: _twoDays())),
+    ];
+    adapter.replies['PATCH /items/s2/assign'] = [
+      FakeReply(200, <String, dynamic>{
+        'id': 's2',
+        'title': 'ตลาดมืด',
+        'category': 'food',
+        'order': 1,
+        'cost': 0,
+      })
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await dragStopTo(
+      tester,
+      find.byIcon(Icons.drag_handle).at(1),
+      tester.getCenter(find.text('วันที่ 2').first),
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    // Day 2 holds one stop, so the end is index 1.
+    expect(adapter.bodyOf('PATCH /items/s2/assign'), {
+      'tripDayId': 'd2',
+      'orderIndex': 1,
+    });
+  });
+
+  testWidgets('changing the day in the edit sheet moves the stop',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+    final stopJson = <String, dynamic>{
+      'id': 's1',
+      'title': 'วัดเชียงทอง',
+      'category': 'sightseeing',
+      'order': 0,
+      'cost': 300,
+    };
+    adapter.replies['PATCH /items/s1'] = [FakeReply(200, stopJson)];
+    adapter.replies['PATCH /items/s1/assign'] = [FakeReply(200, stopJson)];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.edit_outlined).first);
+    await tester.pumpAndSettle();
+
+    // Day 1 is "Thu, 20 Aug"; pick day 2.
+    await tester.tap(find
+        .descendant(
+          of: find.byType(AddPlaceSheet),
+          matching: find.text('Thu, 20 Aug'),
+        )
+        .first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fri, 21 Aug').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('บันทึก'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.bodyOf('PATCH /items/s1/assign'), {'tripDayId': 'd2'});
+  });
+
+  testWidgets('a day with one stop offers no เพิ่มการเดินทาง', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 2400 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    // Day 1 has two stops, day 2 has one.
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // Only day 1 has a next stop to travel to.
+    expect(find.text('เพิ่มการเดินทาง'), findsOneWidget);
+    final row = tester.getTopLeft(find.text('เพิ่มการเดินทาง'));
+    final day2 = tester.getTopLeft(find.text('วันที่ 2').first);
+    expect(row.dy, lessThan(day2.dy));
+  });
+
+  testWidgets('ที่พักของคุณ is hidden when the trip has no accommodation',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1/budget'] = [
+      FakeReply(200, _budgetJson(const <Map<String, dynamic>>[]))
+    ];
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    expect(find.text('ที่พักของคุณ'), findsNothing);
+    // The schedule below it is unaffected.
+    expect(find.text('ตารางแผน'), findsOneWidget);
   });
 }

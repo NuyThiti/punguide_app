@@ -296,6 +296,9 @@ void main() {
     final search =
         adapter.requests.firstWhere((r) => r.path == '/places/search');
     expect(search.queryParameters['q'], 'พูสี');
+    // The server rejects a search without this flag, and the fake adapter
+    // does not — so pin it here, or the box breaks silently in production.
+    expect(search.queryParameters['resolvePhotos'], true);
   });
 
   testWidgets('a trip with no coordinates says so instead of opening',

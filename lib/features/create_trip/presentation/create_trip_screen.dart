@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_providers.dart';
@@ -10,7 +13,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../home/presentation/providers/home_feed_providers.dart';
 import '../domain/plan_labels.dart';
 import '../../trips/domain/models/trip.dart';
+import '../domain/plan_request.dart';
 import 'providers/destination_search_providers.dart';
+import 'widgets/plan_review_sheet.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 
 class CreateTripScreen extends ConsumerStatefulWidget {
@@ -59,6 +64,14 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   int _children = 0;
   bool _aiShown = false;
   final String _draftCreationKey = uuidV4();
+
+  /// One key per attempt at a plan. Held so a retry after a timeout returns
+  /// the plan already made instead of paying the model twice; a fresh ask
+  /// mints a new one.
+  String? _generateKey;
+
+  /// Drives the full-screen wait: the planner takes 10–30 seconds.
+  bool _generating = false;
   bool _isSaving = false;
 
   /// 0 = preferences, 1 = budget and constraints. The header and the mode
@@ -243,6 +256,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                         ),
                       ],
                     ),
+                    if (_generating) const Positioned.fill(child: _Thinking()),
                     Positioned(
                       left: 0,
                       right: 0,
@@ -336,6 +350,12 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   /// has to work around.
   List<Widget> _budgetStep() {
     return [
+      _ExploreBanner(
+        onTap: () => _showError(
+          'สร้างแผนก่อน แล้วจึงสำรวจสถานที่แนะนำได้',
+        ),
+      ),
+      const SizedBox(height: 20),
       const _ThaiSectionTitle(
         title: 'งบต่อคน / วัน',
         subtitle: '* ยังไม่รวมค่าที่พัก',
@@ -493,7 +513,11 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   }
 
   Future<void> _submit() async {
-    if (_isSaving) return;
+    if (_isSaving || _generating) return;
+    if (_aiShown && widget.trip == null) {
+      await _generatePlan();
+      return;
+    }
     if (!_canCreate) {
       _showError('เลือกจุดหมายก่อนสร้างแผน');
       _formKey.currentState?.validate();
@@ -579,6 +603,94 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       params: {'tripId': createdTripId},
     );
   }
+
+  /// "AI จัดแผนให้": ask the planner, show what came back, and only write it
+  /// down if the traveller keeps it.
+  Future<void> _generatePlan() async {
+    if (!_canCreate) {
+      _showError('เลือกจุดหมายก่อนสร้างแผน');
+      _formKey.currentState?.validate();
+      return;
+    }
+
+    setState(() => _generating = true);
+    _generateKey ??= uuidV4();
+
+    final PlanGenerationResult result;
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      result = await api.trips.generatePlan(
+        buildPlanRequest(
+          destination: _destinationController.text.trim(),
+          destinationPlace: _destinationPlace,
+          startDate: _startDate,
+          endDate: _endDate,
+          nights: _nights,
+          adults: _travelers,
+          children: _children,
+          styleLabels: _selectedVibes,
+          paceTier: _paceTier,
+          transportLabel: _transport,
+          budgetTier: _tierToSave,
+          perPersonPerDay: _perPersonPerDay,
+          lodging: _lodging,
+          constraintLabels: _constraints,
+        ),
+        idempotencyKey: _generateKey,
+      );
+    } on ApiException catch (failure) {
+      _showError(_planError(failure));
+      if (mounted) setState(() => _generating = false);
+      return;
+    } catch (error, stackTrace) {
+      debugPrint('Plan generation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _showError('สร้างแผนไม่สำเร็จ: $error');
+      if (mounted) setState(() => _generating = false);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _generating = false);
+
+    final keep = await showPlanReviewSheet(context, result);
+    if (!keep || !mounted) return;
+    await _savePlan(result.draft);
+  }
+
+  /// `POST /trips/create` — the only call in this flow that writes anything.
+  Future<void> _savePlan(TripDraft draft) async {
+    setState(() => _isSaving = true);
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final trip = await api.trips.createFromDraft(
+        draft,
+        // A fresh key per save, so a double tap or a retry lands one trip.
+        idempotencyKey: uuidV4(),
+      );
+      ref.invalidate(homeFeedProvider);
+      if (!mounted) return;
+      context.goNamed(
+        AppRoute.editTrip.name,
+        params: {'tripId': trip.id},
+      );
+    } on ApiException catch (failure) {
+      _showError(_planError(failure));
+    } catch (error) {
+      _showError('บันทึกแผนไม่สำเร็จ: $error');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// The planner's own failures, in the traveller's words.
+  String _planError(ApiException failure) => switch (failure.statusCode) {
+        401 => 'เข้าสู่ระบบก่อนสร้างแผน',
+        429 => 'ขอแผนจาก AI ครบโควตาชั่วโมงนี้แล้ว ลองใหม่ภายหลัง',
+        502 => 'AI ตอบกลับไม่สมบูรณ์ กดลองใหม่ได้เลย',
+        503 => 'ระบบ AI ยังไม่พร้อมใช้งาน',
+        _ => 'สร้างแผนไม่สำเร็จ: ${failure.message}',
+      };
 
   void _showError(String message) {
     if (!mounted) return;
@@ -1875,7 +1987,7 @@ class _CreateTripHeader extends StatelessWidget {
             child: Column(
               children: [
                 _HeaderInput(
-                  icon: Icons.location_on_outlined,
+                  icon: 'assets/icons/field_location.svg',
                   child: TextFormField(
                     controller: destinationController,
                     readOnly: true,
@@ -1894,14 +2006,14 @@ class _CreateTripHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 _HeaderInput(
-                  icon: Icons.calendar_month_outlined,
+                  icon: 'assets/icons/field_calendar.svg',
                   label: dateText,
                   filled: hasDate,
                   onTap: onPickDate,
                 ),
                 const SizedBox(height: 10),
                 _HeaderInput(
-                  icon: Icons.group_outlined,
+                  icon: 'assets/icons/field_guests.svg',
                   label: children == 0
                       ? 'ผู้ใหญ่, $travelers คน'
                       : 'ผู้ใหญ่ $travelers, เด็ก $children คน',
@@ -1926,7 +2038,9 @@ class _HeaderInput extends StatelessWidget {
     this.filled = false,
   });
 
-  final IconData icon;
+  /// An `assets/icons` path. The design's own strokes, which already carry
+  /// their colour, so they are drawn as-is rather than tinted.
+  final String icon;
   final String? label;
   final Widget? child;
   final VoidCallback? onTap;
@@ -1955,7 +2069,9 @@ class _HeaderInput extends StatelessWidget {
                   color: Color(0xFFFFEEE7),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, size: 18, color: const Color(0xFFFF7D63)),
+                child: Center(
+                  child: SvgPicture.asset(icon, width: 16, height: 16),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2002,7 +2118,9 @@ class _CreateModeSwitch extends StatelessWidget {
         children: [
           _ModeButton(
             label: 'AI จัดแผนให้',
+            icon: 'assets/icons/ai_sparkle.svg',
             selected: aiSelected,
+            gradient: _aiGradient,
             onTap: () => onChanged(true),
           ),
           _ModeButton(
@@ -2016,16 +2134,39 @@ class _CreateModeSwitch extends StatelessWidget {
   }
 }
 
+/// The AI half's fill, read off the design: blue at the left, through the
+/// coral the sparkle itself is drawn in, to amber at the right.
+const _aiGradient = LinearGradient(
+  begin: Alignment.centerLeft,
+  end: Alignment.centerRight,
+  colors: [
+    Color(0xFF144BF5),
+    Color(0xFFD17A84),
+    Color(0xFFFF8769),
+    Color(0xFFF2DF68),
+  ],
+  stops: [0, 0.50, 0.62, 1],
+);
+
 class _ModeButton extends StatelessWidget {
   const _ModeButton({
     required this.label,
     required this.selected,
     required this.onTap,
+    this.icon,
+    this.gradient,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// An `assets/icons` path, shown only while this half is the chosen one —
+  /// the design puts the sparkle on the live AI pill, not the idle one.
+  final String? icon;
+
+  /// Fills the pill instead of the flat coral when selected.
+  final Gradient? gradient;
 
   @override
   Widget build(BuildContext context) {
@@ -2037,21 +2178,247 @@ class _ModeButton extends StatelessWidget {
           duration: const Duration(milliseconds: 160),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFFFF7D63) : Colors.transparent,
+            // Null, never `Colors.transparent`: a BoxDecoration's colour
+            // modulates its gradient's alpha, so a transparent colour erases
+            // the gradient completely.
+            color:
+                selected && gradient == null ? const Color(0xFFFF7D63) : null,
+            gradient: selected ? gradient : null,
             borderRadius: BorderRadius.circular(99),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? Colors.white : const Color(0xFF8B8B84),
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null && selected) ...[
+                SvgPicture.asset(icon!, width: 16, height: 16),
+                const SizedBox(width: 6),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFF8B8B84),
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+/// "ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ" — the same nudge the plan editor
+/// carries, drawn with the design's dashed edge.
+/// The wait while the planner works. It runs 10–30 seconds, so the screen
+/// says what is happening rather than showing a bare spinner.
+class _Thinking extends StatefulWidget {
+  const _Thinking();
+
+  @override
+  State<_Thinking> createState() => _ThinkingState();
+}
+
+class _ThinkingState extends State<_Thinking> {
+  static const _steps = [
+    'กำลังค้นหาสถานที่…',
+    'กำลังจัดลำดับการเดินทาง…',
+    'กำลังตรวจเส้นทางและเวลา…',
+    'ใกล้เสร็จแล้ว…',
+  ];
+
+  int _step = 0;
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Paced to outlast a typical generation without looping back to the
+    // first step, which would read as though it had started over.
+    _ticker = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted) return;
+      setState(() => _step = (_step + 1).clamp(0, _steps.length - 1));
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xF2FDFCF9),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(
+              gradient: _aiGradient,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: SvgPicture.asset(
+                'assets/icons/ai_sparkle.svg',
+                width: 32,
+                height: 32,
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            'AI กำลังจัดแผนให้',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E1E1E),
+            ),
+          ),
+          const SizedBox(height: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Text(
+              _steps[_step],
+              key: ValueKey<int>(_step),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF8C8C8C)),
+            ),
+          ),
+          const SizedBox(height: 26),
+          const SizedBox(
+            width: 150,
+            child: LinearProgressIndicator(
+              minHeight: 4,
+              backgroundColor: Color(0xFFF0EDE5),
+              color: Color(0xFFFF7D63),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExploreBanner extends StatelessWidget {
+  const _ExploreBanner({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _DashedBorderPainter(
+        color: const Color(0xFFFF7D63).withValues(alpha: 0.55),
+        radius: 16,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF4EE),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFF7D63),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: SvgPicture.asset(
+                  'assets/icons/explore_compass.svg',
+                  width: 15,
+                  height: 15,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ',
+                style: TextStyle(
+                  color: Color(0xFF1E1E1E),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onTap,
+              child: Container(
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF7D63),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'สำรวจ',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(width: 2),
+                    Icon(Icons.chevron_right, size: 17, color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The banner's dashed edge. Drawn rather than composed, because Flutter has
+/// no dashed `Border`.
+class _DashedBorderPainter extends CustomPainter {
+  const _DashedBorderPainter({required this.color, required this.radius});
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.3;
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Offset.zero & size,
+        Radius.circular(radius),
+      ));
+
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        canvas.drawPath(metric.extractPath(distance, distance + 6), paint);
+        distance += 11;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter old) =>
+      old.color != color || old.radius != radius;
 }
 
 class _ThaiSectionTitle extends StatelessWidget {
