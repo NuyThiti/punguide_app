@@ -167,4 +167,12 @@ class AppColors {
 
   /// The greeting under the diamond.
   static const aiGreeting = Color(0xFF9A9691);
+
+  /// Create Puntok (Figma 2532-98219): the clip picker's off-white canvas,
+  /// the editor's timeline playhead, the Puntok button, and the inner panel
+  /// that holds the remix choices.
+  static const puntokCreateCanvas = Color(0xFFF7F7F8);
+  static const puntokPlayhead = Color(0xFFC8F54A);
+  static const puntokPublish = Color(0xFF7B42F6);
+  static const puntokRemixPanel = Color(0xFFF7F6F3);
 }

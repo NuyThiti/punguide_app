@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
+import 'package:pluno/features/create_puntok/presentation/create_puntok_screen.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/shared/widgets/create_sheet.dart';
 
@@ -115,8 +116,7 @@ void main() {
     expect(find.text('ตกลง'), findsOneWidget);
   });
 
-  testWidgets('an unbuilt option reports itself instead of going nowhere',
-      (tester) async {
+  testWidgets('Puntok opens the clip creator', (tester) async {
     await _pumpHome(tester);
 
     await tester.tap(find.text('ปันไกด์'));
@@ -125,7 +125,8 @@ void main() {
     await tester.tap(find.text('Puntok').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('สร้างคลิป Puntok ยังไม่เปิดใช้งาน'), findsOneWidget);
+    expect(find.byType(CreatePuntokScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsNothing);
   });
 
   testWidgets('PunGuide opens the post composer', (tester) async {
@@ -164,6 +165,11 @@ Future<void> _pumpHome(WidgetTester tester) async {
               path: '/posts/create',
               name: AppRoute.createPost.name,
               builder: (_, __) => const CreatePostScreen(),
+            ),
+            GoRoute(
+              path: '/puntok/create',
+              name: AppRoute.createPuntok.name,
+              builder: (_, __) => const CreatePuntokScreen(),
             ),
           ],
         ),

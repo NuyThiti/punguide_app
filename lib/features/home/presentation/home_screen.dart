@@ -228,6 +228,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context,
       onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
       onPost: () => context.goNamed(AppRoute.createPost.name),
+      onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
       onUnavailable: _showMessage,
     );
   }

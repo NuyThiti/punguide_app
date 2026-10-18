@@ -171,6 +171,7 @@ class ProfileScreen extends ConsumerWidget {
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
                 onPost: () => context.goNamed(AppRoute.createPost.name),
+                onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
                 onUnavailable: unavailable,
               ),
             ),

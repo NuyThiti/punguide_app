@@ -57,6 +57,13 @@ class PuntokFeedNotifier extends Notifier<List<PuntokPost>> {
   void toggleFollow(String id) =>
       _update(id, (post) => post.copyWith(following: !post.following));
 
+  /// Puts a clip the traveller just made at the head of the corpus — there is
+  /// no endpoint to send it to, so it lives for the session like the toggles.
+  void publish(PuntokPost post) {
+    _all = [post, ..._all];
+    state = _slice(ref.read(puntokFeedTabProvider));
+  }
+
   void _update(String id, PuntokPost Function(PuntokPost) change) {
     _all = _all
         .map((post) => post.id == id ? change(post) : post)

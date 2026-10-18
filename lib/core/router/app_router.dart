@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/ai_chat/presentation/ai_chat_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/create_post/presentation/create_post_screen.dart';
+import '../../features/create_puntok/presentation/create_puntok_screen.dart';
 import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
@@ -45,6 +46,7 @@ enum AppRoute {
   remixTrip,
   postDone,
   puntok,
+  createPuntok,
   profile,
   locationAccess,
   locationPicker,
@@ -209,6 +211,12 @@ final appRouter = GoRouter(
       name: AppRoute.puntok.name,
       pageBuilder: (context, state) =>
           _instantPage(state, const PuntokScreen()),
+    ),
+    GoRoute(
+      path: '/puntok/create',
+      name: AppRoute.createPuntok.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const CreatePuntokScreen()),
     ),
     GoRoute(
       path: '/location',
