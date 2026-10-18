@@ -66,15 +66,12 @@ class _PostShareSettingsScreenState
     // own yet, so it defaults to Public; one reopened for editing keeps
     // whatever it was actually shared as, rather than silently flipping it
     // back.
-    _audience = trip.draftVisibility != null
-        ? (trip.draftVisibility == TripVisibility.public
-            ? PostAudience.public
-            : PostAudience.onlyMe)
+    final draftVisibility = trip.draftVisibility;
+    _audience = draftVisibility != null
+        ? PostAudience.fromVisibility(draftVisibility)
         : (trip.publishedAt == null
             ? PostAudience.public
-            : (trip.visibility == TripVisibility.public
-                ? PostAudience.public
-                : PostAudience.onlyMe));
+            : PostAudience.fromVisibility(trip.visibility));
     final linked = trip.linkedTrip;
     _trip = linked == null ? null : PostTripLink(id: linked.id, title: linked.title);
     _connectedPreview = linked;
@@ -168,9 +165,7 @@ class _PostShareSettingsScreenState
         linkedTripId: _trip == null
             ? const Patch<String>.clear()
             : Patch<String>.value(_trip!.id),
-        visibility: _audience == PostAudience.public
-            ? TripVisibility.public
-            : TripVisibility.private,
+        visibility: _audience.visibility,
         remixEnabled: _remixEnabled,
         remixAudience: _remixAudience,
       );

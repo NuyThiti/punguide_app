@@ -55,8 +55,12 @@ enum TripStatus {
 }
 
 /// Who can see — and remix — a trip.
+///
+/// `followers` is visible to the owner and to signed-in travellers who follow
+/// them; anyone else gets a 404, the same as for `private`.
 enum TripVisibility {
   private('private'),
+  followers('followers'),
   public('public');
 
   const TripVisibility(this.wire);

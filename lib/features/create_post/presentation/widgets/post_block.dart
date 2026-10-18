@@ -93,6 +93,8 @@ class PostBlock extends StatefulWidget {
     this.onConfirmLocationInItem,
     this.onRemove,
     this.locationErrorText,
+    this.onImportPhotos,
+    this.importing = false,
   });
 
   final void Function((int, int), int)? onDropBeforeImage;
@@ -137,6 +139,15 @@ class PostBlock extends StatefulWidget {
   /// The message every flagged item's row shows — the per-item key/flag
   /// themselves live on each `PostBlockItem` now, not here.
   final String? locationErrorText;
+
+  /// "ช่วยเขียน" — the same AI-from-photos flow the header's own button used
+  /// to open, now a small action beside Add Photo and Add Location. Null
+  /// hides the chip rather than wiring it to nothing.
+  final VoidCallback? onImportPhotos;
+
+  /// That flow is already running — the chip shows its own spinner instead
+  /// of growing a second entry point into the same generation.
+  final bool importing;
 
   @override
   State<PostBlock> createState() => _PostBlockState();
@@ -227,6 +238,8 @@ class _PostBlockState extends State<PostBlock> {
                 unavailableImages: widget.unavailableImages,
                 coverPath: widget.coverPath,
                 onSelectCover: widget.onSelectCover,
+                onImportPhotos: widget.onImportPhotos,
+                importing: widget.importing,
                 onPickImage: () {
                   final handler = widget.onPickImageInItem;
                   if (handler == null) {
@@ -420,6 +433,8 @@ class _PostBlockContentItem extends StatelessWidget {
     this.locationFieldKey,
     this.locationHasError = false,
     this.locationErrorText,
+    this.onImportPhotos,
+    this.importing = false,
   });
 
   final int blockIndex, itemIndex;
@@ -442,6 +457,8 @@ class _PostBlockContentItem extends StatelessWidget {
   final Key? locationFieldKey;
   final bool locationHasError;
   final String? locationErrorText;
+  final VoidCallback? onImportPhotos;
+  final bool importing;
 
   /// What the location row reads: the place over its distance and address, or
   /// the prompt when nothing is pinned yet.
@@ -539,18 +556,18 @@ class _PostBlockContentItem extends StatelessWidget {
                 ),
               ),
             ),
-            for (var index = 0; index < item.imagePaths.length; index++) ...[
+            if (item.imagePaths.length == 1) ...[
               const SizedBox(height: 14),
               DragTarget<PostPhotoMove>(
                 onAcceptWithDetails: (details) =>
-                    onDropBeforeImage(details.data, index),
+                    onDropBeforeImage(details.data, 0),
                 builder: (context, candidates, rejected) => DecoratedBox(
                   decoration: BoxDecoration(
                       border: candidates.isEmpty
                           ? null
                           : Border.all(color: AppColors.postPurple, width: 3)),
                   child: LongPressDraggable<PostPhotoMove>(
-                    data: (block: blockIndex, item: itemIndex, photo: index),
+                    data: (block: blockIndex, item: itemIndex, photo: 0),
                     feedback: Material(
                       color: AppColors.postPurple,
                       borderRadius: BorderRadius.circular(12),
@@ -560,14 +577,13 @@ class _PostBlockContentItem extends StatelessWidget {
                       ),
                     ),
                     child: _BlockPhoto(
-                      source: item.imagePaths[index],
-                      unavailable:
-                          unavailableImages.contains(item.imagePaths[index]),
-                      isCover: item.imagePaths[index] == coverPath,
+                      source: item.imagePaths[0],
+                      unavailable: unavailableImages.contains(item.imagePaths[0]),
+                      isCover: item.imagePaths[0] == coverPath,
                       onSelectCover: onSelectCover == null
                           ? null
-                          : () => onSelectCover!(item.imagePaths[index]),
-                      onClear: () => onRemoveImage(index),
+                          : () => onSelectCover!(item.imagePaths[0]),
+                      onClear: () => onRemoveImage(0),
                     ),
                   ),
                 ),
@@ -575,11 +591,20 @@ class _PostBlockContentItem extends StatelessWidget {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  onPressed: () => onMoveImage(index),
+                  onPressed: () => onMoveImage(0),
                   icon: const Icon(Icons.drive_file_move_outline, size: 18),
                   label: const Text('ย้ายรูป'),
                   style: TextButton.styleFrom(foregroundColor: AppColors.muted),
                 ),
+              ),
+            ] else if (item.imagePaths.length > 1) ...[
+              const SizedBox(height: 14),
+              _PhotoCluster(
+                paths: item.imagePaths,
+                coverPath: coverPath,
+                unavailableImages: unavailableImages,
+                onTapPhoto: (index) => _managePhoto(context, index),
+                onTapMore: () => _showAllPhotos(context),
               ),
             ],
             if (!item.details.isEmpty) ...[
@@ -601,9 +626,60 @@ class _PostBlockContentItem extends StatelessWidget {
               onExtra: onExtra,
               locationPinned: pinned,
               details: item.details,
+              onImportPhotos: onImportPhotos,
+              importing: importing,
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// The pencil on a grid tile — ลบ / ตั้งเป็นปก / ย้ายรูป, the same three
+  /// things the full-width single photo already offered, just reached
+  /// through one sheet instead of three separate controls once there is no
+  /// room for them on the tile itself.
+  Future<void> _managePhoto(BuildContext context, int index) async {
+    final path = item.imagePaths[index];
+    final action = await showModalBottomSheet<_PhotoAction>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _PhotoActionsSheet(
+        canSetCover: onSelectCover != null,
+        isCover: path == coverPath,
+      ),
+    );
+    switch (action) {
+      case _PhotoAction.remove:
+        onRemoveImage(index);
+      case _PhotoAction.setCover:
+        onSelectCover?.call(path);
+      case _PhotoAction.move:
+        onMoveImage(index);
+      case null:
+        break;
+    }
+  }
+
+  /// "+N" on the last visible tile — every photo this item has, so the ones
+  /// the grid had no room for are still reachable.
+  Future<void> _showAllPhotos(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => _AllPhotosSheet(
+        paths: item.imagePaths,
+        coverPath: coverPath,
+        unavailableImages: unavailableImages,
+        onTapPhoto: (index) {
+          Navigator.of(sheetContext).pop();
+          _managePhoto(context, index);
+        },
       ),
     );
   }
@@ -837,17 +913,297 @@ class _BlockPhoto extends StatelessWidget {
   }
 }
 
-/// One item's own "+ something" chips — add a photo, then when to go, how to
-/// get there, who to call, the one tip worth passing on. Independent per
-/// item, so the same row appears once under every content item in a
-/// section, not once for the whole heading.
+/// Two or more photos, shown as a compact row rather than stacked full-width
+/// cards — there is no room for that once a spot has more than one picture.
+/// Only the first two tiles ever show; past that the second tile also
+/// carries a "+N" badge for the rest.
+class _PhotoCluster extends StatelessWidget {
+  const _PhotoCluster({
+    required this.paths,
+    required this.coverPath,
+    required this.unavailableImages,
+    required this.onTapPhoto,
+    required this.onTapMore,
+  });
+
+  static const _visible = 2;
+
+  final List<String> paths;
+  final String? coverPath;
+  final Set<String> unavailableImages;
+  final ValueChanged<int> onTapPhoto;
+  final VoidCallback onTapMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = paths.length < _visible ? paths.length : _visible;
+    final remaining = paths.length - shown;
+
+    return Row(
+      children: [
+        for (var i = 0; i < shown; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _PhotoTile(
+              source: paths[i],
+              isCover: paths[i] == coverPath,
+              unavailable: unavailableImages.contains(paths[i]),
+              moreCount: (i == shown - 1 && remaining > 0) ? remaining : null,
+              onTap: () => onTapPhoto(i),
+              onTapMore: onTapMore,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One square tile in the cluster — the pencil always reopens this photo's
+/// own actions; the "+N" badge, only on the last tile when more exist,
+/// reaches the rest instead.
+class _PhotoTile extends StatelessWidget {
+  const _PhotoTile({
+    required this.source,
+    required this.isCover,
+    required this.unavailable,
+    required this.onTap,
+    required this.onTapMore,
+    this.moreCount,
+  });
+
+  final String source;
+  final bool isCover;
+  final bool unavailable;
+  final int? moreCount;
+  final VoidCallback onTap;
+  final VoidCallback onTapMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            unavailable
+                ? const ColoredBox(
+                    color: AppColors.line,
+                    child: Center(
+                      child: Icon(Icons.image_not_supported_outlined,
+                          color: AppColors.muted),
+                    ),
+                  )
+                : CoverImage(source: source),
+            if (isCover)
+              const Positioned(
+                bottom: 8,
+                left: 8,
+                child: Icon(Icons.check_circle,
+                    color: AppColors.postPurple, size: 20),
+              ),
+            if (moreCount != null)
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: GestureDetector(
+                  onTap: onTapMore,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '+$moreCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: onTap,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.edit, size: 14, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _PhotoAction { remove, setCover, move }
+
+/// What the pencil opens: ตั้งเป็นปก (when there is a cover to set at all and
+/// this is not already it), ย้ายรูป, ลบรูปนี้ — a sheet in place of the three
+/// separate controls the single-photo card could afford to spread out.
+class _PhotoActionsSheet extends StatelessWidget {
+  const _PhotoActionsSheet({required this.canSetCover, required this.isCover});
+
+  final bool canSetCover;
+  final bool isCover;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 10, bottom: 4),
+            child: _SheetGrabber(),
+          ),
+          if (canSetCover && !isCover)
+            ListTile(
+              leading: const Icon(Icons.image_outlined,
+                  color: AppColors.postPurple),
+              title: const Text('ตั้งเป็นรูปปก'),
+              onTap: () =>
+                  Navigator.of(context).pop(_PhotoAction.setCover),
+            ),
+          ListTile(
+            leading: const Icon(Icons.drive_file_move_outline,
+                color: AppColors.postPurple),
+            title: const Text('ย้ายรูป'),
+            onTap: () => Navigator.of(context).pop(_PhotoAction.move),
+          ),
+          ListTile(
+            leading:
+                const Icon(Icons.delete_outline, color: AppColors.brandOrangeDeep),
+            title: const Text('ลบรูปนี้'),
+            onTap: () => Navigator.of(context).pop(_PhotoAction.remove),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+/// Every photo this item has, so the ones the grid had no room for are still
+/// reachable — tapping any of them reopens the same pencil actions.
+class _AllPhotosSheet extends StatelessWidget {
+  const _AllPhotosSheet({
+    required this.paths,
+    required this.coverPath,
+    required this.unavailableImages,
+    required this.onTapPhoto,
+  });
+
+  final List<String> paths;
+  final String? coverPath;
+  final Set<String> unavailableImages;
+  final ValueChanged<int> onTapPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _SheetGrabber(),
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'รูปทั้งหมด (${paths.length})',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.foreground,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: GridView.builder(
+                shrinkWrap: true,
+                itemCount: paths.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemBuilder: (context, index) => ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: GestureDetector(
+                    onTap: () => onTapPhoto(index),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        unavailableImages.contains(paths[index])
+                            ? const ColoredBox(color: AppColors.line)
+                            : CoverImage(source: paths[index]),
+                        if (paths[index] == coverPath)
+                          const Positioned(
+                            bottom: 4,
+                            left: 4,
+                            child: Icon(Icons.check_circle,
+                                color: AppColors.postPurple, size: 16),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetGrabber extends StatelessWidget {
+  const _SheetGrabber();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 4,
+      decoration: BoxDecoration(
+        color: AppColors.line,
+        borderRadius: BorderRadius.circular(99),
+      ),
+    );
+  }
+}
+
+/// One item's own "+ something" chips — add a photo, ask AI to help write it,
+/// then when to go, how to get there, who to call, the one tip worth passing
+/// on. Independent per item, so the same row appears once under every content
+/// item in a section, not once for the whole heading.
 ///
 /// Each of the five (location, time, transport, contact, hack) drops off the
 /// row the moment it has an answer — [PostSpotDetailRows] above already
 /// turned into its own tappable chip, so the add-icon stays only for
-/// whichever extras are still blank. The photo chip is the one exception:
-/// there is no single "filled" state to replace it with, since a spot takes
-/// more than one picture.
+/// whichever extras are still blank. The photo and AI chips are the
+/// exceptions: there is no single "filled" state to replace the photo one
+/// with, since a spot takes more than one picture, and the AI action (once
+/// wired by the screen) is always on offer, not something an item answers.
 class _ItemExtrasRow extends StatelessWidget {
   const _ItemExtrasRow({
     required this.onPickImage,
@@ -855,6 +1211,8 @@ class _ItemExtrasRow extends StatelessWidget {
     required this.onExtra,
     required this.locationPinned,
     required this.details,
+    this.onImportPhotos,
+    this.importing = false,
   });
 
   final VoidCallback onPickImage;
@@ -862,6 +1220,8 @@ class _ItemExtrasRow extends StatelessWidget {
   final ValueChanged<PostSpotExtra> onExtra;
   final bool locationPinned;
   final PostSpotDetails details;
+  final VoidCallback? onImportPhotos;
+  final bool importing;
 
   @override
   Widget build(BuildContext context) {
@@ -874,6 +1234,16 @@ class _ItemExtrasRow extends StatelessWidget {
           tooltip: 'รูปภาพ',
           onTap: onPickImage,
         ),
+        if (onImportPhotos != null) ...[
+          const SizedBox(width: 8),
+          PostAddChip(
+            icon: Icons.auto_awesome,
+            label: 'ช่วยเขียน',
+            tooltip: 'ช่วยเขียน',
+            loading: importing,
+            onTap: onImportPhotos!,
+          ),
+        ],
         if (!locationPinned) ...[
           const SizedBox(width: 8),
           PostAddChip(
@@ -930,12 +1300,18 @@ class PostAddChip extends StatelessWidget {
     required this.onTap,
     required this.tooltip,
     this.label,
+    this.loading = false,
   });
 
   final IconData icon;
   final String? label;
   final String tooltip;
   final VoidCallback onTap;
+
+  /// Swaps the glyph for a small spinner and stops answering taps — the AI
+  /// action while its own import is already running, rather than growing a
+  /// second control just for that state.
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -950,7 +1326,7 @@ class PostAddChip extends StatelessWidget {
           color: AppColors.screen,
           borderRadius: BorderRadius.circular(11),
           child: InkWell(
-            onTap: onTap,
+            onTap: loading ? null : onTap,
             borderRadius: BorderRadius.circular(11),
             child: CustomPaint(
               painter: const PostDashedBorder(
@@ -966,7 +1342,17 @@ class PostAddChip extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(icon, size: 16, color: AppColors.postPurple),
+                    if (loading)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.postPurple,
+                        ),
+                      )
+                    else
+                      Icon(icon, size: 16, color: AppColors.postPurple),
                     if (text != null) ...[
                       const SizedBox(width: 5),
                       Text(

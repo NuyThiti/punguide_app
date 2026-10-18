@@ -282,9 +282,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         // Absent on the wire means THB — nothing was backfilled.
         currency: trip.budgetCurrency ?? 'THB',
       );
-      _audience = trip.visibility == TripVisibility.public
-          ? PostAudience.public
-          : PostAudience.onlyMe;
+      _audience = PostAudience.fromVisibility(trip.visibility);
       for (final block in _blocks) {
         block.dispose(_refresh);
       }
@@ -1660,10 +1658,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// screen — `_draftId` is guaranteed set when this returns `true`.
   Future<bool> _savePost({required PostSaveAction action}) async {
     if (_publishing || _arranging || !_draft.isPublishable) return false;
-    if (_audience == PostAudience.followers) {
-      _message('ขณะนี้รองรับสาธารณะและเฉพาะฉัน กรุณาเลือกผู้ชมอีกครั้ง');
-      return false;
-    }
     FocusManager.instance.primaryFocus?.unfocus();
     final draft = _draft;
     // Post Title and Post Location are both optional — nothing here ever
@@ -1781,9 +1775,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       final result = await api.trips.savePost(
         postId: _draftId,
         action: action,
-        visibility: _audience == PostAudience.public
-            ? TripVisibility.public
-            : TripVisibility.private,
+        visibility: _audience.visibility,
         title: title,
         destination: destination,
         // About trip's overview is the post's blurb, so it goes in
@@ -2040,9 +2032,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 onPickCover: _pickCover,
                 onClearCover: _clearCover,
                 coverPath: _coverPath,
-                onImportPhotos: _createFromPhotos,
-                importing: _arranging,
-                onCancelImport: _cancelArrangement,
               ),
               if (_publishing) const LinearProgressIndicator(),
               Expanded(
@@ -2087,6 +2076,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         titleFocus: _blocks[index].titleFocus,
                         bodyController: _blocks[index].body,
                         imagePath: null,
+                        onImportPhotos: _createFromPhotos,
+                        importing: _arranging,
                         items: _blocks[index]
                             .items
                             .map((item) => PostBlockItem(

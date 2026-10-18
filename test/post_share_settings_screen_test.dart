@@ -122,6 +122,38 @@ void main() {
     expect(find.text('Public'), findsNothing);
   });
 
+  testWidgets('a post shared to Followers reopens and re-shares as Followers',
+      (tester) async {
+    await _pumpScreen(tester, trip: {
+      ..._postJson(),
+      'visibility': 'followers',
+      'publishedAt': '2026-09-09T00:00:00.000Z',
+    });
+
+    expect(find.text('Followers'), findsOneWidget);
+    expect(find.text('Public'), findsNothing);
+
+    await tester.tap(find.text('Share'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.bodyOf('PUT /trips/posts/trip-1')!['visibility'],
+        'followers');
+  });
+
+  testWidgets('a draft saved with Followers shows Followers, not private',
+      (tester) async {
+    await _pumpScreen(tester, trip: {
+      ..._postJson(),
+      'status': 'draft',
+      'visibility': 'private',
+      'draftVisibility': 'followers',
+      'publishedAt': null,
+    });
+
+    expect(find.text('Followers'), findsOneWidget);
+    expect(find.text('Only me'), findsNothing);
+  });
+
   testWidgets(
       'a shared post taken down by Save Draft shows the dropdown it was '
       'saved as, not the visibility the takedown forced',

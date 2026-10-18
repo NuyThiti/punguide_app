@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
+import '../../../../shared/widgets/full_image_viewer.dart';
 import '../../../auth/domain/auth_session.dart';
 import '../../domain/models/post_draft.dart';
 import 'post_audience_chip.dart';
 
-/// The composer's dark cap: back, the title, and the one-tap import that
-/// builds a post out of a trip's photos.
+/// The composer's dark cap: back, the title, and the cover photo behind it.
 ///
 /// It absorbs the status bar itself — the screen's [SafeArea] stops at the top
-/// so the dark can run under the clock, the way the design draws it.
+/// so the dark can run under the clock, the way the design draws it. The
+/// one-tap "AI สร้างโพสจากรูป" button that used to live here moved into the
+/// spot's own toolbar as "ช่วยเขียน" — this cap is back to just back, title,
+/// and the cover action. A cover photo keeps the cap at this same height
+/// rather than growing it — tapping the photo itself is what opens it up, full
+/// screen.
 class CreatePostHeader extends StatelessWidget {
   const CreatePostHeader({
     super.key,
@@ -19,9 +23,6 @@ class CreatePostHeader extends StatelessWidget {
     required this.onPickCover,
     required this.onClearCover,
     this.coverPath,
-    required this.onImportPhotos,
-    required this.importing,
-    required this.onCancelImport,
   });
 
   final VoidCallback onClose;
@@ -35,35 +36,33 @@ class CreatePostHeader extends StatelessWidget {
   /// The selected photo, displayed across the header and in the cover action.
   final String? coverPath;
 
-  /// "Creates post from Photos" — reads the picked photos' EXIF and groups
-  /// them into sections.
-  final VoidCallback onImportPhotos;
-
-  /// The import is running; the button turns into its own progress row so the
-  /// dark cap does not change height underneath it.
-  final bool importing;
-
-  final VoidCallback onCancelImport;
-
   @override
   Widget build(BuildContext context) {
+    final hasCover = coverPath != null && coverPath!.trim().isNotEmpty;
+
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
       child: ColoredBox(
         color: AppColors.postHeader,
         child: Stack(
           children: [
-            if (coverPath != null && coverPath!.trim().isNotEmpty) ...[
+            if (hasCover) ...[
               Positioned.fill(
-                child: CoverImage(source: coverPath!),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => showFullImages(context, urls: [coverPath!]),
+                  child: CoverImage(source: coverPath!),
+                ),
               ),
               const Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0x26000000), Color(0xF2000000)],
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x26000000), Color(0xF2000000)],
+                      ),
                     ),
                   ),
                 ),
@@ -76,47 +75,41 @@ class CreatePostHeader extends StatelessWidget {
                 16,
                 18,
               ),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 44,
-                    child: Row(
-                      children: [
-                        _RoundBackButton(onTap: onClose),
-                        const Expanded(
-                          child: Text(
-                            'PunGuide',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
+              child: SizedBox(
+                height: 44,
+                child: Row(
+                  children: [
+                    _RoundBackButton(onTap: onClose),
+                    // `IgnorePointer`, not just an absent `GestureDetector`:
+                    // `RenderParagraph` claims hit-testing across its own
+                    // painted line regardless, and without this a tap meant
+                    // for the cover image behind it never reaches it.
+                    const Expanded(
+                      child: IgnorePointer(
+                        child: Text(
+                          'PunGuide',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        if (coverPath == null)
-                          _RoundAction(
-                            icon: Icons.add_photo_alternate_outlined,
-                            tooltip: 'รูปหน้าปก',
-                            onTap: onPickCover,
-                          )
-                        else
-                          _RoundAction(
-                            icon: Icons.add_photo_alternate_outlined,
-                            tooltip: 'เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)',
-                            onTap: onPickCover,
-                            onLongPress: onClearCover,
-                          ),
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  _ImportButton(
-                    importing: importing,
-                    onTap: onImportPhotos,
-                    onCancel: onCancelImport,
-                  ),
-                ],
+                    if (!hasCover)
+                      _RoundAction(
+                        icon: Icons.add_photo_alternate_outlined,
+                        tooltip: 'รูปหน้าปก',
+                        onTap: onPickCover,
+                      )
+                    else
+                      _CoverMenuButton(
+                        onChange: onPickCover,
+                        onRemove: onClearCover,
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -162,13 +155,11 @@ class _RoundAction extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.onLongPress,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +170,6 @@ class _RoundAction extends StatelessWidget {
         shape: const CircleBorder(),
         child: InkWell(
           onTap: onTap,
-          onLongPress: onLongPress,
           customBorder: const CircleBorder(),
           child: SizedBox(
             width: 40,
@@ -192,106 +182,54 @@ class _RoundAction extends StatelessWidget {
   }
 }
 
-/// The gradient call to action. While importing it keeps its shape and shows
-/// progress plus a way out, rather than vanishing and reflowing the header.
-class _ImportButton extends StatelessWidget {
-  const _ImportButton({
-    required this.importing,
-    required this.onTap,
-    required this.onCancel,
-  });
+enum _CoverMenuAction { change, remove }
 
-  final bool importing;
-  final VoidCallback onTap;
-  final VoidCallback onCancel;
+/// Once there is a cover, the round action opens a menu instead of jumping
+/// straight back into the picker — "เปลี่ยน" to swap it, "ลบ" to take it off
+/// entirely, both spelled out rather than left for a long press to discover.
+class _CoverMenuButton extends StatelessWidget {
+  const _CoverMenuButton({required this.onChange, required this.onRemove});
+
+  final VoidCallback onChange;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 51),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            AppColors.postImportStart,
-            AppColors.postImportMid,
-            AppColors.postImportMid2,
-            AppColors.postImportEnd,
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            offset: const Offset(0, 3),
-            blurRadius: 16,
+    return Material(
+      color: Colors.white24,
+      shape: const CircleBorder(),
+      child: PopupMenuButton<_CoverMenuAction>(
+        tooltip: 'รูปหน้าปก',
+        position: PopupMenuPosition.under,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        onSelected: (action) => switch (action) {
+          _CoverMenuAction.change => onChange(),
+          _CoverMenuAction.remove => onRemove(),
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: _CoverMenuAction.change,
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading:
+                  Icon(Icons.add_photo_alternate_outlined, color: AppColors.postPurple),
+              title: Text('เปลี่ยนรูปหน้าปก'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _CoverMenuAction.remove,
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.delete_outline, color: AppColors.brandOrangeDeep),
+              title: Text('ลบรูปหน้าปก'),
+            ),
           ),
         ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: importing ? null : onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: importing
-                ? Row(
-                    children: [
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'กำลังจัดรูปเป็นเรื่องราว…',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: onCancel,
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('ยกเลิก'),
-                      ),
-                    ],
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SvgPicture.asset(
-                        'assets/icons/ai_photo.svg',
-                        width: 26,
-                        height: 26,
-                      ),
-                      const SizedBox(width: 8),
-                      const Flexible(
-                        child: Text(
-                          'AI สร้างโพสจากรูป',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
+        child: const SizedBox(
+          width: 40,
+          height: 40,
+          child: Icon(Icons.add_photo_alternate_outlined,
+              size: 21, color: Colors.white),
         ),
       ),
     );
@@ -354,4 +292,3 @@ class PostAuthorRow extends StatelessWidget {
     );
   }
 }
-

@@ -11,12 +11,14 @@ import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_post/domain/models/post_draft.dart';
 import 'package:pluno/features/create_post/presentation/create_post_screen.dart';
+import 'package:pluno/features/create_post/presentation/widgets/create_post_header.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_action_bar.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_block.dart';
 import 'package:pluno/features/create_post/presentation/widgets/post_title_field.dart';
 import 'package:pluno/features/create_post/presentation/widgets/trip_spot_pagination.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
 import 'package:pluno/shared/formatting/spot_detail_text.dart';
+import 'package:pluno/shared/widgets/cover_image.dart';
 import 'package:pluno/features/remix_trip/presentation/post_done_screen.dart';
 import 'package:pluno/features/trip_detail/presentation/post_share_settings_screen.dart';
 import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
@@ -261,7 +263,8 @@ FakeAdapter _placesAdapter() => FakeAdapter({
 /// Settling here waits only for the sheet to arrive; the picker has not been
 /// asked for anything yet, so nothing is off in the background to hang on.
 Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
-  await tester.tap(find.text('AI สร้างโพสจากรูป'));
+  await tester.ensureVisible(find.text('ช่วยเขียน'));
+  await tester.tap(find.text('ช่วยเขียน'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('เพิ่มรูป').last);
   await tester.pumpAndSettle();
@@ -868,7 +871,8 @@ void main() {
         },
       ]),
     ];
-    await tester.tap(find.text('AI สร้างโพสจากรูป'));
+    await tester.ensureVisible(find.text('ช่วยเขียน'));
+    await tester.tap(find.text('ช่วยเขียน'));
     await tester.pumpAndSettle();
     // The location prompt only shows up once a photo exists — picking the
     // hint is done after, not before.
@@ -924,7 +928,8 @@ void main() {
       ],
     });
     await _pumpComposer(tester, adapter: adapter, extra: _located);
-    await tester.tap(find.text('AI สร้างโพสจากรูป'));
+    await tester.ensureVisible(find.text('ช่วยเขียน'));
+    await tester.tap(find.text('ช่วยเขียน'));
     await tester.pumpAndSettle();
     // The location prompt only shows up once a photo exists.
     await tester.tap(find.text('เพิ่มรูป').last);
@@ -1556,7 +1561,7 @@ void main() {
     expect(find.text('เพิ่มรูป').last, findsOneWidget);
     await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
-    expect(find.text('AI สร้างโพสจากรูป'), findsOneWidget);
+    expect(find.text('ช่วยเขียน'), findsOneWidget);
     // The page is a full page now, not a sheet over the composer, so the
     // draft underneath was never reachable to assert on until it is the only
     // thing left on screen again — but that silence is exactly the point:
@@ -1694,6 +1699,39 @@ void main() {
     expect(find.text('home'), findsOneWidget);
   });
 
+  testWidgets('Followers goes up as visibility followers instead of refusing',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
+    tester
+        .widget<PostBlock>(find.byType(PostBlock))
+        .items!
+        .first
+        .bodyController
+        .text = 'เล่าเฉย ๆ';
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Public'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(PostAudience.followers.label));
+    await tester.pumpAndSettle();
+    await _confirmPlace(tester);
+
+    await _scrollTo(tester, find.text('Save Draft'));
+    await tester.tap(find.text('Save Draft'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    expect(adapter.bodyOf('POST /trips/posts')!['visibility'], 'followers');
+  });
+
   for (final denied in [false, true]) {
     testWidgets(
         denied
@@ -1718,7 +1756,9 @@ void main() {
       await tester.tap(find.byTooltip('ย้อนกลับ'));
       await tester.pumpAndSettle();
       expect(find.text('ร่างเดิม'), findsOneWidget);
-      expect(find.text('กำลังจัดรูปเป็นเรื่องราว…'), findsNothing);
+      // Nothing is importing any more, so the toolbar's AI chip is back to
+      // its own idle label rather than stuck showing a spinner.
+      expect(find.text('ช่วยเขียน'), findsOneWidget);
       expect(
           tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
       expect(tester.takeException(), isNull);
@@ -1771,10 +1811,14 @@ void main() {
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
         'ทริปของฉัน';
     expect(find.text('รูปหน้าปก'), findsNothing);
-    await tester.ensureVisible(find.text('ใช้เป็นหน้าปก').last);
-    await tester.tap(find.text('ใช้เป็นหน้าปก').last);
+    // Two photos now render as a compact grid rather than full-width cards —
+    // the pencil on the second tile opens the same cover choice the old
+    // "ใช้เป็นหน้าปก" button offered.
+    await tester.ensureVisible(find.byIcon(Icons.edit).at(1));
+    await tester.tap(find.byIcon(Icons.edit).at(1));
     await tester.pumpAndSettle();
-    expect(find.text('รูปหน้าปก'), findsOneWidget);
+    await tester.tap(find.text('ตั้งเป็นรูปปก'));
+    await tester.pumpAndSettle();
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
         'assets/images/puntok_london.jpg');
     if (adapter.replies.containsKey('POST /trips/posts')) await _confirmPlace(tester);
@@ -1820,10 +1864,13 @@ void main() {
     // traveller never put in the story must not appear in it.
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
-    // Shown where it was chosen, with the way to undo it (a long press).
-    expect(
-        find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'),
-        findsOneWidget);
+    // Shown where it was chosen, with an explicit way to remove it now — the
+    // round action opens a menu instead of relying on a long press.
+    await tester.tap(find.byTooltip('รูปหน้าปก'));
+    await tester.pumpAndSettle();
+    expect(find.text('ลบรูปหน้าปก'), findsOneWidget);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
 
     // Give the post something to actually say, then publish.
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
@@ -1860,20 +1907,50 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
-    expect(
-        find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'),
-        findsOneWidget);
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
+        isNotNull);
 
-    await tester.longPress(
-        find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'));
+    // The round action now opens a menu rather than acting on a long press —
+    // "ลบรูปหน้าปก" is the explicit way off.
+    await tester.tap(find.byTooltip('รูปหน้าปก'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ลบรูปหน้าปก'));
     await tester.pumpAndSettle();
 
     // Back to the offer, and nothing was left behind in a spot.
-    expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
-    expect(find.byTooltip('เปลี่ยนรูปหน้าปก (แตะค้างเพื่อเอาออก)'),
-        findsNothing);
+    expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath, isNull);
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
+  });
+
+  testWidgets('tapping the header cover opens it full screen', (tester) async {
+    final previousPicker = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _CoverImagePicker();
+    addTearDown(() => ImagePickerPlatform.instance = previousPicker);
+    await _pumpComposer(tester);
+
+    await tester.tap(find.byTooltip('รูปหน้าปก'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือกจากคลังภาพ'));
+    await tester.pumpAndSettle();
+
+    // The photo itself, not the round action beside it — the header keeps
+    // its original height either way, so without the title's own
+    // `IgnorePointer` the tap would never reach the photo's handler
+    // underneath it (`RenderParagraph` claims hit-testing across its own
+    // painted line regardless of there being a recognizer on it).
+    await tester.tap(
+        find.descendant(
+            of: find.byType(CreatePostHeader), matching: find.byType(CoverImage)),
+        warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    // Two now — the header's own back button alongside the viewer's own
+    // close button, which happens to read the same way.
+    expect(find.byTooltip('ปิด'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('ปิด').last);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('ปิด'), findsOneWidget);
   });
 
   testWidgets('removing the selected cover never chooses another automatically',
@@ -1980,9 +2057,12 @@ void main() {
   testWidgets('the composer lays out every part of the design', (tester) async {
     await _pumpComposer(tester);
 
-    // The dark cap: back, title, and the cover action opposite it.
+    // The dark cap: back, title, and the cover action opposite it. The old
+    // gradient AI button is gone — "ช่วยเขียน" in the spot's own toolbar
+    // below is the only way into that flow now.
     expect(find.text('PunGuide'), findsOneWidget);
-    expect(find.text('AI สร้างโพสจากรูป'), findsOneWidget);
+    expect(find.text('AI สร้างโพสจากรูป'), findsNothing);
+    expect(find.text('ช่วยเขียน'), findsOneWidget);
     expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
 
     // One card says what the post is and who it is by. The plan link is not
@@ -2486,7 +2566,8 @@ void main() {
       ],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.tap(find.text('AI สร้างโพสจากรูป'));
+    await tester.ensureVisible(find.text('ช่วยเขียน'));
+    await tester.tap(find.text('ช่วยเขียน'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เพิ่มรูป').last);
     await tester.pumpAndSettle();

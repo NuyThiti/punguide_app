@@ -1,3 +1,4 @@
+import '../../../../core/api/models/enums.dart';
 import '../../../../core/api/models/trip_content.dart';
 import 'package:flutter/material.dart';
 
@@ -12,8 +13,23 @@ enum PostAudience {
 
   const PostAudience(this.label, this.icon);
 
+  /// The audience as the reader of a saved trip's `visibility` sees it.
+  factory PostAudience.fromVisibility(TripVisibility visibility) =>
+      switch (visibility) {
+        TripVisibility.public => PostAudience.public,
+        TripVisibility.followers => PostAudience.followers,
+        TripVisibility.private => PostAudience.onlyMe,
+      };
+
   final String label;
   final IconData icon;
+
+  /// What goes up as `visibility` — one value per choice on the pill.
+  TripVisibility get visibility => switch (this) {
+        PostAudience.public => TripVisibility.public,
+        PostAudience.followers => TripVisibility.followers,
+        PostAudience.onlyMe => TripVisibility.private,
+      };
 }
 
 /// A place pinned to one topic, as `/places/search` returned it.
