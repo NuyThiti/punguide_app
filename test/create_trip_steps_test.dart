@@ -407,10 +407,25 @@ void main() {
       String? bracket,
       String? custom,
       List<String> constraints = const [],
+      int? nights,
     }) async {
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
       await _setDestination(tester);
+
+      if (nights != null) {
+        await tester.tap(find.text('Date'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('จำนวนคืน'));
+        await tester.pumpAndSettle();
+        // The sheet opens on one night.
+        for (var i = 1; i < nights; i++) {
+          await tester.tap(find.byIcon(Icons.add));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('ยืนยัน'));
+        await tester.pumpAndSettle();
+      }
 
       for (final style in styles) {
         await tester.tap(find.text(style));
@@ -447,6 +462,7 @@ void main() {
         styles: ['วัฒนธรรม', 'อาหาร'],
         pace: 'Chill',
         bracket: 'Comfort',
+        nights: 2,
       );
 
       final body = adapter.bodyOf('POST /trips');
@@ -457,8 +473,19 @@ void main() {
       expect(body['travelStyles'], ['culture', 'food']);
       expect(body['pace'], 'chill');
       expect(body['budgetTier'], 'comfort');
-      // ฿3,000 a head a day — the middle of the bracket — over seven days.
-      expect(body['budgetLimit'], 3000 * 7);
+      // ฿3,000 a head a day — the middle of the bracket — over three days:
+      // two nights is three days, not two.
+      expect(body['budgetLimit'], 3000 * 3);
+    });
+
+    testWidgets('with no trip length, the tier goes up without a total',
+        (tester) async {
+      await fillAndSubmit(tester, bracket: 'Comfort');
+
+      final body = adapter.bodyOf('POST /trips')!;
+      expect(body['budgetTier'], 'comfort');
+      // No length means no total — not one made up from a guessed week.
+      expect(body.containsKey('budgetLimit'), isFalse);
     });
 
     testWidgets('creating opens the editor on the new trip', (tester) async {
@@ -491,11 +518,11 @@ void main() {
 
     testWidgets('an amount typed with no bracket still lands in one',
         (tester) async {
-      await fillAndSubmit(tester, custom: '7000');
+      await fillAndSubmit(tester, custom: '7000', nights: 1);
 
       final body = adapter.bodyOf('POST /trips')!;
       expect(body['budgetTier'], 'premium');
-      expect(body['budgetLimit'], 7000 * 7);
+      expect(body['budgetLimit'], 7000 * 2);
     });
 
     testWidgets('a picked suggestion sends destinationPlace, without lat/lng',
@@ -669,6 +696,70 @@ void main() {
       expect(find.text('edit trip-new'), findsOneWidget);
     });
 
+    /// The Idempotency-Key of every planner call, in order.
+    List<String?> generateKeys() => [
+          for (final request in adapter.requests)
+            if (request.path == '/trips/plan/generate')
+              request.headers.entries
+                  .where((e) => e.key.toLowerCase() == 'idempotency-key')
+                  .map((e) => e.value as String?)
+                  .firstOrNull,
+        ];
+
+    Future<void> askAgain(WidgetTester tester) async {
+      ScaffoldMessenger.of(tester.element(find.byType(ListView)))
+          .clearSnackBars();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('สร้างแผน'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a failed ask retried unchanged replays its key',
+        (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(502, <String, dynamic>{'message': 'bad model output'}),
+        FakeReply(200, planResponse()),
+      ];
+      await runWizard(tester);
+      await askAgain(tester);
+
+      final keys = generateKeys();
+      expect(keys, hasLength(2));
+      expect(keys.first, isNotNull);
+      expect(keys.last, keys.first);
+    });
+
+    testWidgets('a changed ask mints a new key', (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(502, <String, dynamic>{'message': 'bad model output'}),
+        FakeReply(200, planResponse()),
+      ];
+      await runWizard(tester);
+      await tester.tap(find.text('Premium'));
+      await tester.pumpAndSettle();
+      await askAgain(tester);
+
+      final keys = generateKeys();
+      expect(keys, hasLength(2));
+      // Replaying the old key would hand back the Comfort plan.
+      expect(keys.last, isNot(keys.first));
+    });
+
+    testWidgets('asking again after ทิ้งแผนนี้ mints a new key',
+        (tester) async {
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(200, planResponse()),
+      ];
+      await runWizard(tester);
+      await tester.tap(find.text('ทิ้งแผนนี้'));
+      await tester.pumpAndSettle();
+      await askAgain(tester);
+
+      final keys = generateKeys();
+      expect(keys, hasLength(2));
+      expect(keys.last, isNot(keys.first));
+    });
+
     testWidgets('a spent quota says so instead of failing blankly',
         (tester) async {
       adapter.replies['POST /trips/plan/generate'] = [
@@ -681,5 +772,41 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  testWidgets('ข้ามไปก่อน skips step one instead of leaving the wizard',
+      (tester) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await _setDestination(tester);
+    await tester.tap(find.text('วัฒนธรรม'));
+    await tester.tap(find.text('Chill'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ข้ามไปก่อน'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 จาก 2'), findsOneWidget);
+    expect(find.text('home'), findsNothing);
+
+    await tester.tap(find.text('สร้างแผน'));
+    await tester.pumpAndSettle();
+
+    // Skipped means left out — the server chooses — so what was tapped
+    // before skipping does not go up.
+    final body = adapter.bodyOf('POST /trips')!;
+    expect(body.containsKey('travelStyles'), isFalse);
+    expect(body.containsKey('pace'), isFalse);
+  });
+
+  testWidgets('ข้ามไปก่อน works before a destination is chosen',
+      (tester) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ข้ามไปก่อน'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 จาก 2'), findsOneWidget);
   });
 }

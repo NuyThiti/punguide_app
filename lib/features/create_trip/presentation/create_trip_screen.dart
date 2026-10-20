@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,13 +33,12 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _destinationController;
   late final TextEditingController _budgetController;
-  late final TextEditingController _durationController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _coverImageController;
 
   DateTime? _startDate;
   DateTime? _endDate;
-  String _transport = 'flight';
+  String _transport = '';
 
   /// Step one: how many stops a day the traveller wants.
   String _paceTier = '';
@@ -69,6 +69,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   /// the plan already made instead of paying the model twice; a fresh ask
   /// mints a new one.
   String? _generateKey;
+
+  /// The body [_generateKey] was minted for. A different ask is a different
+  /// plan, so it must not replay the old key and get the old plan back.
+  String? _generateAsk;
 
   /// Drives the full-screen wait: the planner takes 10–30 seconds.
   bool _generating = false;
@@ -139,15 +143,21 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     return extra.isEmpty ? null : extra.join(', ');
   }
 
-  int get _days {
-    final parsed = int.tryParse(_durationController.text.trim()) ?? 0;
-    return parsed > 0 ? parsed : 1;
+  /// Days the trip runs, counted inclusively: three nights is four days, and
+  /// a single date is one. Null while no length has been chosen — a new trip
+  /// has none until the dates sheet answers, and guessing one would inflate
+  /// or shrink the total below.
+  int? get _days {
+    if (_startDate != null || _nights > 0) return _nights + 1;
+    final stored = widget.trip?.duration ?? 0;
+    return stored > 0 ? stored : null;
   }
 
   /// The trip total the API stores. The section is headed "งบต่อคน / วัน", so
   /// the figure on screen has to be multiplied back up by heads and days.
+  /// With no length there is no total to give, and the tier goes up alone.
   double get _displayBudget =>
-      _perPersonPerDay * (_travelers + _children) * _days;
+      _perPersonPerDay * (_travelers + _children) * (_days ?? 0);
 
   /// Leaving step two untouched must not wipe the budget off a trip being
   /// edited, so the stored total stands until something is actually chosen.
@@ -167,9 +177,6 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     // hint. An existing trip's stored total is a whole-trip figure, which does
     // not belong in a per-person-per-day field either.
     _budgetController = TextEditingController();
-    _durationController = TextEditingController(
-      text: trip == null ? '7' : trip.duration.toString(),
-    );
     _descriptionController =
         TextEditingController(text: trip?.description ?? '');
     _coverImageController = TextEditingController(
@@ -187,7 +194,6 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     _titleController.dispose();
     _destinationController.dispose();
     _budgetController.dispose();
-    _durationController.dispose();
     _descriptionController.dispose();
     _coverImageController.dispose();
     super.dispose();
@@ -271,7 +277,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                                 saving: false,
                                 secondaryLabel: 'ข้ามไปก่อน',
                                 primaryLabel: 'ถัดไป',
-                                onSecondary: _close,
+                                onSecondary: _skipPreferences,
                                 onTap: () => _goToStep(1),
                               )
                             : _BottomActionBar(
@@ -447,6 +453,17 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
+  /// ข้ามไปก่อน skips step one, not the wizard: whatever was tapped there is
+  /// cleared so it goes up absent, which the planner reads as "choose for me".
+  void _skipPreferences() {
+    setState(() {
+      _selectedVibes.clear();
+      _paceTier = '';
+      _transport = '';
+    });
+    _goToStep(1);
+  }
+
   Future<void> _showDatesDialog() async {
     final picked = await showModalBottomSheet<_TripDates>(
       context: context,
@@ -465,8 +482,6 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       _startDate = picked.start;
       _endDate = picked.end;
       _nights = picked.nights;
-      // A single day is zero nights but still one day of budget.
-      _durationController.text = picked.nights.toString();
     });
   }
 
@@ -544,7 +559,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                 destination: destination,
                 coverImage: _coverImageController.text.trim(),
                 budget: _budgetToSave,
-                duration: _days,
+                duration: _days ?? existing.duration,
                 updatedAt: DateTime.now(),
                 isSaved: true,
               ),
@@ -613,29 +628,35 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       return;
     }
 
-    setState(() => _generating = true);
-    _generateKey ??= uuidV4();
+    final request = buildPlanRequest(
+      destination: _destinationController.text.trim(),
+      destinationPlace: _destinationPlace,
+      startDate: _startDate,
+      endDate: _endDate,
+      nights: _nights,
+      adults: _travelers,
+      children: _children,
+      styleLabels: _selectedVibes,
+      paceTier: _paceTier,
+      transportLabel: _transport,
+      budgetTier: _tierToSave,
+      perPersonPerDay: _perPersonPerDay,
+      lodging: _lodging,
+      constraintLabels: _constraints,
+    );
+    // The same ask retried keeps its key; anything changed mints a new one.
+    final ask = jsonEncode(request.toJson());
+    if (ask != _generateAsk) {
+      _generateAsk = ask;
+      _generateKey = uuidV4();
+    }
 
+    setState(() => _generating = true);
     final PlanGenerationResult result;
     try {
       final api = await ref.read(plunoApiProvider.future);
       result = await api.trips.generatePlan(
-        buildPlanRequest(
-          destination: _destinationController.text.trim(),
-          destinationPlace: _destinationPlace,
-          startDate: _startDate,
-          endDate: _endDate,
-          nights: _nights,
-          adults: _travelers,
-          children: _children,
-          styleLabels: _selectedVibes,
-          paceTier: _paceTier,
-          transportLabel: _transport,
-          budgetTier: _tierToSave,
-          perPersonPerDay: _perPersonPerDay,
-          lodging: _lodging,
-          constraintLabels: _constraints,
-        ),
+        request,
         idempotencyKey: _generateKey,
       );
     } on ApiException catch (failure) {
@@ -654,7 +675,14 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     setState(() => _generating = false);
 
     final keep = await showPlanReviewSheet(context, result);
-    if (!keep || !mounted) return;
+    if (!keep) {
+      // Thrown away: asking again, even unchanged, wants a new plan rather
+      // than this one replayed.
+      _generateAsk = null;
+      _generateKey = null;
+      return;
+    }
+    if (!mounted) return;
     await _savePlan(result.draft);
   }
 
