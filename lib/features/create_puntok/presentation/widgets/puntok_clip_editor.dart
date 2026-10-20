@@ -1,17 +1,21 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../puntok/presentation/widgets/puntok_video_layer.dart';
 import '../../domain/puntok_clip.dart';
+import '../providers/puntok_clip_stills.dart';
 import 'create_puntok_chrome.dart';
 
 /// "Edit ตัด cut / switch timeline" — the picked clips played back as one
 /// cut, with the timeline underneath to jump between them.
 ///
-/// Plays each clip once and moves on to the next, looping the whole cut. Under
-/// `flutter test` there is no video plugin, so `initialize()` throws and the
-/// clip's poster stands in, as it does in the feed.
+/// Plays each clip once and moves on to the next, looping the whole cut. The
+/// cut is not exported: each clip goes up as its own file, in this order.
+/// Under `flutter test` there is no video plugin, so `initialize()` throws
+/// and the clip's still stands in, as it does in the feed.
 class PuntokClipEditor extends StatefulWidget {
   const PuntokClipEditor({
     super.key,
@@ -24,7 +28,9 @@ class PuntokClipEditor extends StatefulWidget {
 
   final List<PuntokClip> clips;
   final VoidCallback onBack;
-  final VoidCallback onSaveDraft;
+
+  /// Null while a save is running.
+  final VoidCallback? onSaveDraft;
   final VoidCallback onNext;
 
   /// Audio, Text or Sub — named by its label.
@@ -39,14 +45,17 @@ class _PuntokClipEditorState extends State<PuntokClipEditor> {
   VideoPlayerController? _player;
   bool _disposed = false;
 
-  Duration get _total => widget.clips
-      .fold(Duration.zero, (sum, clip) => sum + clip.duration);
+  /// A clip whose length could not be read counts as nothing.
+  static Duration _lengthOf(PuntokClip clip) => clip.duration ?? Duration.zero;
+
+  Duration get _total =>
+      widget.clips.fold(Duration.zero, (sum, clip) => sum + _lengthOf(clip));
 
   /// Where the cut is: every clip before this one, plus this one's progress.
   Duration get _position {
     final before = widget.clips
         .take(_current)
-        .fold(Duration.zero, (sum, clip) => sum + clip.duration);
+        .fold(Duration.zero, (sum, clip) => sum + _lengthOf(clip));
     final player = _player;
     final within = player != null && player.value.isInitialized
         ? player.value.position
@@ -74,7 +83,7 @@ class _PuntokClipEditorState extends State<PuntokClipEditor> {
     if (_disposed || widget.clips.isEmpty) return;
 
     setState(() => _current = index);
-    final player = VideoPlayerController.asset(widget.clips[index].video);
+    final player = VideoPlayerController.file(File(widget.clips[index].path));
     try {
       await player.initialize();
       await player.setVolume(0);
@@ -127,7 +136,11 @@ class _PuntokClipEditorState extends State<PuntokClipEditor> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                PuntokVideoLayer(poster: clip.poster, controller: _player),
+                PuntokVideoLayer(
+                  poster: clip.poster,
+                  controller: _player,
+                  fallback: PuntokClipStill(clip: clip),
+                ),
                 Positioned(
                   top: top + 10,
                   left: 16,
@@ -288,7 +301,10 @@ class _Timeline extends StatelessWidget {
                   children: [
                     for (var i = 0; i < clips.length; i++)
                       Expanded(
-                        flex: clips[i].duration.inMilliseconds.clamp(1, 1 << 30),
+                        // Unread lengths get a second's worth of strip.
+                        flex: (clips[i].duration ?? const Duration(seconds: 1))
+                            .inMilliseconds
+                            .clamp(1, 1 << 30),
                         child: GestureDetector(
                           onTap: () => onPick(i),
                           child: Container(
@@ -299,10 +315,9 @@ class _Timeline extends StatelessWidget {
                                 : BoxDecoration(
                                     color: Colors.white.withValues(alpha: 0.2),
                                   ),
-                            child: Image.asset(
-                              clips[i].poster,
-                              fit: BoxFit.cover,
+                            child: SizedBox(
                               height: 48,
+                              child: PuntokClipStill(clip: clips[i]),
                             ),
                           ),
                         ),

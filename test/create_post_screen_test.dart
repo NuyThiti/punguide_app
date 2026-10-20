@@ -580,6 +580,127 @@ void main() {
   });
 
   testWidgets(
+      'photos taken at the same time and place merge into one spot even '
+      'though the assistant answered with a section each',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _LocatedPhoto('assets/images/puntok_osaka.jpg'),
+      _LocatedPhoto('assets/images/puntok_london.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'ตลาดน้ำ',
+          // The model still answers one section per photo — the same shape
+          // as any other call — but both carry the exact same moment and
+          // coordinates, which is what should pull them back together.
+          'contents': [
+            {
+              'content': 'ซุ้มผลไม้ตรงทางเข้า',
+              'tripHack': 'ไปตอนเช้าคนน้อย',
+              'mediaIds': [_a],
+              'location': {'status': 'none'},
+            },
+            {
+              'content': 'พายเรือขายก๋วยเตี๋ยวอยู่ริมคลอง',
+              'mediaIds': [_b],
+              'location': {'status': 'none'},
+            },
+          ],
+          'locationOptions': [],
+          'warnings': [],
+        })
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    // One spot, not two — no pagination row to switch between a second one.
+    expect(find.byType(TripSpotPagination), findsNothing);
+    final block = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(block.imagePaths, [
+      'assets/images/puntok_osaka.jpg',
+      'assets/images/puntok_london.jpg',
+    ]);
+    // The earlier-sent photo's own section lends the spot its words.
+    expect(block.items!.first.bodyController.text, 'ซุ้มผลไม้ตรงทางเข้า');
+    expect(block.items!.first.details.tripHack, 'ไปตอนเช้าคนน้อย');
+  });
+
+  testWidgets(
+      'photos with no EXIF at all still merge when the assistant names the '
+      'same place for both', (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+      _UnreadablePhoto('assets/images/puntok_london.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(200, {
+          'title': 'มนต์นมสด',
+          // Neither photo carries EXIF — nothing for the client's own time
+          // and distance check to go on — but the model named the exact same
+          // real place for both, which is its own kind of evidence.
+          'contents': [
+            {
+              'content': 'เริ่มต้นที่ร้านขนมหวานเจ้าดังย่านเสาชิงช้า',
+              'mediaIds': [_a],
+              'location': {
+                'status': 'suggested',
+                'name': 'มนต์นมสด สาขา หน้าศาลาว่าการ กทม.',
+                'placeId': 'place-montnomsod',
+              },
+            },
+            {
+              'content': 'อีกจานเป็นขนมปังปิ้งหน้าเยิ้ม ๆ',
+              'mediaIds': [_b],
+              'location': {
+                'status': 'suggested',
+                'name': 'มนต์นมสด สาขา หน้าศาลาว่าการ กทม.',
+                'placeId': 'place-montnomsod',
+              },
+            },
+          ],
+          'locationOptions': [],
+          'warnings': [],
+        })
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    // One spot, not two — no pagination row to switch between a second one.
+    expect(find.byType(TripSpotPagination), findsNothing);
+    final block = tester.widget<PostBlock>(find.byType(PostBlock));
+    expect(block.imagePaths, [
+      'assets/images/puntok_osaka.jpg',
+      'assets/images/puntok_london.jpg',
+    ]);
+    expect(block.items!.first.bodyController.text,
+        'เริ่มต้นที่ร้านขนมหวานเจ้าดังย่านเสาชิงช้า');
+  });
+
+  testWidgets(
       'library photos with no EXIF GPS fall back to the account fix',
       (tester) async {
     final previous = ImagePickerPlatform.instance;
@@ -687,10 +808,10 @@ void main() {
     await _settleImport(tester);
 
     // Pre-filled onto the spot itself, same as opensAt/closesAt already were —
-    // visible without ever opening the location picker.
-    expect(
-        find.text('+66 94 691 4253 · http://www.naiuanyentafo.com/'),
-        findsOneWidget);
+    // visible without ever opening the location picker. Each half gets its
+    // own line in the detail row now, not one joined string.
+    expect(find.text('+66 94 691 4253'), findsOneWidget);
+    expect(find.text('http://www.naiuanyentafo.com/'), findsOneWidget);
 
     tester.widget<PostBlock>(find.byType(PostBlock)).onPickPlace();
     await tester.pumpAndSettle();
@@ -1172,6 +1293,78 @@ void main() {
         hasLength(2));
     expect(find.textContaining('ผู้ช่วยเขียนโพสต์ยังไม่เปิดใช้งาน'),
         findsOneWidget);
+  });
+
+  testWidgets(
+      'tapping a photo in a content item with more than one opens it '
+      'full screen, not the pencil\'s manage sheet', (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(Future.value([
+      _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
+      _UnreadablePhoto('assets/images/puntok_london.jpg'),
+    ]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+        FakeReply(201, _image(_b, 'https://example.com/b.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(503, {'message': 'assistant is off'})
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    // No evidence against being one spot, so both land in one item's photo
+    // cluster — two tiles side by side, each its own tap target.
+    final photos = find.descendant(
+        of: find.byType(PostBlock), matching: find.byType(CoverImage));
+    expect(photos, findsNWidgets(2));
+
+    await tester.tap(photos.first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.text('1 / 2'), findsOneWidget);
+  });
+
+  testWidgets(
+      'tapping a content item\'s single photo opens it full screen too',
+      (tester) async {
+    final previous = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = _TripPicker(
+        Future.value([_UnreadablePhoto('assets/images/puntok_osaka.jpg')]));
+    addTearDown(() => ImagePickerPlatform.instance = previous);
+
+    final adapter = FakeAdapter({
+      'POST /trips': [FakeReply(201, createdTripJson())],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg')),
+      ],
+      'POST /trips/trip-new/contents/generate': [
+        const FakeReply(503, {'message': 'assistant is off'})
+      ],
+    });
+
+    await _pumpComposer(tester, adapter: adapter);
+    await _tapImport(tester);
+    await _settleImport(tester);
+
+    final photo = find.descendant(
+        of: find.byType(PostBlock), matching: find.byType(CoverImage));
+    expect(photo, findsOneWidget);
+
+    await tester.tap(photo);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    // A single photo carries no "1 / N" counter — nothing to page between.
+    expect(find.textContaining(' / '), findsNothing);
   });
 
   testWidgets('only a tap turns the assistant\'s place into a confirmed one',
@@ -3252,8 +3445,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    // One chip carries both, in the order the modes were picked.
-    expect(find.text('MRT · เดิน ฿100'), findsOneWidget);
+    // One row carries both, modes in the order they were picked, the fare on
+    // its own line underneath.
+    expect(find.text('MRT · เดิน'), findsOneWidget);
+    expect(find.text('ค่ารถ · ฿100'), findsOneWidget);
   });
 
   testWidgets('Recommend Time writes the visit hour, then the opening hours',
@@ -3267,10 +3462,11 @@ void main() {
     // The wheel starts on 06:00, which is what the design shows.
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
-    expect(find.text('6:00 AM'), findsOneWidget);
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
 
-    // Opening hours join the same chip once they are set.
-    await tester.tap(find.text('6:00 AM'));
+    // Opening hours get their own row once they are set — a separate line
+    // from the visit hour, not merged into it.
+    await tester.tap(find.text('เวลาที่ไป 6:00 AM'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เวลาเปิด - ปิด'));
     await tester.pumpAndSettle();
@@ -3279,8 +3475,9 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    // The visit time is what the chip shows; the hours live in its sheet.
-    expect(find.text('6:00 AM'), findsOneWidget);
+    // Both rows show at once now — the visit hour and the hours underneath.
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsOneWidget);
   });
 
   testWidgets('opening hours alone do not repeat their own label',
@@ -3293,8 +3490,8 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    // With no visit time the chip is the hours themselves.
-    expect(find.text('06.00 - 14.30 น.'), findsOneWidget);
+    // With no visit time there is only the one row, its own label in front.
+    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsOneWidget);
   });
 
   testWidgets(
@@ -3330,7 +3527,7 @@ void main() {
     await _confirmPlace(tester);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('6:00 AM'));
+    await tester.tap(find.text('เวลาที่ไป 6:00 AM'));
     await tester.pumpAndSettle();
     expect(find.text('ตามเวลาเปิดจริง'), findsOneWidget);
 
@@ -3341,11 +3538,11 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    // The visit hour still owns the chip — the manual way in is untouched...
-    expect(find.text('6:00 AM'), findsOneWidget);
+    // The visit hour still owns its own row — the manual way in is untouched...
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
 
     // ...but the google hours landed in their own fields underneath it.
-    await tester.tap(find.text('6:00 AM'));
+    await tester.tap(find.text('เวลาที่ไป 6:00 AM'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เวลาเปิด - ปิด'));
     await tester.pumpAndSettle();
@@ -3403,8 +3600,8 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(hoursRangeText(
-        '${pad(6 + altIndex)}:00', '${pad(10 + altIndex)}:00')!));
+    await tester.tap(find.text('เวลาเปิด / ปิด · ${hoursRangeText(
+        '${pad(6 + altIndex)}:00', '${pad(10 + altIndex)}:00')!}'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เวลาเปิด - ปิด'));
     await tester.pumpAndSettle();
@@ -3528,8 +3725,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    expect(find.text('081-234-5678 · https://facebook.com/onlokyun'),
-        findsOneWidget);
+    // The stored value stays one joined string; the row just splits it back
+    // onto two lines to display.
+    expect(find.text('081-234-5678'), findsOneWidget);
+    expect(find.text('https://facebook.com/onlokyun'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'เรื่องแรก');
     await _confirmPlace(tester);
@@ -3616,8 +3815,10 @@ void main() {
 
     expect(find.text('ทริปเดินกินย่านเมืองเก่า'), findsOneWidget);
     expect(find.text('฿2,000'), findsOneWidget);
-    expect(find.text('6:00 AM'), findsOneWidget);
-    expect(find.text('MRT · เดิน ฿100'), findsOneWidget);
+    expect(find.text('เวลาที่ไป 6:00 AM'), findsOneWidget);
+    expect(find.text('เวลาเปิด / ปิด · 06.00 - 14.30 น.'), findsOneWidget);
+    expect(find.text('MRT · เดิน'), findsOneWidget);
+    expect(find.text('ค่ารถ · ฿100'), findsOneWidget);
     expect(find.text('ไปเช้าคนน้อยกว่า'), findsOneWidget);
   });
 

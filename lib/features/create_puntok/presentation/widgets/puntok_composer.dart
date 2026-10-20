@@ -8,6 +8,7 @@ import '../../../create_post/domain/models/post_draft.dart';
 import '../../../create_post/presentation/widgets/trip_link_picker.dart';
 import '../../../create_trip/domain/plan_labels.dart';
 import '../../domain/puntok_clip.dart';
+import '../providers/puntok_clip_stills.dart';
 import 'create_puntok_chrome.dart';
 import 'puntok_sheets.dart';
 
@@ -55,9 +56,9 @@ class PuntokComposer extends StatelessWidget {
   final VoidCallback onVisibility;
   final ValueChanged<bool> onRemixChanged;
   final ValueChanged<PuntokRemixAudience> onRemixAudience;
-  final VoidCallback onSaveDraft;
 
-  /// Null while publishing.
+  /// Both null while saving.
+  final VoidCallback? onSaveDraft;
   final VoidCallback? onPublish;
 
   @override
@@ -197,7 +198,7 @@ class _CoverPreview extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.asset(clip.poster, fit: BoxFit.cover),
+            PuntokClipStill(clip: clip),
             const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/api/pluno_api.dart';
+import 'package:pluno/core/api/services/upload_form.dart';
 
 void main() {
   test('assistant preserves opening hours and daily descriptions', () {
@@ -461,5 +462,42 @@ void main() {
       expect(AuthTokenStore.parseExpiresIn('soon'), isNull);
       expect(AuthTokenStore.parseExpiresIn(null), isNull);
     });
+  });
+
+  test('an uploaded video reads its type, length and playable file', () {
+    final media = Media.fromJson({
+      'mediaId': 'm1',
+      'mediaType': 'video',
+      'mimeType': 'video/mp4',
+      'durationSeconds': 14.2,
+      'sizeBytes': 8123456,
+      'urls': {
+        'original': 'https://cdn.test/v.mp4',
+        'large': 'https://cdn.test/v-large.webp',
+        'thumbnail': 'https://cdn.test/v-thumb.webp',
+      },
+      'dimensions': {'width': 1080, 'height': 1920},
+    });
+
+    expect(media.isVideo, isTrue);
+    expect(media.durationSeconds, 14.2);
+    expect(media.sizeBytes, 8123456);
+    expect(media.urls.original, 'https://cdn.test/v.mp4');
+    expect(media.width, lessThan(media.height!));
+  });
+
+  test('media from before the video update reads as an image', () {
+    final media = Media.fromJson({
+      'mediaId': 'm1',
+      'urls': {'large': 'l', 'thumbnail': 't'},
+    });
+    expect(media.isVideo, isFalse);
+  });
+
+  test('a video part goes up as video/mp4 or video/quicktime', () async {
+    final mp4 = await buildUploadForm(bytes: [1], filename: 'clip.mp4');
+    final mov = await buildUploadForm(bytes: [1], filename: 'clip.MOV');
+    expect(mp4.files.single.value.contentType.toString(), 'video/mp4');
+    expect(mov.files.single.value.contentType.toString(), 'video/quicktime');
   });
 }

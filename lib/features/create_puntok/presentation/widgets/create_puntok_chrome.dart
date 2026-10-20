@@ -77,7 +77,8 @@ class PuntokActionBar extends StatelessWidget {
     this.decorated = true,
   });
 
-  final VoidCallback onSaveDraft;
+  /// Null greys it out, as while a save is running.
+  final VoidCallback? onSaveDraft;
   final String primaryLabel;
 
   /// Null greys the action out rather than hiding it.

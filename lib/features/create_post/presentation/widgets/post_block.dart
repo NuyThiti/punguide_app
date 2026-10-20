@@ -4,6 +4,7 @@ import '../../../../core/api/models/trip_content.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'post_spot_details.dart';
 import '../../../../shared/widgets/cover_image.dart';
+import '../../../../shared/widgets/full_image_viewer.dart';
 import '../../domain/models/post_draft.dart';
 
 class PostBlockItem {
@@ -584,6 +585,8 @@ class _PostBlockContentItem extends StatelessWidget {
                           ? null
                           : () => onSelectCover!(item.imagePaths[0]),
                       onClear: () => onRemoveImage(0),
+                      onView: () =>
+                          showFullImages(context, urls: item.imagePaths),
                     ),
                   ),
                 ),
@@ -605,6 +608,11 @@ class _PostBlockContentItem extends StatelessWidget {
                 unavailableImages: unavailableImages,
                 onTapPhoto: (index) => _managePhoto(context, index),
                 onTapMore: () => _showAllPhotos(context),
+                onViewPhoto: (index) => showFullImages(
+                  context,
+                  urls: item.imagePaths,
+                  initialIndex: index,
+                ),
               ),
             ],
             if (!item.details.isEmpty) ...[
@@ -847,11 +855,16 @@ class _BlockPhoto extends StatelessWidget {
       required this.onClear,
       this.isCover = false,
       this.unavailable = false,
-      this.onSelectCover});
+      this.onSelectCover,
+      this.onView});
 
   final bool isCover;
   final bool unavailable;
   final VoidCallback? onSelectCover;
+
+  /// Opens the photo full-screen. Null (and so untappable) when there is
+  /// nothing real to show, same as the `unavailable` placeholder itself.
+  final VoidCallback? onView;
 
   final String source;
   final VoidCallback onClear;
@@ -862,13 +875,16 @@ class _BlockPhoto extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
-          child: AspectRatio(
-            aspectRatio: 1.6,
-            child: unavailable
-                ? const ColoredBox(
-                    color: AppColors.line,
-                    child: Center(child: Text('รูปนี้ไม่พร้อมใช้งาน')))
-                : CoverImage(source: source),
+          child: GestureDetector(
+            onTap: unavailable ? null : onView,
+            child: AspectRatio(
+              aspectRatio: 1.6,
+              child: unavailable
+                  ? const ColoredBox(
+                      color: AppColors.line,
+                      child: Center(child: Text('รูปนี้ไม่พร้อมใช้งาน')))
+                  : CoverImage(source: source),
+            ),
           ),
         ),
         if (onSelectCover != null && !unavailable)
@@ -924,6 +940,7 @@ class _PhotoCluster extends StatelessWidget {
     required this.unavailableImages,
     required this.onTapPhoto,
     required this.onTapMore,
+    required this.onViewPhoto,
   });
 
   static const _visible = 2;
@@ -933,6 +950,7 @@ class _PhotoCluster extends StatelessWidget {
   final Set<String> unavailableImages;
   final ValueChanged<int> onTapPhoto;
   final VoidCallback onTapMore;
+  final ValueChanged<int> onViewPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -951,6 +969,7 @@ class _PhotoCluster extends StatelessWidget {
               moreCount: (i == shown - 1 && remaining > 0) ? remaining : null,
               onTap: () => onTapPhoto(i),
               onTapMore: onTapMore,
+              onView: () => onViewPhoto(i),
             ),
           ),
         ],
@@ -959,9 +978,9 @@ class _PhotoCluster extends StatelessWidget {
   }
 }
 
-/// One square tile in the cluster — the pencil always reopens this photo's
-/// own actions; the "+N" badge, only on the last tile when more exist,
-/// reaches the rest instead.
+/// One square tile in the cluster — the photo itself opens it full-screen;
+/// the pencil always reopens this photo's own actions instead; the "+N"
+/// badge, only on the last tile when more exist, reaches the rest.
 class _PhotoTile extends StatelessWidget {
   const _PhotoTile({
     required this.source,
@@ -969,6 +988,7 @@ class _PhotoTile extends StatelessWidget {
     required this.unavailable,
     required this.onTap,
     required this.onTapMore,
+    required this.onView,
     this.moreCount,
   });
 
@@ -978,6 +998,7 @@ class _PhotoTile extends StatelessWidget {
   final int? moreCount;
   final VoidCallback onTap;
   final VoidCallback onTapMore;
+  final VoidCallback onView;
 
   @override
   Widget build(BuildContext context) {
@@ -988,15 +1009,18 @@ class _PhotoTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            unavailable
-                ? const ColoredBox(
-                    color: AppColors.line,
-                    child: Center(
-                      child: Icon(Icons.image_not_supported_outlined,
-                          color: AppColors.muted),
-                    ),
-                  )
-                : CoverImage(source: source),
+            GestureDetector(
+              onTap: unavailable ? null : onView,
+              child: unavailable
+                  ? const ColoredBox(
+                      color: AppColors.line,
+                      child: Center(
+                        child: Icon(Icons.image_not_supported_outlined,
+                            color: AppColors.muted),
+                      ),
+                    )
+                  : CoverImage(source: source),
+            ),
             if (isCover)
               const Positioned(
                 bottom: 8,

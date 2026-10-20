@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/puntok_clip.dart';
+import '../providers/puntok_clip_stills.dart';
 import 'create_puntok_chrome.dart';
 
 /// "เลือก วดอ" — the first step: a grid of clips, picked in order.
+///
+/// The grid holds what the traveller has brought in from the system picker
+/// this session — its first tile opens that picker again — rather than the
+/// whole camera roll, which would need a device-library plugin.
 ///
 /// The order is the cut's order, which is why a picked tile shows its number
 /// rather than a tick, and why the tray underneath reads left to right.
@@ -17,7 +22,8 @@ class PuntokClipPicker extends StatelessWidget {
     required this.onClear,
     required this.onBack,
     required this.onNext,
-    required this.onAlbum,
+    required this.onAddVideos,
+    this.adding = false,
   });
 
   final List<PuntokClip> clips;
@@ -27,8 +33,11 @@ class PuntokClipPicker extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onNext;
 
-  /// "Videos ⌄" — the album switcher.
-  final VoidCallback onAlbum;
+  /// The first tile, and "Videos ⌄": opens the system video picker.
+  final VoidCallback onAddVideos;
+
+  /// The system picker is open, or its picks are being read.
+  final bool adding;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +52,7 @@ class PuntokClipPicker extends StatelessWidget {
             child: Row(
               children: [
                 InkWell(
-                  onTap: onAlbum,
+                  onTap: adding ? null : onAddVideos,
                   borderRadius: BorderRadius.circular(8),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
@@ -106,9 +115,15 @@ class PuntokClipPicker extends StatelessWidget {
                 crossAxisSpacing: 1,
                 childAspectRatio: 0.75,
               ),
-              itemCount: clips.length,
+              itemCount: clips.length + 1,
               itemBuilder: (context, index) {
-                final clip = clips[index];
+                if (index == 0) {
+                  return _AddTile(
+                    busy: adding,
+                    onTap: adding ? null : onAddVideos,
+                  );
+                }
+                final clip = clips[index - 1];
                 final order = selected.indexOf(clip);
                 return _ClipTile(
                   clip: clip,
@@ -125,6 +140,50 @@ class PuntokClipPicker extends StatelessWidget {
               onNext: onNext,
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Leads the grid: brings more clips in from the system picker.
+class _AddTile extends StatelessWidget {
+  const _AddTile({required this.busy, required this.onTap});
+
+  final bool busy;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.postPurpleWell,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (busy)
+              const SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppColors.postPurple,
+                ),
+              )
+            else
+              const Icon(Icons.video_library_outlined,
+                  size: 30, color: AppColors.postPurple),
+            const SizedBox(height: 8),
+            const Text(
+              'เพิ่มวิดีโอ',
+              style: TextStyle(
+                color: AppColors.postPurple,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -149,13 +208,15 @@ class _ClipTile extends StatelessWidget {
     return Semantics(
       button: true,
       selected: picked,
-      label: 'คลิป ${clipTimeLabel(clip.duration)}',
+      label: clip.duration == null
+          ? 'คลิป'
+          : 'คลิป ${clipTimeLabel(clip.duration!)}',
       child: GestureDetector(
         onTap: onTap,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.asset(clip.poster, fit: BoxFit.cover),
+            PuntokClipStill(clip: clip),
             // Lifts the duration off bright footage.
             const DecoratedBox(
               decoration: BoxDecoration(
@@ -192,18 +253,19 @@ class _ClipTile extends StatelessWidget {
                     : null,
               ),
             ),
-            Positioned(
-              right: 8,
-              bottom: 6,
-              child: Text(
-                clipTimeLabel(clip.duration),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
+            if (clip.duration != null)
+              Positioned(
+                right: 8,
+                bottom: 6,
+                child: Text(
+                  clipTimeLabel(clip.duration!),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -255,11 +317,10 @@ class _SelectionTray extends StatelessWidget {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: Image.asset(
-                            clip.poster,
+                          child: SizedBox(
                             width: 42,
                             height: 50,
-                            fit: BoxFit.cover,
+                            child: PuntokClipStill(clip: clip),
                           ),
                         ),
                         Positioned(
@@ -276,8 +337,8 @@ class _SelectionTray extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: AppColors.foreground,
                                   shape: BoxShape.circle,
-                                  border:
-                                      Border.all(color: Colors.white, width: 1.5),
+                                  border: Border.all(
+                                      color: Colors.white, width: 1.5),
                                 ),
                                 child: const Icon(Icons.close,
                                     size: 11, color: Colors.white),

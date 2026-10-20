@@ -12,10 +12,16 @@ class PuntokVideoLayer extends StatelessWidget {
     super.key,
     required this.poster,
     required this.controller,
+    this.fallback,
   });
 
-  final String poster;
+  /// A bundled asset, or an `http(s)` URL for a clip that came from the
+  /// server (its first-frame WebP). Null shows [fallback] instead.
+  final String? poster;
   final VideoPlayerController? controller;
+
+  /// What sits under the clip when there is no [poster]; black by default.
+  final Widget? fallback;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +31,7 @@ class PuntokVideoLayer extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(poster, fit: BoxFit.cover),
+        _still(),
         AnimatedOpacity(
           opacity: ready ? 1 : 0,
           duration: const Duration(milliseconds: 220),
@@ -33,6 +39,20 @@ class PuntokVideoLayer extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Widget _still() {
+    final source = poster;
+    if (source == null)
+      return fallback ?? const ColoredBox(color: Colors.black);
+    if (source.startsWith('http')) {
+      return Image.network(
+        source,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.black),
+      );
+    }
+    return Image.asset(source, fit: BoxFit.cover);
   }
 
   /// Fills the frame the way the poster does. `VideoPlayer` honours its box,

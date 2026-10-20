@@ -53,11 +53,13 @@ class MediaApi {
     return Media.fromJson(Json.asMap(body));
   }
 
-  /// Uploads a photo before any post exists to attach it to — the server
-  /// owns it by account instead, and folds it into whatever post's
+  /// Uploads a photo or a video before any post exists to attach it to — the
+  /// server owns it by account instead, and folds it into whatever post's
   /// `contents`/`coverMediaId` names its `mediaId` next time that post is
-  /// saved. Same 15 MB cap and response shape as [upload]; also usable
-  /// straight away as a `POST /trips/:id/contents/generate` photo.
+  /// saved. Photos are capped at 15 MB; videos (MP4 or MOV) at 50 MB and 60
+  /// seconds, stored as uploaded with a poster cut from the first frame.
+  /// Unattached uploads are capped at 200 per account, photos and videos
+  /// together.
   Future<Media> uploadUnattached({
     String? filePath,
     List<int>? bytes,

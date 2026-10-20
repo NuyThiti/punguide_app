@@ -14,12 +14,12 @@ Future<FormData> buildUploadForm({
   final MultipartFile file;
   if (bytes != null) {
     file = MultipartFile.fromBytes(bytes,
-        filename: filename ?? 'upload', contentType: _imageType(filename));
+        filename: filename ?? 'upload', contentType: _mediaType(filename));
   } else if (filePath != null) {
     file = await MultipartFile.fromFile(
       filePath,
       filename: filename ?? _basename(filePath),
-      contentType: _imageType(filename ?? filePath),
+      contentType: _mediaType(filename ?? filePath),
     );
   } else {
     throw ArgumentError('Pass either filePath or bytes to upload a file.');
@@ -35,12 +35,16 @@ String _basename(String path) {
   return last.isEmpty ? 'upload' : last;
 }
 
-DioMediaType? _imageType(String? name) {
+/// The part's own `Content-Type`, which is what the server checks — images
+/// as JPEG/PNG/WebP, videos as MP4 or QuickTime.
+DioMediaType? _mediaType(String? name) {
   final extension = name?.split('.').last.toLowerCase();
   return switch (extension) {
     'jpg' || 'jpeg' => DioMediaType('image', 'jpeg'),
     'png' => DioMediaType('image', 'png'),
     'webp' => DioMediaType('image', 'webp'),
+    'mp4' || 'm4v' => DioMediaType('video', 'mp4'),
+    'mov' => DioMediaType('video', 'quicktime'),
     _ => null,
   };
 }

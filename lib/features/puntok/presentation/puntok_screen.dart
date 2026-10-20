@@ -204,7 +204,11 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
   Future<void> _load(PuntokPost post) async {
     if (_players.containsKey(post.id)) return;
 
-    final player = VideoPlayerController.asset(post.video);
+    // A clip the traveller just shared lives on the server; the mock ones
+    // ship in the bundle.
+    final player = post.video.startsWith('http')
+        ? VideoPlayerController.networkUrl(Uri.parse(post.video))
+        : VideoPlayerController.asset(post.video);
     _players[post.id] = player;
 
     try {

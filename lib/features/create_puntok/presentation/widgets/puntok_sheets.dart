@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../create_post/presentation/widgets/composer_sheet.dart';
 import '../../../create_trip/domain/plan_labels.dart';
 import '../../domain/puntok_clip.dart';
+import '../providers/puntok_clip_stills.dart';
 
 /// What the Activity sheet hands back on ตกลง.
 @immutable
@@ -248,8 +249,7 @@ Future<PuntokVisibility?> showPuntokVisibilitySheet(
             ListTile(
               onTap: () => Navigator.of(sheetContext).pop(option),
               contentPadding: EdgeInsets.zero,
-              leading:
-                  Icon(option.icon, size: 21, color: AppColors.foreground),
+              leading: Icon(option.icon, size: 21, color: AppColors.foreground),
               title: Text(
                 option.label,
                 style: const TextStyle(
@@ -309,7 +309,7 @@ Future<PuntokClip?> showPuntokCoverSheet(
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(9),
-                    child: Image.asset(clip.poster, fit: BoxFit.cover),
+                    child: PuntokClipStill(clip: clip),
                   ),
                 ),
               ),

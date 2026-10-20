@@ -1,29 +1,35 @@
 import 'package:flutter/material.dart';
 
-/// One clip the traveller can put into a Puntok.
+import '../../../core/api/pluno_api.dart';
+
+/// One video file the traveller picked for a Puntok.
 ///
-/// Puntok has no endpoint and the app has no device-library plugin yet, so
-/// the picker offers the bundled sample clips the feed already ships with.
-/// Swapping in the real library means producing these from it — the screens
-/// only read [video], [poster] and [duration].
+/// The app has no device-library plugin, so clips come from the system
+/// picker (`image_picker`) as files on disk; each one is uploaded to
+/// `POST /media` as it is when the post is saved — the server keeps the file
+/// as uploaded and does no transcoding.
 @immutable
 class PuntokClip {
   const PuntokClip({
     required this.id,
-    required this.video,
-    required this.poster,
-    required this.duration,
+    required this.path,
+    this.duration,
+    this.sizeBytes,
+    this.poster,
   });
 
   final String id;
 
-  /// Asset path of the footage.
-  final String video;
+  /// The file on disk.
+  final String path;
 
-  /// Asset path of a still from it, for the grid, the timeline and the cover.
-  final String poster;
+  /// Read off the file once it has been probed; null when it could not be.
+  final Duration? duration;
+  final int? sizeBytes;
 
-  final Duration duration;
+  /// An asset still to show in place of the file's first frame. Real picks
+  /// leave it null and show the frame itself.
+  final String? poster;
 
   @override
   bool operator ==(Object other) => other is PuntokClip && other.id == id;
@@ -32,33 +38,17 @@ class PuntokClip {
   int get hashCode => id.hashCode;
 }
 
-/// What the clip picker offers today.
-const puntokSampleClips = <PuntokClip>[
-  PuntokClip(
-    id: 'clip-osaka',
-    video: 'assets/videos/puntok_osaka.mp4',
-    poster: 'assets/images/puntok_osaka.jpg',
-    duration: Duration(seconds: 5),
-  ),
-  PuntokClip(
-    id: 'clip-beijing',
-    video: 'assets/videos/puntok_beijing.mp4',
-    poster: 'assets/images/puntok_beijing.jpg',
-    duration: Duration(seconds: 5),
-  ),
-  PuntokClip(
-    id: 'clip-seoul',
-    video: 'assets/videos/puntok_seoul.mp4',
-    poster: 'assets/images/puntok_seoul.jpg',
-    duration: Duration(seconds: 5),
-  ),
-  PuntokClip(
-    id: 'clip-london',
-    video: 'assets/videos/puntok_london.mp4',
-    poster: 'assets/images/puntok_london.jpg',
-    duration: Duration(seconds: 5),
-  ),
-];
+/// What `POST /media` accepts for a video, checked before uploading so a
+/// clip that would bounce says so at pick time rather than at Share.
+abstract final class PuntokClipLimits {
+  static const maxBytes = 50 * 1024 * 1024;
+  static const maxLength = Duration(seconds: 60);
+
+  /// A section's `mediaIds` hold at most 20.
+  static const maxClips = 20;
+
+  static const extensions = {'mp4', 'mov', 'm4v'};
+}
 
 /// "0:05", "1:20" — the way the grid and the timeline print a length.
 String clipTimeLabel(Duration duration) {
@@ -69,25 +59,33 @@ String clipTimeLabel(Duration duration) {
 
 /// Who sees the clip, as the "การมองเห็นโพส" pill offers it.
 enum PuntokVisibility {
-  public('Public', Icons.public),
-  followers('Followers', Icons.group),
-  private('Private', Icons.lock);
+  public('Public', Icons.public, TripVisibility.public),
+  followers('Followers', Icons.group, TripVisibility.followers),
+  private('Private', Icons.lock, TripVisibility.private);
 
-  const PuntokVisibility(this.label, this.icon);
+  const PuntokVisibility(this.label, this.icon, this.wire);
 
   final String label;
   final IconData icon;
+
+  /// What goes up as the post's `visibility`.
+  final TripVisibility wire;
 }
 
 /// Who may remix the clip once "เปิดให้ remix" is on.
 enum PuntokRemixAudience {
-  everyone('ทุกคน', 'ทุกคน Remix ได้เลย', Icons.public),
-  followers('คนที่ติดตาม', 'เฉพาะคนที่ติดตามคุณอยู่', Icons.group_outlined),
-  withLink('คนที่มีลิงก์', 'ต้องมีลิงก์นี้ถึงจะ remix ได้', Icons.link);
+  everyone('ทุกคน', 'ทุกคน Remix ได้เลย', Icons.public, RemixAudience.everyone),
+  followers('คนที่ติดตาม', 'เฉพาะคนที่ติดตามคุณอยู่', Icons.group_outlined,
+      RemixAudience.followers),
+  withLink('คนที่มีลิงก์', 'ต้องมีลิงก์นี้ถึงจะ remix ได้', Icons.link,
+      RemixAudience.link);
 
-  const PuntokRemixAudience(this.label, this.hint, this.icon);
+  const PuntokRemixAudience(this.label, this.hint, this.icon, this.wire);
 
   final String label;
   final String hint;
   final IconData icon;
+
+  /// What goes up as the post's `remixAudience`.
+  final RemixAudience wire;
 }

@@ -49,6 +49,10 @@ class Media {
     required this.mediaId,
     required this.urls,
     this.source,
+    this.mediaType,
+    this.mimeType,
+    this.durationSeconds,
+    this.sizeBytes,
     this.sourcePlaceId,
     this.sourceActivityId,
     this.storageKey,
@@ -66,6 +70,10 @@ class Media {
     return Media(
       mediaId: Json.requiredString(json, 'mediaId'),
       source: MediaSource.from(json['source']),
+      mediaType: MediaType.from(json['mediaType']),
+      mimeType: Json.string(json, 'mimeType'),
+      durationSeconds: Json.number(json, 'durationSeconds'),
+      sizeBytes: Json.integer(json, 'sizeBytes'),
       sourcePlaceId: Json.string(json, 'sourcePlaceId'),
       sourceActivityId: Json.string(json, 'sourceActivityId'),
       storageKey: Json.string(json, 'storageKey'),
@@ -91,6 +99,15 @@ class Media {
 
   final String mediaId;
   final MediaSource? source;
+
+  /// Absent from servers older than the video update, which only stored
+  /// images — read that as an image.
+  final MediaType? mediaType;
+  final String? mimeType;
+
+  /// Videos only.
+  final double? durationSeconds;
+  final int? sizeBytes;
   final String? sourcePlaceId;
   final String? sourceActivityId;
   final String? storageKey;
@@ -102,6 +119,8 @@ class Media {
   final int? height;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get isVideo => mediaType == MediaType.video;
 }
 
 /// One image in a trip's gallery.

@@ -429,6 +429,20 @@ enum DateMode {
   static DateMode? from(Object? value) => _lookup(values, value);
 }
 
+/// What an uploaded file is. A video keeps its playable file in
+/// `urls.original`; its `large` / `thumbnail` are a WebP poster cut from the
+/// first frame.
+enum MediaType {
+  image('image'),
+  video('video');
+
+  const MediaType(this.wire);
+
+  final String wire;
+
+  static MediaType? from(Object? value) => _lookup(values, value);
+}
+
 /// Where a media item came from.
 enum MediaSource {
   userUpload('user_upload'),

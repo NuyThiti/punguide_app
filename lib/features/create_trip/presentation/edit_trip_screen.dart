@@ -33,6 +33,12 @@ const _planGreen = Color(0xFF2E6B4C);
 /// The panel behind a collapsible section.
 const _panel = Color(0xFFF3F6F3);
 
+/// The จัดแผน reference is warm: a cream band heads each section, a paler
+/// cream holds its body, and cards sit on it with a tan edge.
+const _sectionHead = Color(0xFFF4EDE1);
+const _sectionBody = Color(0xFFFAF7F2);
+const _cardEdge = Color(0xFFEADFCB);
+
 /// Editing a plan: the trip's facts on a cover hero, then the itinerary the
 /// traveller fills in day by day.
 class EditTripScreen extends ConsumerStatefulWidget {
@@ -257,6 +263,8 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
           label: 'Remix Trip',
           icon: Icons.shuffle,
           color: AppColors.brandPurple,
+          // The reference sets Remix Trip in pale lime on the purple.
+          foreground: const Color(0xFFEFF7C9),
           onTap: () => context.goNamed(
             AppRoute.remixTrip.name,
             params: {'tripId': widget.tripId},
@@ -1194,18 +1202,17 @@ class _HeroChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
+        color: Colors.black.withValues(alpha: 0.42),
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
       ),
       child: Text(
         label,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1324,8 +1331,15 @@ class _PlanTabs extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: _panel,
+        color: const Color(0xFFFBFAF7),
         borderRadius: BorderRadius.circular(99),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -1423,11 +1437,13 @@ class _PillButton extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    this.foreground = Colors.white,
   });
 
   final String label;
   final IconData icon;
   final Color color;
+  final Color foreground;
   final VoidCallback onTap;
 
   @override
@@ -1444,12 +1460,12 @@ class _PillButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: Colors.white),
+            Icon(icon, size: 17, color: foreground),
             const SizedBox(width: 7),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: foreground,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
               ),
@@ -1480,55 +1496,60 @@ class _CollapsibleSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: _panel,
+        color: _sectionBody,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              for (final action in actions) ...[
-                action,
-                const SizedBox(width: 8),
-              ],
-              Tooltip(
-                message: expanded ? 'ย่อ' : 'ขยาย',
-                child: GestureDetector(
-                  onTap: onToggle,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 20,
+          Container(
+            color: _sectionHead,
+            padding: const EdgeInsets.fromLTRB(14, 11, 12, 11),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
                       color: AppColors.foreground,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-              ),
-            ],
+                for (final action in actions) ...[
+                  action,
+                  const SizedBox(width: 8),
+                ],
+                Tooltip(
+                  message: expanded ? 'ย่อ' : 'ขยาย',
+                  child: GestureDetector(
+                    onTap: onToggle,
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 20,
+                        color: _planGreen,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          if (expanded) ...[
-            const SizedBox(height: 14),
-            child,
-          ],
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: child,
+            ),
         ],
       ),
     );
@@ -1733,11 +1754,11 @@ class _ExploreBanner extends StatelessWidget {
             GestureDetector(
               onTap: onTap,
               child: Container(
-                height: 34,
-                padding: const EdgeInsets.symmetric(horizontal: 13),
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: AppColors.brandOrange,
-                  borderRadius: BorderRadius.circular(99),
+                  color: const Color(0xFFF28B6F),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1777,7 +1798,7 @@ class _DayCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: _cardEdge),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1797,7 +1818,7 @@ class _DayCard extends StatelessWidget {
             ),
           ),
           if (day.stops.isNotEmpty) ...[
-            const Divider(height: 1, color: AppColors.line),
+            const Divider(height: 1, color: _cardEdge),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
               child: Column(
@@ -1991,7 +2012,7 @@ class _DayHeader extends StatelessWidget {
           'วันที่ ${day.number}',
           style: const TextStyle(
             color: _planGreen,
-            fontSize: 15,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -2013,29 +2034,33 @@ class _DayHeader extends StatelessWidget {
         const Spacer(),
         GestureDetector(
           onTap: onAddPlace,
-          child: Container(
-            height: 34,
-            padding: const EdgeInsets.symmetric(horizontal: 13),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(
-                color: AppColors.brandOrange.withValues(alpha: 0.6),
-              ),
+          child: CustomPaint(
+            painter: _DashedBorderPainter(
+              color: AppColors.brandOrange.withValues(alpha: 0.7),
+              radius: 10,
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add, size: 15, color: AppColors.brandOrange),
-                SizedBox(width: 4),
-                Text(
-                  'สถานที่',
-                  style: TextStyle(
-                    color: AppColors.brandOrange,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 13),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF5EC),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 15, color: AppColors.brandOrange),
+                  SizedBox(width: 4),
+                  Text(
+                    'สถานที่',
+                    style: TextStyle(
+                      color: AppColors.brandOrange,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2141,6 +2166,8 @@ class _StopCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                const SizedBox(height: 8),
+                const Divider(height: 1, color: _cardEdge),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -2327,15 +2354,17 @@ class _CostChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _panel,
-        borderRadius: BorderRadius.circular(7),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: _cardEdge),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.payments_outlined, size: 12, color: AppColors.muted),
+          const Icon(Icons.monetization_on_outlined,
+              size: 13, color: AppColors.muted),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
@@ -2415,13 +2444,21 @@ class _LegRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.line),
+            border: Border.all(color: _cardEdge),
           ),
           child: Row(
             children: [
-              Icon(legIcon(stop, segment),
-                  size: 15, color: AppColors.foreground),
-              const SizedBox(width: 8),
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F1EE),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child:
+                    Icon(legIcon(stop, segment), size: 15, color: _planGreen),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   legLabel(stop, segment),
@@ -2434,7 +2471,6 @@ class _LegRow extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
             ],
           ),
         ),
@@ -2453,25 +2489,31 @@ class _AddTravelRow extends StatelessWidget {
     return _RailRow(
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF1F7F2),
-            borderRadius: BorderRadius.circular(10),
+        child: CustomPaint(
+          painter: _DashedBorderPainter(
+            color: _planGreen.withValues(alpha: 0.45),
+            radius: 10,
           ),
-          child: const Row(
-            children: [
-              Icon(Icons.add, size: 15, color: _planGreen),
-              SizedBox(width: 7),
-              Text(
-                'เพิ่มการเดินทาง',
-                style: TextStyle(
-                  color: _planGreen,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F7F1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.add, size: 15, color: _planGreen),
+                SizedBox(width: 7),
+                Text(
+                  'เพิ่มการเดินทาง',
+                  style: TextStyle(
+                    color: _planGreen,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2515,7 +2557,7 @@ class _RailPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final x = size.width / 2;
     final dots = Paint()
-      ..color = AppColors.muted.withValues(alpha: 0.5)
+      ..color = _planGreen.withValues(alpha: 0.55)
       ..strokeWidth = 1.6
       ..strokeCap = StrokeCap.round;
 
@@ -2527,7 +2569,9 @@ class _RailPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x, nodeY),
       4,
-      Paint()..color = AppColors.primary,
+      // Not AppColors.primary: that is the app's purple now, and the plan's
+      // rail is green in the reference.
+      Paint()..color = _planGreen,
     );
     for (var y = nodeY + 6; y < size.height - 2; y += 6) {
       canvas.drawLine(Offset(x, y), Offset(x, y + 3), dots);

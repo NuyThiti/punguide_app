@@ -7,6 +7,7 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/models/post_draft.dart';
 import 'composer_sheet.dart';
+import '../../../../shared/extensions/currency_extensions.dart';
 import '../../../../shared/formatting/spot_detail_text.dart';
 
 String _clock(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:'
@@ -15,11 +16,12 @@ String _clock(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:'
 /// "06:00 AM", the way the filled row reads it back.
 String _clock12(TimeOfDay time) => clock12Text(_clock(time));
 
-/// The filled details under a spot's story, on one line.
-///
-/// Compact on purpose: these are notes beside the story, not the story — three
-/// stacked two-line rows pushed the spot's own words off the screen. Tapping
-/// one reopens its sheet.
+/// The filled details under a spot's story, one row per kind of answer —
+/// Figma's reference card (ร้านอาหารที่ต้องแวะ) stacks them full-width with a
+/// hairline between each, rather than the wrapping chips this replaced: a
+/// transport answer with both modes and a cost, or a contact with both a
+/// number and a site, needs its own second line, which a pill has no room
+/// for. Tapping any row reopens the sheet that wrote it.
 class PostSpotDetailRows extends StatelessWidget {
   const PostSpotDetailRows({
     super.key,
@@ -34,66 +36,54 @@ class PostSpotDetailRows extends StatelessWidget {
   Widget build(BuildContext context) {
     if (details.isEmpty) return const SizedBox.shrink();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        // Every chip yields rather than only the last one: any of the three can
-        // be long, and a chip that cannot shrink pushes the others off the
-        // line instead of ellipsising its own text.
-        children: [
-          if (details.hasTime) ...[
-            Flexible(
-              child: _DetailChip(
-                icon: Icons.schedule,
-                text: _timeText(details),
-                onTap: () => onEdit(PostSpotDetail.time),
-              ),
-            ),
-            const SizedBox(width: 8),
+    final rows = <_DetailRow>[
+      if (details.visitedAt != null)
+        _DetailRow(
+          icon: Icons.schedule,
+          lines: ['เวลาที่ไป ${_clock12(details.visitedAt!)}'],
+          onTap: () => onEdit(PostSpotDetail.time),
+        ),
+      if (_hoursRange(details) case final hours?)
+        _DetailRow(
+          icon: Icons.schedule,
+          lines: ['เวลาเปิด / ปิด · $hours'],
+          onTap: () => onEdit(PostSpotDetail.time),
+        ),
+      if (details.hasTransport)
+        _DetailRow(
+          icon: Icons.directions_car_outlined,
+          lines: [
+            if (details.transportModes.isNotEmpty)
+              details.transportModes.join(' · '),
+            if (details.transportCost case final cost?)
+              'ค่ารถ · ${cost.asBaht}',
           ],
-          if (details.hasTransport) ...[
-            Flexible(
-              child: _DetailChip(
-                icon: Icons.directions_bus_filled_outlined,
-                text: _transportText(details),
-                onTap: () => onEdit(PostSpotDetail.transport),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          if (details.hasContact) ...[
-            Flexible(
-              child: _DetailChip(
-                icon: Icons.call_outlined,
-                text: details.contactInfo.trim(),
-                onTap: () => onEdit(PostSpotDetail.contact),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          if (details.hasHack)
-            Flexible(
-              child: _DetailChip(
-                icon: Icons.info_outline,
-                text: details.tripHack.trim(),
-                onTap: () => onEdit(PostSpotDetail.hack),
-              ),
-            ),
+          onTap: () => onEdit(PostSpotDetail.transport),
+        ),
+      if (details.hasContact)
+        _DetailRow(
+          icon: Icons.call_outlined,
+          lines: _contactLines(details.contactInfo),
+          onTap: () => onEdit(PostSpotDetail.contact),
+        ),
+      if (details.hasHack)
+        _DetailRow(
+          icon: Icons.info_outline,
+          lines: [details.tripHack.trim()],
+          onTap: () => onEdit(PostSpotDetail.hack),
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const Divider(height: 1, color: AppColors.line),
+          rows[i],
         ],
-      ),
+      ],
     );
   }
-
-  /// "6:00 AM", or the opening hours when that is all there is.
-  static String _timeText(PostSpotDetails details) {
-    final visited = details.visitedAt;
-    if (visited != null) return _clock12(visited);
-    return _hoursRange(details) ?? '';
-  }
-
-  /// "MRT · เดิน ฿100", dropping whichever half is missing.
-  static String _transportText(PostSpotDetails details) =>
-      transportText(details.transportModes, details.transportCost);
 
   /// "06.00 - 14.30 น.", or null when no hours were given.
   ///
@@ -103,48 +93,66 @@ class PostSpotDetailRows extends StatelessWidget {
         details.opensAt == null ? null : _clock(details.opensAt!),
         details.closesAt == null ? null : _clock(details.closesAt!),
       );
+
+  /// The phone on its own line, then the site on the next — the same halves
+  /// [showContactSheet] splits back apart, just read the other way.
+  static List<String> _contactLines(String contactInfo) {
+    final parts = contactInfo
+        .split(' · ')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return parts.isEmpty ? [contactInfo.trim()] : parts;
+  }
 }
 
 /// Which of the three a row or chip stands for.
 enum PostSpotDetail { time, transport, hack, contact }
 
-class _DetailChip extends StatelessWidget {
-  const _DetailChip({
+/// One stacked row: an icon, then one or two lines beside it — the second,
+/// when there is one, a line lighter than the first (a cost under a mode, a
+/// site under a number).
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({
     required this.icon,
-    required this.text,
+    required this.lines,
     required this.onTap,
   });
 
   final IconData icon;
-  final String text;
+  final List<String> lines;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(99),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppColors.postPurpleSoft,
-          borderRadius: BorderRadius.circular(99),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 13, color: AppColors.postPurple),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.postPurple,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
+            Icon(icon, size: 18, color: AppColors.postPurple),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < lines.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 2),
+                    Text(
+                      lines[i],
+                      style: TextStyle(
+                        color: i == 0
+                            ? AppColors.foreground
+                            : AppColors.muted,
+                        fontSize: i == 0 ? 14 : 13,
+                        fontWeight: i == 0 ? FontWeight.w700 : FontWeight.w500,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],

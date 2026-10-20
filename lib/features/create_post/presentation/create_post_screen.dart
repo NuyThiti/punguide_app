@@ -1079,8 +1079,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// Lays the assistant's draft into the composer for review.
   ///
   /// Every photo that was sent comes back in some section — the server
-  /// guarantees it — but anything it left out is appended rather than trusted
-  /// away, and so are the photos past the per-call limit.
+  /// guarantees it, one section each, however the model grouped them — but
+  /// anything it left out is appended rather than trusted away, and so are
+  /// the photos past the per-call limit.
+  ///
+  /// The server's one-section-per-photo answer is regrouped here into one
+  /// card per *spot*, by the same time-and-place heuristic the no-assistant
+  /// fallback already groups by ([TripPhotoGrouper]): photos taken minutes
+  /// apart at the same place are the same stop, and five photos of one
+  /// temple should not read as five different places in the post. The
+  /// earliest-sent photo in each group lends its caption, hours, and the
+  /// rest of its details to the merged card; the others only add their
+  /// pictures.
   Future<void> _applyAssistantDraft(
     PlunoApi api,
     GeneratedPostDraft draft,
@@ -1092,38 +1102,96 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     };
     final warnings = <String>[...draft.warnings];
 
+    final sentIndexOf = <String, int>{
+      for (var i = 0; i < sent.length; i++) sent[i].path: i,
+    };
+    final photoGroups = <List<int>>[];
+    for (final group
+        in const TripPhotoGrouper().group(sent, requireEvidence: true)) {
+      final indices = group
+          .map((photo) => sentIndexOf[photo.path])
+          .whereType<int>()
+          .toList()
+        ..sort();
+      if (indices.isNotEmpty) photoGroups.add(indices);
+    }
+    photoGroups.sort((a, b) => a.first.compareTo(b.first));
+
+    // A second pass: the server's own guess at *where* a section is can say
+    // two consecutive sections are the same spot even when neither photo
+    // carried EXIF to prove it — two dishes at one dessert shop, say, both
+    // saved without a timestamp or GPS. Adjacent groups whose bordering
+    // sections named the same real place (its placeId, or its name when the
+    // model gave no id) merge too, the same conservative, adjacent-only rule
+    // the EXIF pass above already follows.
+    String? placeKey(int index) {
+      if (index >= draft.contents.length) return null;
+      final location = draft.contents[index].location;
+      if (location == null || location.status == ContentLocationStatus.none) {
+        return null;
+      }
+      final placeId = location.placeId?.trim();
+      if (placeId != null && placeId.isNotEmpty) return 'id:$placeId';
+      final name = location.name?.trim();
+      return name != null && name.isNotEmpty ? 'name:$name' : null;
+    }
+
+    final mergedGroups = <List<int>>[];
+    for (final indices in photoGroups) {
+      final previous = mergedGroups.isEmpty ? null : mergedGroups.last;
+      final previousKey = previous == null ? null : placeKey(previous.last);
+      if (previous != null &&
+          previousKey != null &&
+          previousKey == placeKey(indices.first)) {
+        previous.addAll(indices);
+      } else {
+        mergedGroups.add([...indices]);
+      }
+    }
+    photoGroups
+      ..clear()
+      ..addAll(mergedGroups);
+
     final blocks = <_BlockFields>[];
     final placed = <String>{};
-    for (var index = 0; index < draft.contents.length; index++) {
-      final section = draft.contents[index];
+    for (final indices in photoGroups) {
+      if (indices.first >= draft.contents.length) continue;
+      final primary = draft.contents[indices.first];
       final paths = <String>[];
-      for (final mediaId in section.mediaIds ?? const <String>[]) {
-        final path = pathOf[mediaId];
-        if (path == null || !placed.add(path)) continue;
-        paths.add(path);
+      for (final index in indices) {
+        if (index >= draft.contents.length) continue;
+        for (final mediaId
+            in draft.contents[index].mediaIds ?? const <String>[]) {
+          final path = pathOf[mediaId];
+          if (path == null || !placed.add(path)) continue;
+          paths.add(path);
+        }
       }
+      // Nothing in this group was actually claimed by a section — leave its
+      // photos for the leftover pass below rather than add an empty card.
+      if (paths.isEmpty) continue;
 
-      final options = draft.optionsFor(index);
+      final options = draft.optionsFor(indices.first);
       // The traveller's own words, if the section already carries any, always
       // win — this is only ever a starting point, the same way opensAt and
       // closesAt already arrive pre-filled from the same lookup.
-      final contactInfo = (section.contactInfo?.trim().isNotEmpty ?? false)
-          ? section.contactInfo!
+      final contactInfo = (primary.contactInfo?.trim().isNotEmpty ?? false)
+          ? primary.contactInfo!
           : _contactInfoText(options?.contactInfo);
       final block = _BlockFields()
-        ..title.text = section.title
+        ..title.text = primary.title
         ..items.first.details = PostSpotDetails(
-          visitedAt: _timeOfDay(section.visitedAt),
-          opensAt: _timeOfDay(section.opensAt),
-          closesAt: _timeOfDay(section.closesAt),
-          transportModes: section.transportModes,
-          transportCost: section.transportCost,
-          tripHack: section.tripHack ?? '',
+          visitedAt: _timeOfDay(primary.visitedAt),
+          opensAt: _timeOfDay(primary.opensAt),
+          closesAt: _timeOfDay(primary.closesAt),
+          transportModes: primary.transportModes,
+          transportCost: primary.transportCost,
+          tripHack: primary.tripHack ?? '',
           contactInfo: contactInfo,
         )
-        ..items.first.body.text = section.content
+        ..items.first.body.text = primary.content
         ..items.first.imagePaths.addAll(paths)
-        ..items.first.location = section.location;
+        ..items.first.location = primary.location;
       block.listen(_refresh);
       blocks.add(block);
 
@@ -1132,17 +1200,21 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
     }
 
-    // The draft holds a card per photo it was given, so anything left over —
-    // a photo the answer somehow missed, or one past the per-call ceiling —
-    // gets a card of its own rather than being stacked onto the last one.
-    final leftovers = <String>[
+    // Anything left over — a photo the answer somehow missed, or one past
+    // the per-call ceiling — is grouped the same way, just without a caption
+    // to start from.
+    final photoByPath = <String, TripPhoto>{
+      for (final photo in [...sent, ...extra]) photo.path: photo,
+    };
+    final leftoverPaths = <String>[
       for (final photo in sent)
         if (!placed.contains(photo.path)) photo.path,
       ...extra.map((photo) => photo.path),
     ];
-    for (final path in leftovers) {
+    for (final group in const TripPhotoGrouper()
+        .group([for (final path in leftoverPaths) photoByPath[path]!])) {
       blocks.add(_BlockFields()
-        ..items.first.imagePaths.add(path)
+        ..items.first.imagePaths.addAll(group.map((photo) => photo.path))
         ..listen(_refresh));
     }
     if (extra.isNotEmpty) {

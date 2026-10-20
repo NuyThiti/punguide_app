@@ -90,7 +90,16 @@ class TripPhotoGrouper {
   final double distanceKm;
   final int maxPhotos;
 
-  List<List<TripPhoto>> group(List<TripPhoto> selected) {
+  /// [requireEvidence] changes what two photos with no comparable metadata
+  /// at all do: normally they merge (nothing says they are not the same
+  /// stop), but a caller that already has something to lose by merging
+  /// wrongly — the assistant's own distinct per-photo captions, say — can
+  /// ask for the opposite default: without an actual time or place in
+  /// common, treat them as two different spots rather than one.
+  List<List<TripPhoto>> group(
+    List<TripPhoto> selected, {
+    bool requireEvidence = false,
+  }) {
     // Unknown metadata is an anchor: retain selection order and sort only
     // contiguous runs with both capture time and coordinates.
     final ordered = <TripPhoto>[];
@@ -119,15 +128,20 @@ class TripPhotoGrouper {
       var split = groups.isEmpty || groups.last.length >= maxPhotos;
       if (!split) {
         final previous = groups.last.last;
+        var evidence = false;
         final a = previous.takenAt, b = photo.takenAt;
         if (a != null && b != null) {
+          evidence = true;
           split = a.year != b.year ||
               a.month != b.month ||
               a.day != b.day ||
               b.difference(a).abs() > gap;
         }
-        if (previous.hasLocation && photo.hasLocation)
-          split |= _distance(previous, photo) > distanceKm;
+        if (previous.hasLocation && photo.hasLocation) {
+          evidence = true;
+          split |= distanceKmBetween(previous, photo) > distanceKm;
+        }
+        if (!evidence && requireEvidence) split = true;
       }
       if (split) groups.add([]);
       groups.last.add(photo);
@@ -135,7 +149,8 @@ class TripPhotoGrouper {
     return groups;
   }
 
-  double _distance(TripPhoto a, TripPhoto b) {
+  /// The great-circle distance between two photos that both carry EXIF GPS.
+  double distanceKmBetween(TripPhoto a, TripPhoto b) {
     double radians(double n) => n * pi / 180;
     final lat = radians(b.latitude! - a.latitude!);
     final lon = radians(b.longitude! - a.longitude!);
