@@ -75,6 +75,8 @@ FakeAdapter _savingApi({int uploadStatus = 201}) => FakeAdapter({
         FakeReply(201, _video(_mediaB)),
       ],
       'POST /trips/posts': [FakeReply(201, _post())],
+      // The feed the shared clip lands on; the list has not caught up yet.
+      'GET /trips': [const FakeReply(200, <Object>[])],
       'DELETE /media/$_mediaA': [const FakeReply(204, null)],
       'DELETE /media/$_mediaB': [const FakeReply(204, null)],
     });
@@ -316,8 +318,9 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Puntok'));
     await _settle(tester);
 
+    // The save itself; the feed it lands on loads its own rows after.
     expect(
-      adapter.paths,
+      adapter.paths.where((path) => path != 'GET /trips'),
       ['POST /media', 'POST /media', 'POST /trips/posts'],
     );
     final body = adapter.bodyOf('POST /trips/posts')!;
@@ -340,7 +343,9 @@ void main() {
 
     expect(find.text('feed'), findsOneWidget);
     expect(find.text('โพสต์ Puntok แล้ว'), findsOneWidget);
-    final head = container.read(puntokFeedProvider).first;
+    final feed =
+        await tester.runAsync(() => container.read(puntokFeedProvider.future));
+    final head = feed!.first;
     expect(head.id, 'post-1');
     expect(head.video, 'https://cdn.test/videos/$_mediaA.mp4');
     expect(head.poster, 'https://cdn.test/videos/$_mediaA-large.webp');

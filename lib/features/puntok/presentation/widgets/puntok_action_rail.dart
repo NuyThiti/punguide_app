@@ -93,12 +93,13 @@ class _Avatar extends StatelessWidget {
               height: _size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
+                color: Colors.white24,
                 border: Border.all(color: Colors.white, width: 2),
-                image: DecorationImage(
-                  image: AssetImage(post.authorAvatar),
-                  fit: BoxFit.cover,
-                ),
+                image: _image(post.authorAvatar),
               ),
+              child: post.authorAvatar == null
+                  ? const Icon(Icons.person, color: Colors.white, size: 26)
+                  : null,
             ),
           ),
           Positioned(
@@ -130,6 +131,17 @@ class _Avatar extends StatelessWidget {
   }
 }
 
+/// A server avatar is a URL; a bundled one (tests) is an asset path.
+DecorationImage? _image(String? source) {
+  if (source == null || source.isEmpty) return null;
+  return DecorationImage(
+    image: source.startsWith('http')
+        ? NetworkImage(source)
+        : AssetImage(source) as ImageProvider,
+    fit: BoxFit.cover,
+  );
+}
+
 class _RailAction extends StatelessWidget {
   const _RailAction({
     required this.icon,
@@ -139,7 +151,10 @@ class _RailAction extends StatelessWidget {
   });
 
   final IconData icon;
-  final int count;
+
+  /// Null when the feed does not carry this count — the disc stays, the
+  /// number goes.
+  final int? count;
   final VoidCallback onTap;
   final Color tint;
 
@@ -160,16 +175,18 @@ class _RailAction extends StatelessWidget {
             ),
             child: Icon(icon, color: tint, size: 22),
           ),
-          const SizedBox(height: 5),
-          Text(
-            formatPuntokCount(count),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+          if (count != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              formatPuntokCount(count!),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

@@ -15,7 +15,7 @@ String tripFactsLine(TripListItem trip) => tripFactsParts(trip).join(' • ');
 
 /// The same facts unjoined, for a card that paints its own separator.
 List<String> tripFactsParts(TripListItem trip) {
-  if (trip.type == TripType.content) {
+  if (trip.type.isPost) {
     return trip.placeCount > 0
         ? <String>['${trip.placeCount} สถานที่']
         : const <String>[];

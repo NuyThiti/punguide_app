@@ -809,4 +809,28 @@ void main() {
 
     expect(find.text('2 จาก 2'), findsOneWidget);
   });
+
+  testWidgets('the top bar stays put while the wizard scrolls', (tester) async {
+    final view =
+        TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
+    view.physicalSize = const Size(390 * 3, 700 * 3);
+    view.devicePixelRatio = 3;
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    final atRest = tester.getRect(find.text('สร้างทริปของคุณ'));
+    final sectionAtRest = tester.getRect(find.text('สไตล์การเที่ยว'));
+
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
+
+    // The page really did scroll…
+    expect(
+      tester.getRect(find.text('สไตล์การเที่ยว')).top,
+      lessThan(sectionAtRest.top),
+    );
+    // …and the bar did not move with it.
+    expect(tester.getRect(find.text('สร้างทริปของคุณ')), atRest);
+  });
 }

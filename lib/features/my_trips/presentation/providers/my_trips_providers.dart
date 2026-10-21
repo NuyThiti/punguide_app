@@ -20,7 +20,7 @@ extension MyTripsFilterLabel on MyTripsFilter {
   bool accepts(TripListItem trip) => switch (this) {
         MyTripsFilter.all => true,
         MyTripsFilter.plans => trip.type == TripType.planTrip,
-        MyTripsFilter.posts => trip.type == TripType.content,
+        MyTripsFilter.posts => trip.type.isPost,
       };
 }
 

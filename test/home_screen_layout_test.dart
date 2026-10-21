@@ -247,6 +247,37 @@ void main() {
     expect(find.textContaining('Km'), findsNothing);
   });
 
+  testWidgets('a puntok clip never reaches the wall', (tester) async {
+    _phone(tester);
+
+    final adapter = feedAdapter(<Map<String, dynamic>>[
+      feedTripJson(id: 'plan', title: 'แผนเที่ยวเชียงใหม่'),
+      feedTripJson(id: 'clip', type: 'puntok', title: 'คลิปสั้นเชียงใหม่'),
+    ]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: paigunOverrides(adapter),
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            routes: [
+              GoRoute(
+                path: '/',
+                name: AppRoute.home.name,
+                builder: (_, __) => const HomeScreen(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // A clip has no days, no budget and no places, and its cover is a video —
+    // the Puntok tab reads those with its own request.
+    expect(find.text('แผนเที่ยวเชียงใหม่'), findsOneWidget);
+    expect(find.text('คลิปสั้นเชียงใหม่'), findsNothing);
+  });
+
   testWidgets('home renders an empty state when the feed is empty',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 852 * 3);

@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../../core/api/pluno_api.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../shared/widgets/cover_image.dart';
+
 import '../../domain/models/puntok_post.dart';
 import 'puntok_action_rail.dart';
 import 'puntok_video_layer.dart';
 
 /// One page of the Puntok feed: the clip full-bleed, a scrim at each end so
 /// the chrome stays legible, the action rail on the right and the creator plus
-/// caption along the bottom.
+/// caption along the bottom — with the แผนทริป card under them when the post
+/// is synced to a plan the viewer may see.
 class PuntokPostView extends StatelessWidget {
   const PuntokPostView({
     super.key,
@@ -22,6 +27,7 @@ class PuntokPostView extends StatelessWidget {
     required this.onShare,
     required this.onCreator,
     required this.onFollow,
+    required this.onOpenPlan,
   });
 
   final PuntokPost post;
@@ -41,8 +47,17 @@ class PuntokPostView extends StatelessWidget {
   final VoidCallback onCreator;
   final VoidCallback onFollow;
 
+  /// ↗ on the plan card, with the plan's id.
+  final ValueChanged<String> onOpenPlan;
+
+  static const double _planHeight = 60;
+
   @override
   Widget build(BuildContext context) {
+    final plan = post.linkedTrip;
+    // Everything above the card sits on top of it, not behind it.
+    final lift = plan == null ? 0.0 : _planHeight + 12;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -63,7 +78,7 @@ class PuntokPostView extends StatelessWidget {
           ),
         Positioned(
           right: 12,
-          bottom: bottomInset + 8,
+          bottom: bottomInset + 8 + lift,
           child: PuntokActionRail(
             post: post,
             onLike: onLike,
@@ -77,13 +92,21 @@ class PuntokPostView extends StatelessWidget {
         Positioned(
           left: 16,
           right: 16 + PuntokActionRail.discSize + 16,
-          bottom: bottomInset + 12,
+          bottom: bottomInset + 12 + lift,
           child: _CreatorBlock(
             post: post,
             onCreator: onCreator,
             onFollow: onFollow,
           ),
         ),
+        if (plan != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: bottomInset + 12,
+            height: _planHeight,
+            child: _PlanCard(plan: plan, onOpen: () => onOpenPlan(plan.id)),
+          ),
       ],
     );
   }
@@ -146,6 +169,77 @@ class _CreatorBlock extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "แผนทริป": the synced plan's cover, its name, and ↗ to open it.
+class _PlanCard extends StatelessWidget {
+  const _PlanCard({required this.plan, required this.onOpen});
+
+  final LinkedTrip plan;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = plan.coverImage?.urls.thumbnail ?? '';
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 72,
+              height: double.infinity,
+              child: cover.isEmpty
+                  ? const ColoredBox(color: AppColors.postPurpleWell)
+                  : CoverImage(source: cover, fit: BoxFit.cover),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'แผนทริป',
+                    style: TextStyle(color: AppColors.muted, fontSize: 11),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    plan.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.foreground,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Semantics(
+              button: true,
+              label: 'เปิดแผนทริป',
+              child: Container(
+                width: 32,
+                height: 32,
+                margin: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.postPurple,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_outward,
+                    color: Colors.white, size: 18),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

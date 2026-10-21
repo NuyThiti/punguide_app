@@ -25,6 +25,8 @@ import 'widgets/budget_sheets.dart';
 import 'widgets/plan_budget_tab.dart';
 import 'widgets/suggest_places_sheet.dart';
 import 'widgets/travel_leg_sheet.dart';
+import '../../create_post/domain/models/post_draft.dart';
+import '../../create_post/presentation/widgets/post_audience_chip.dart';
 
 /// The deep green the design uses for the active tab and the day numbers. It
 /// is darker than [AppColors.primary], which is the button green.
@@ -176,7 +178,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 if (_tab == 0)
-                  ..._planTab(plan, lodging)
+                  ..._planTab(plan, lodging, trip.visibility)
                 else if (_tab == 1)
                   ..._myTripTab(plan)
                 else if (_tab == 3)
@@ -254,7 +256,12 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
   /// The จัดแผน tab: the plan's own heading, the lodging panel and the day
   /// schedule. The other three tabs have no design yet.
-  List<Widget> _planTab(_PlanView plan, List<BudgetItem> lodging) {
+  List<Widget> _planTab(
+    _PlanView plan,
+    List<BudgetItem> lodging,
+    TripVisibility visibility,
+  ) {
+    final audience = PostAudience.fromVisibility(_visibility ?? visibility);
     return [
       _SectionHeading(
         title: 'จัดแผนของคุณ',
@@ -269,6 +276,15 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
             AppRoute.remixTrip.name,
             params: {'tripId': widget.tripId},
           ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      // Who can see the plan — the same chip and sheet as the post composer.
+      Align(
+        alignment: Alignment.centerLeft,
+        child: PostAudienceChip(
+          audience: audience,
+          onTap: () => _pickVisibility(audience),
         ),
       ),
       const SizedBox(height: 16),
@@ -307,7 +323,6 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
           callbacks: _ScheduleCallbacks(
             onExplore: () => _explore(plan),
             onAddPlace: (day) => _addPlaceManually(plan, day),
-            onAddTravel: _addTravel,
             onEditLeg: _editLeg,
             onEditStop: (stop) => _editStop(plan, stop),
             onDeleteStop: _deleteStop,
@@ -325,19 +340,6 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         for (var i = 1; i < day.stops.length; i++)
           if (day.stops[i].travelFromPrevious == null) day.stops[i],
       ];
-
-  /// + เพิ่มการเดินทาง: the day's first blank leg, or the last leg when
-  /// every one is already filled in.
-  void _addTravel(_PlanDay day) {
-    if (day.stops.length < 2) {
-      _todo('ต้องมีอย่างน้อย 2 สถานที่ในวันนี้ จึงจะเพิ่มการเดินทางได้');
-      return;
-    }
-    final blank = _blankLegs(day);
-    final index =
-        blank.isEmpty ? day.stops.length - 1 : day.stops.indexOf(blank.first);
-    _editLeg(day, index);
-  }
 
   /// The leg arriving at the stop at [index]. It is stored on that stop, so
   /// the sheet saves onto it.
@@ -382,6 +384,40 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     if (!mounted || outcome != AddPlaceOutcome.updated) return;
     ref.invalidate(apiTripProvider(widget.tripId));
     _todo('บันทึก "${stop.title}" แล้ว');
+  }
+
+  /// What the traveller just picked, shown until the reload brings the
+  /// server's own value back.
+  TripVisibility? _visibility;
+
+  Future<void> _pickVisibility(PostAudience current) async {
+    final picked =
+        await showAudiencePicker(context, current, title: 'ใครเห็นแผนนี้');
+    if (picked == null || picked == current || !mounted) return;
+
+    final previous = _visibility;
+    setState(() => _visibility = picked.visibility);
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      // The first switch to public stamps publishedAt server-side; going
+      // private again does not clear it.
+      await api.trips.update(widget.tripId, visibility: picked.visibility);
+    } on ApiException catch (failure) {
+      if (!mounted) return;
+      setState(() => _visibility = previous);
+      _todo(failure.isUnauthorized
+          ? 'เข้าสู่ระบบก่อนเปลี่ยนการมองเห็น'
+          : 'เปลี่ยนการมองเห็นไม่สำเร็จ: ${failure.message}');
+      return;
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _visibility = previous);
+      _todo('เปลี่ยนการมองเห็นไม่สำเร็จ: $error');
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(apiTripProvider(widget.tripId));
+    _todo('ตั้งค่าเป็น ${picked.label} แล้ว');
   }
 
   /// Back to wherever the editor was opened from, falling back to the trip
@@ -1641,7 +1677,6 @@ class _ScheduleCallbacks {
   const _ScheduleCallbacks({
     required this.onExplore,
     required this.onAddPlace,
-    required this.onAddTravel,
     required this.onEditLeg,
     required this.onEditStop,
     required this.onDeleteStop,
@@ -1651,7 +1686,6 @@ class _ScheduleCallbacks {
 
   final VoidCallback onExplore;
   final ValueChanged<_PlanDay> onAddPlace;
-  final ValueChanged<_PlanDay> onAddTravel;
 
   /// The leg arriving at the stop at [index] on [day].
   final void Function(_PlanDay day, int index) onEditLeg;
@@ -1835,12 +1869,21 @@ class _DayCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // The gap between two stops is the only place a leg
+                          // can go: blank, it offers to add one; otherwise it
+                          // shows the leg, which opens to edit.
                           if (i > 0)
-                            _LegRow(
-                              stop: day.stops[i],
-                              segment: day.segmentInto(day.stops[i]),
-                              onTap: () => callbacks.onEditLeg(day, i),
-                            ),
+                            if (_isBlankLeg(
+                                day.stops[i], day.segmentInto(day.stops[i])))
+                              _AddTravelRow(
+                                onTap: () => callbacks.onEditLeg(day, i),
+                              )
+                            else
+                              _LegRow(
+                                stop: day.stops[i],
+                                segment: day.segmentInto(day.stops[i]),
+                                onTap: () => callbacks.onEditLeg(day, i),
+                              ),
                           _StopCard(
                             stop: day.stops[i],
                             position: i + 1,
@@ -1857,18 +1900,9 @@ class _DayCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  // A leg needs somewhere to go: with a single stop there is
-                  // no next one, so there is nothing to add. The header still
-                  // takes a dropped stop for this day.
-                  if (day.stops.length > 1)
-                    _DayDropZone(
-                      day: day,
-                      insertAt: day.stops.length,
-                      onMoveStop: callbacks.onMoveStop,
-                      child: _AddTravelRow(
-                        onTap: () => callbacks.onAddTravel(day),
-                      ),
-                    ),
+                  // Nothing after the last stop: there is no next
+                  // destination to travel to. Appending by drag goes through
+                  // the day header instead.
                 ],
               ),
             ),
@@ -2420,6 +2454,13 @@ class _SquareIconButton extends StatelessWidget {
 
 /// The leg arriving at [stop], on the dotted rail the design runs between
 /// cards.
+/// A leg with nothing to show: the traveller described none, the server
+/// measured none, and there is no legacy note either.
+bool _isBlankLeg(Activity stop, TravelSegment? segment) =>
+    stop.travelFromPrevious == null &&
+    segment == null &&
+    (stop.travelNote ?? '').trim().isEmpty;
+
 class _LegRow extends StatelessWidget {
   const _LegRow({
     required this.stop,

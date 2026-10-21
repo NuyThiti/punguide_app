@@ -57,16 +57,19 @@ class PostAudienceChip extends StatelessWidget {
 }
 
 /// Asks who the post is for. Returns null when dismissed.
+///
+/// [title] defaults to the post wording; the plan editor asks about the plan.
 Future<PostAudience?> showAudiencePicker(
   BuildContext context,
-  PostAudience current,
-) {
+  PostAudience current, {
+  String title = 'ใครเห็นโพสต์นี้',
+}) {
   return showModalBottomSheet<PostAudience>(
     context: context,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.42),
     builder: (_) => ComposerSheet(
-      title: 'ใครเห็นโพสต์นี้',
+      title: title,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: PostAudience.values.map((audience) {

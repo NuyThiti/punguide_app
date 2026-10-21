@@ -133,7 +133,7 @@ class _TripList extends ConsumerWidget {
           // The editor behind this is the plan editor; a post has no plan, so
           // the row offers nothing rather than opening an editor for days it
           // does not have.
-          onEdit: trip.type == TripType.content
+          onEdit: trip.type.isPost
               ? null
               : () => context.goNamed(
                     AppRoute.editTrip.name,

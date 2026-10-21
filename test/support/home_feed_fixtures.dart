@@ -19,6 +19,7 @@ TripListItem feedTrip({
   int? durationDays = 3,
   double totalBudget = 3000,
   String? coverUrl = 'https://example.test/cover.jpg',
+  String? coverMediaType,
   String? creatorName = 'makitravels',
   bool isSaved = false,
   int likeCount = 127,
@@ -35,6 +36,7 @@ TripListItem feedTrip({
       durationDays: durationDays,
       totalBudget: totalBudget,
       coverUrl: coverUrl,
+      coverMediaType: coverMediaType,
       creatorName: creatorName,
       isSaved: isSaved,
       likeCount: likeCount,
@@ -62,6 +64,10 @@ Map<String, dynamic> feedTripJson({
   String type = 'plan_trip',
   String status = 'draft',
   int? placeCount,
+
+  /// "video" marks the row as a Puntok clip, which is how the live feed tells
+  /// one apart — the type stays `content`.
+  String? coverMediaType,
 }) {
   return <String, dynamic>{
     'id': id,
@@ -87,6 +93,7 @@ Map<String, dynamic> feedTripJson({
     if (coverUrl != null)
       'coverImage': <String, dynamic>{
         'mediaId': 'm-$id',
+        if (coverMediaType != null) 'mediaType': coverMediaType,
         'urls': <String, dynamic>{'large': coverUrl, 'thumbnail': coverUrl},
       },
     if (creatorName != null)

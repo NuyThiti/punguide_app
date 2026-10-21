@@ -170,7 +170,7 @@ class _StatusChip extends StatelessWidget {
   (String, Color, Color) get _style {
     // A post is never "3 วัน" or "ยืนยันแล้ว" — the states below are a plan's
     // life, so a post just says what it is.
-    if (type == TripType.content) {
+    if (type.isPost) {
       return ('โพสต์', AppColors.postPurpleWell, AppColors.postPurple);
     }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../../shared/models/feed_rows.dart';
 import '../../../paigun/domain/nearby_trip.dart';
 import '../../../paigun/presentation/providers/paigun_providers.dart';
 import '../../domain/destination.dart';
@@ -31,14 +32,14 @@ class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
     // Signing in or out changes the per-viewer flags on every row.
     ref.watch(authSessionProvider);
     final api = await ref.watch(plunoApiProvider.future);
-    return api.trips.feed(_query);
+    return withoutClips(await api.trips.feed(_query));
   }
 
   Future<void> refresh() async {
     state = const AsyncLoading<List<TripListItem>>();
     state = await AsyncValue.guard(() async {
       final api = await ref.read(plunoApiProvider.future);
-      return api.trips.feed(_query);
+      return withoutClips(await api.trips.feed(_query));
     });
   }
 

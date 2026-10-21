@@ -119,7 +119,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 
     // A post carries its one action in the hero instead — Remix for a
     // visitor, edit for the owner — so it gets no bottom bar at all.
-    if (trip.requireValue.type == TripType.content) return null;
+    if (trip.requireValue.type.isPost) return null;
     return _PlanActionBar(
       label: owned ? 'แก้ไข' : 'Remix Trip',
       color: owned ? AppColors.brandOrange : AppColors.brandPurple,
@@ -217,7 +217,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 
 
   Widget _body(ApiTrip trip) {
-    if (trip.type == TripType.content) return _contentBody(trip);
+    if (trip.type.isPost) return _contentBody(trip);
     final plan = _PlanView.of(trip);
     // A trip whose days were deleted must not leave the tab strip pointing
     // past the end of the list.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -84,6 +85,11 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
 
   final List<String> _selectedVibes = <String>[];
   final _scrollController = ScrollController();
+  final _headerKey = GlobalKey();
+
+  /// 0 while the top bar still sits over the hero, 1 once the hero has gone
+  /// by and the bar stands on the page's own background.
+  final _topBarT = ValueNotifier<double>(0);
 
   bool get _isEditing => widget.trip != null;
   bool get _canCreate => _destinationController.text.trim().isNotEmpty;
@@ -169,6 +175,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     final trip = widget.trip;
     _titleController = TextEditingController(text: trip?.title ?? '');
     _destinationController =
@@ -190,7 +197,9 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   void dispose() {
     _destinationController.removeListener(_syncGeneratedFields);
     _budgetController.removeListener(_refresh);
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _topBarT.dispose();
     _titleController.dispose();
     _destinationController.dispose();
     _budgetController.dispose();
@@ -227,6 +236,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                       ),
                       children: [
                         _CreateTripHeader(
+                          key: _headerKey,
                           destinationController: _destinationController,
                           startDate: _startDate,
                           endDate: _endDate,
@@ -234,7 +244,6 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                           travelers: _travelers,
                           guestsChosen: _guestsChosen,
                           children: _children,
-                          onBack: _close,
                           onDestinationTap: _showDestinationSearch,
                           onPickDate: _showDatesDialog,
                           onGuestTap: _showGuestSheet,
@@ -261,6 +270,18 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: _topBarT,
+                        builder: (context, t, _) => _StickyTopBar(
+                          t: t,
+                          onBack: _close,
+                        ),
+                      ),
                     ),
                     if (_generating) const Positioned.fill(child: _Thinking()),
                     Positioned(
@@ -398,6 +419,16 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         moreLabel: '+ เพิ่มเติม',
       ),
     ];
+  }
+
+  void _onScroll() {
+    final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+    final headerHeight = box?.size.height ?? 300;
+    final barHeight = MediaQuery.paddingOf(context).top + 54;
+    // Turn solid as the hero's last stretch passes under the bar.
+    final start = (headerHeight - barHeight - 40).clamp(0.0, double.infinity);
+    final t = ((_scrollController.offset - start) / 60).clamp(0.0, 1.0);
+    if ((_topBarT.value - t).abs() > 0.01) _topBarT.value = t;
   }
 
   void _refresh() {
@@ -1919,13 +1950,13 @@ class _DestinationResultTile extends StatelessWidget {
 
 class _CreateTripHeader extends StatelessWidget {
   const _CreateTripHeader({
+    super.key,
     required this.destinationController,
     required this.startDate,
     required this.endDate,
     required this.nights,
     required this.travelers,
     required this.children,
-    required this.onBack,
     required this.onDestinationTap,
     required this.onPickDate,
     required this.onGuestTap,
@@ -1938,7 +1969,6 @@ class _CreateTripHeader extends StatelessWidget {
   final int nights;
   final int travelers;
   final int children;
-  final VoidCallback onBack;
   final VoidCallback onDestinationTap;
   final VoidCallback onPickDate;
   final VoidCallback onGuestTap;
@@ -1974,37 +2004,10 @@ class _CreateTripHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              InkWell(
-                onTap: onBack,
-                borderRadius: BorderRadius.circular(99),
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.chevron_left,
-                      size: 22, color: Color(0xFF315B4B)),
-                ),
-              ),
-              const Expanded(
-                child: Text(
-                  'สร้างทริปของคุณ',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    shadows: [Shadow(color: Colors.black38, blurRadius: 6)],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 30),
-            ],
-          ),
+          // The back button and the title are drawn by the pinned bar above
+          // this, which stays put while the hero scrolls under it. The space
+          // they used to take is kept so the hero is laid out as before.
+          const SizedBox(height: 30),
           const SizedBox(height: 26),
           Container(
             padding: const EdgeInsets.all(12),
@@ -2052,6 +2055,87 @@ class _CreateTripHeader extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The page's top bar, pinned over the scrolling hero.
+///
+/// Transparent at rest, so it reads as part of the hero exactly as it did
+/// when it lived inside it; once the hero has scrolled by it becomes the page
+/// background and its ink darkens to match.
+class _StickyTopBar extends StatelessWidget {
+  const _StickyTopBar({required this.t, required this.onBack});
+
+  /// 0 over the hero, 1 over the page background.
+  final double t;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // The bar covers the status bar, so the clock flips with it.
+      value: t < 0.5 ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + 12,
+          16,
+          12,
+        ),
+        decoration: BoxDecoration(
+          color: Color.lerp(
+            const Color(0x00FDFCF9),
+            const Color(0xFFFDFCF9),
+            t,
+          ),
+          border: Border(
+            bottom: BorderSide(
+              color: const Color(0xFFE8E1D5).withValues(alpha: t),
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            InkWell(
+              onTap: onBack,
+              borderRadius: BorderRadius.circular(99),
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.chevron_left,
+                  size: 22,
+                  color: Color(0xFF315B4B),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                'สร้างทริปของคุณ',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color.lerp(Colors.white, const Color(0xFF1E1E1E), t),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  shadows: [
+                    // The shadow only earns its place against the photo.
+                    Shadow(
+                      color: Colors.black38.withValues(alpha: 0.38 * (1 - t)),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 30),
+          ],
+        ),
       ),
     );
   }

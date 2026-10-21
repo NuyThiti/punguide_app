@@ -1,11 +1,26 @@
 enum TripType {
   planTrip('plan_trip'),
-  content('content');
+  content('content'),
+
+  /// A short-video post for the Puntok feed. The client reads it, but the
+  /// server only accepts `plan_trip` and `content` so far (checked
+  /// 2026-10-20), so nothing sends it yet — see `puntokTripType`.
+  puntok('puntok');
 
   const TripType(this.wire);
   final String wire;
-  static TripType from(Object? value) =>
-      value == 'content' ? content : planTrip;
+
+  /// Anything unrecognised is read as a plan, which is what the server
+  /// defaulted to before posts existed.
+  static TripType from(Object? value) => switch (value) {
+        'content' => content,
+        'puntok' => puntok,
+        _ => planTrip,
+      };
+
+  /// A post rather than a plan: a guide written up from a trip, or a Puntok.
+  /// Both open the post layout, sit under "โพสต์", and carry no itinerary.
+  bool get isPost => this == content || this == puntok;
 }
 
 /// Every enum the API accepts or returns, with its exact wire value.

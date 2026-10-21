@@ -48,8 +48,9 @@ Future<List<XFile>> _pickFromLibrary() => ImagePicker().pickMultipleMedia();
 /// `PUT /trips/posts/:id` after the first save). The editor's cut is not
 /// exported — the server does no editing and the app has no encoder yet.
 ///
-/// There is no Puntok feed endpoint, so a shared clip is put at the head of
-/// the session's feed by hand, playing from the server's copy.
+/// The Puntok feed reads the same posts back from `GET /trips`; a shared clip
+/// is also put at the head of For you by hand, so it shows before the list
+/// has caught up with it.
 class CreatePuntokScreen extends ConsumerStatefulWidget {
   const CreatePuntokScreen({
     super.key,
@@ -273,6 +274,9 @@ class _CreatePuntokScreenState extends ConsumerState<CreatePuntokScreen> {
       final firstSave = _postId == null;
       final result = await api.trips.savePost(
         postId: _postId,
+        // `content` is what the server infers anyway, and it rejects `type`
+        // values it does not know — so only a real Puntok type goes up.
+        type: puntokTripType == TripType.content ? null : puntokTripType,
         action: action,
         visibility: _visibility.wire,
         title: _titleFrom(caption),
@@ -362,25 +366,23 @@ class _CreatePuntokScreenState extends ConsumerState<CreatePuntokScreen> {
     return 'บันทึกไม่สำเร็จ ลองอีกครั้งได้: ${error.message}';
   }
 
-  /// There is no Puntok feed endpoint yet, so the shared clip goes at the
-  /// head of the session's feed by hand, playing the server's copy.
+  /// Opens For you with the shared clip on top, without waiting for the
+  /// list to catch up with it.
   void _showInFeed(Media first, Media cover, ApiTrip post) {
     _discardUnsaved();
     final session = ref.read(authSessionProvider);
-    final handle = session?.handle.replaceFirst('@', '').trim() ?? '';
 
     ref.read(puntokFeedProvider.notifier).publish(
           PuntokPost(
             id: post.id,
             video: first.urls.original ?? '',
-            poster: cover.urls.large,
-            author: handle.isEmpty ? 'you' : handle,
-            authorAvatar: 'assets/images/puntok_avatar_1.jpg',
+            poster: cover.stillUrl,
+            // The name the feed's own rows carry (`creator.name`).
+            author: session?.displayName ?? '',
+            authorAvatar: session?.avatarImage,
             caption: _caption.text.trim(),
             likes: 0,
-            comments: 0,
-            saves: 0,
-            shares: 0,
+            linkedTrip: post.linkedTrip,
           ),
         );
     // It went in at the head of the corpus, which is For you's first page.

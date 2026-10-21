@@ -500,4 +500,14 @@ void main() {
     expect(mp4.files.single.value.contentType.toString(), 'video/mp4');
     expect(mov.files.single.value.contentType.toString(), 'video/quicktime');
   });
+
+  test('puntok reads as its own type and counts as a post', () {
+    expect(TripType.from('puntok'), TripType.puntok);
+    expect(TripType.from('content'), TripType.content);
+    expect(TripType.from('plan_trip'), TripType.planTrip);
+    expect(TripType.from(null), TripType.planTrip);
+    expect(TripType.puntok.isPost, isTrue);
+    expect(TripType.content.isPost, isTrue);
+    expect(TripType.planTrip.isPost, isFalse);
+  });
 }

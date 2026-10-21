@@ -180,6 +180,7 @@ class TripListItem {
     this.coverImage,
     this.creator,
     this.distanceKm,
+    this.linkedTrip,
   });
 
   factory TripListItem.fromJson(Map<String, dynamic> json) {
@@ -216,6 +217,7 @@ class TripListItem {
       // was how the `20015` the server sent for every post reached the cards
       // — guarding it now would throw away the real figure.
       distanceKm: Json.number(json, 'distanceKm'),
+      linkedTrip: LinkedTrip.maybeFromJson(json['linkedTrip']),
       createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
       updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
     );
@@ -270,6 +272,11 @@ class TripListItem {
   /// the server measured them. Null unless both were sent — and null, never 0,
   /// for a trip with no resolved destination.
   final double? distanceKm;
+
+  /// The plan a post was synced to (`linkedTripId`), the same shape as on
+  /// `GET /trips/:id`. Absent when the post links nothing **or** the viewer
+  /// may not see that plan — either way there is no plan card to draw.
+  final LinkedTrip? linkedTrip;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -289,6 +296,9 @@ class TripListItem {
         totalBudget: totalBudget,
         budgetTier: budgetTier,
         tags: tags,
+        budgetCurrency: budgetCurrency,
+        placeCount: placeCount,
+        description: description,
         coverImage: coverImage,
         isSaved: saved,
         isLiked: isLiked,
@@ -296,6 +306,7 @@ class TripListItem {
         remixCount: remixCount,
         creator: creator,
         distanceKm: distanceKm,
+        linkedTrip: linkedTrip,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

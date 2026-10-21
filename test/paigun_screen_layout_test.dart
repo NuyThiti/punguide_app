@@ -62,6 +62,17 @@ final _rows = <Map<String, dynamic>>[
     distanceKm: 549,
   ),
   feedTripJson(id: 'lpq'),
+  // A clip as the live feed actually sends one: `content`, with a video cover
+  // and no `puntok` type in sight.
+  feedTripJson(
+    id: 'clip',
+    type: 'content',
+    coverMediaType: 'video',
+    title: 'คลิปสั้นย่านเยาวราช',
+    destination: 'เยาวราช',
+    country: null,
+    creatorName: 'BKKwalker',
+  ),
   feedTripJson(
     id: 'post',
     type: 'content',
@@ -215,6 +226,19 @@ void main() {
     );
   });
 
+  testWidgets('a puntok clip never reaches the wall', (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(_harness(feedAdapter(_rows)));
+    await tester.pumpAndSettle();
+
+    // A clip has no days, no budget and no places, and its cover is a video —
+    // there is no card to make of it. The Puntok tab reads those itself. The
+    // cover is what gives it away: the server still files clips as `content`.
+    expect(find.text('คลิปสั้นย่านเยาวราช'), findsNothing);
+    expect(find.byType(PaigunCard), findsNWidgets(_rows.length - 1));
+  });
+
   testWidgets('the board asks one question, measured from the traveller',
       (tester) async {
     _phone(tester);
@@ -288,7 +312,7 @@ void main() {
     await tester.pumpWidget(_harness(feedAdapter(_rows)));
     await tester.pumpAndSettle();
 
-    expect(find.byType(PaigunCard), findsNWidgets(_rows.length));
+    expect(find.byType(PaigunCard), findsNWidgets(_rows.length - 1));
 
     // The board does not re-sort what the server ordered. The wall is two
     // columns, so the first row lands top-left.

@@ -8,6 +8,26 @@ import 'support/fake_api.dart';
 const a = 'aaaaaaaa-0000-4000-8000-000000000001';
 const b = 'bbbbbbbb-0000-4000-8000-000000000002';
 void main() {
+  test('savePost sends type only when one is given', () async {
+    final json = {...createdTripJson(), 'type': 'puntok'};
+    final adapter = FakeAdapter({
+      'POST /trips/posts': [FakeReply(201, json)],
+    });
+    final api = fakeApi(adapter);
+    addTearDown(api.close);
+
+    await api.trips.savePost(
+        action: PostSaveAction.share, visibility: TripVisibility.public);
+    expect(adapter.requests.last.data.containsKey('type'), isFalse);
+
+    final saved = await api.trips.savePost(
+        type: TripType.puntok,
+        action: PostSaveAction.share,
+        visibility: TripVisibility.public);
+    expect(adapter.requests.last.data['type'], 'puntok');
+    expect(saved.type, TripType.puntok);
+  });
+
   test('type defaults only on create; list/detail and copy retain content',
       () async {
     final json = {...createdTripJson(), 'type': 'content'};

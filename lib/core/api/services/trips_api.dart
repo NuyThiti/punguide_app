@@ -337,8 +337,9 @@ class TripsApi {
   /// `Idempotency-Key` built from [idempotencyKey] (replaying the same key
   /// after a dropped request returns the same post, never a duplicate).
   /// [postId] set is every save after: `PUT /trips/posts/:postId`, no
-  /// idempotency key needed. Neither sends `type` or `status` — the server
-  /// infers `type: "content"` and derives `status` from [action] itself.
+  /// idempotency key needed. Neither sends `status` — the server derives it
+  /// from [action]. `type` goes up only when [type] is given; left out, the
+  /// server infers `content`.
   ///
   /// [action] decides what the server actually stores for [visibility]:
   /// `draft` forces it to private regardless of what is sent and remembers
@@ -352,6 +353,7 @@ class TripsApi {
   /// and `coverMediaId` untouched.
   Future<ApiTrip> savePost({
     String? postId,
+    TripType? type,
     required PostSaveAction action,
     required TripVisibility visibility,
     String? title,
@@ -371,6 +373,7 @@ class TripsApi {
     String? idempotencyKey,
   }) async {
     final body = Json.compact(<String, dynamic>{
+      'type': type?.wire,
       'action': action.wire,
       'visibility': visibility.wire,
       'title': title,

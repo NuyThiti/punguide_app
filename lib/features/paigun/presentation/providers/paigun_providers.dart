@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
+import '../../../../shared/models/feed_rows.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/paigun_origin_store.dart';
 import '../../domain/nearby_trip.dart';
@@ -114,12 +115,14 @@ final paigunFeedProvider =
   final query = ref.watch(paigunQueryProvider);
 
   final api = await ref.watch(plunoApiProvider.future);
-  return api.trips.feed(
-    filter.toFeedQuery(
-      sort: chip.sort,
-      type: chip.type,
-      query: query,
-      origin: origin,
+  return withoutClips(
+    await api.trips.feed(
+      filter.toFeedQuery(
+        sort: chip.sort,
+        type: chip.type,
+        query: query,
+        origin: origin,
+      ),
     ),
   );
 });

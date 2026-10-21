@@ -557,9 +557,9 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Day 1 is filled, so it has the add-travel rail; days 2 and 3 do not
-    // exist on this trip at all.
-    expect(find.text('เพิ่มการเดินทาง'), findsOneWidget);
+    // Day 1's only leg is already described, and nothing follows its last
+    // stop, so there is no add-travel row; days 2 and 3 do not exist here.
+    expect(find.text('เพิ่มการเดินทาง'), findsNothing);
     expect(find.text('วันที่ 1'), findsOneWidget);
     expect(find.text('วันที่ 2'), findsNothing);
   });
@@ -1844,23 +1844,34 @@ void main() {
     expect(adapter.bodyOf('PATCH /items/s1/assign'), {'tripDayId': 'd2'});
   });
 
-  testWidgets('a day with one stop offers no เพิ่มการเดินทาง', (tester) async {
+  testWidgets('เพิ่มการเดินทาง only sits in a blank gap before a next stop',
+      (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 2400 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
-    // Day 1 has two stops, day 2 has one.
+    // Day 1: s1 → s2 (leg described) → s3 (leg blank). Day 2: one stop.
+    final days = _twoDays();
+    (days[0]['activities'] as List).add(<String, dynamic>{
+      'id': 's3',
+      'title': 'พูสี',
+      'category': 'sightseeing',
+      'order': 2,
+      'cost': 0,
+    });
     adapter.replies['GET /trips/trip-1'] = [
-      FakeReply(200, _tripJson(days: _twoDays()))
+      FakeReply(200, _tripJson(days: days))
     ];
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Only day 1 has a next stop to travel to.
+    // Exactly one: the blank s2 → s3 gap. Not after พูสี (no next stop), not
+    // on the single-stop day 2, and not in place of the described leg.
     expect(find.text('เพิ่มการเดินทาง'), findsOneWidget);
-    final row = tester.getTopLeft(find.text('เพิ่มการเดินทาง'));
-    final day2 = tester.getTopLeft(find.text('วันที่ 2').first);
-    expect(row.dy, lessThan(day2.dy));
+    final add = tester.getTopLeft(find.text('เพิ่มการเดินทาง')).dy;
+    expect(add, greaterThan(tester.getTopLeft(find.text('ตลาดมืด')).dy));
+    expect(add, lessThan(tester.getTopLeft(find.text('พูสี')).dy));
+    expect(find.text('รถเช่า • 15 นาที • ฿3,500'), findsOneWidget);
   });
 
   testWidgets('ที่พักของคุณ is hidden when the trip has no accommodation',
@@ -1878,5 +1889,61 @@ void main() {
     expect(find.text('ที่พักของคุณ'), findsNothing);
     // The schedule below it is unaffected.
     expect(find.text('ตารางแผน'), findsOneWidget);
+  });
+
+  testWidgets('the plan shows who can see it, and the sheet changes it',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay())..['visibility'] = 'public')
+    ];
+    adapter.replies['PATCH /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay())..['visibility'] = 'followers')
+    ];
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Public'), findsOneWidget);
+
+    await tester.tap(find.text('Public'));
+    await tester.pumpAndSettle();
+    // The composer's sheet, asking about the plan rather than a post.
+    expect(find.text('ใครเห็นแผนนี้'), findsOneWidget);
+    expect(find.text('Only me'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+
+    await tester.tap(find.text('Followers'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.bodyOf('PATCH /trips/trip-1'), {'visibility': 'followers'});
+    expect(find.text('ใครเห็นแผนนี้'), findsNothing);
+    expect(find.text('Followers'), findsOneWidget);
+  });
+
+  testWidgets('a failed visibility change puts the old choice back',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay())..['visibility'] = 'private')
+    ];
+    adapter.replies['PATCH /trips/trip-1'] = [
+      FakeReply(401, <String, dynamic>{'message': 'Unauthorized'})
+    ];
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Only me'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Public'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เข้าสู่ระบบก่อนเปลี่ยนการมองเห็น'), findsOneWidget);
+    expect(find.text('Only me'), findsOneWidget);
   });
 }

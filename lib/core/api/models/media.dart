@@ -120,7 +120,24 @@ class Media {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
-  bool get isVideo => mediaType == MediaType.video;
+  /// [mediaType] when the server sends it. Rows that leave it out — list
+  /// endpoints did at first — are judged by the file: a video keeps its
+  /// playable `.mp4`/`.mov` in `urls.original`.
+  bool get isVideo =>
+      mediaType == MediaType.video ||
+      (mediaType == null && _isVideoFile(urls.original));
+
+  /// A still to show before a video plays: `urls.large`, unless the server
+  /// had no poster to cut and filled it with the video file itself.
+  String? get stillUrl => _isVideoFile(urls.large) ? null : urls.large;
+
+  static bool _isVideoFile(String? url) {
+    if (url == null) return false;
+    final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+    return path.endsWith('.mp4') ||
+        path.endsWith('.mov') ||
+        path.endsWith('.m4v');
+  }
 }
 
 /// One image in a trip's gallery.

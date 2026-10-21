@@ -48,7 +48,7 @@ class PunGuideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cover = trip.coverImage?.urls.large;
-    final guide = trip.type == TripType.content;
+    final guide = trip.type.isPost;
     // One accent per card: the chip in front of the type label and the
     // distance pill are the same colour, so the type reads at a glance.
     final accent =

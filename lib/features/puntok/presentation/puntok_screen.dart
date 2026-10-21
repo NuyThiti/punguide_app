@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
@@ -14,9 +15,9 @@ import 'widgets/puntok_top_bar.dart';
 
 /// Puntok: a full-screen vertical feed of trip clips (Figma "Puntok" board).
 ///
-/// The feed is mock — see [puntokFeedProvider]. Clips are bundled assets, so
-/// only the page in view and the one after it hold a decoded player; the rest
-/// show their poster until they come into range.
+/// The clips are content posts with a video cover, from `GET /trips` — see
+/// [puntokFeedProvider]. Only the page in view and the one after it hold a
+/// decoded player; the rest show their poster until they come into range.
 class PuntokScreen extends ConsumerStatefulWidget {
   const PuntokScreen({super.key});
 
@@ -29,7 +30,7 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
   final _pageController = PageController();
 
   /// Players keyed by post id, so switching tabs reuses what is already
-  /// decoded instead of re-reading the asset.
+  /// decoded instead of fetching the clip again.
   final _players = <String, VideoPlayerController>{};
 
   int _index = 0;
@@ -69,15 +70,19 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
 
   @override
   Widget build(BuildContext context) {
-    final posts = ref.watch(puntokFeedProvider);
+    final feed = ref.watch(puntokFeedProvider);
+    final posts = feed.valueOrNull ?? const <PuntokPost>[];
     final tab = ref.watch(puntokFeedTabProvider);
     final navHeight = AppBottomNav.heightOf(context);
 
-    // A like can reorder Top Punguide and an unfollow can drop the page out
-    // of Following — either way the player window has to be recomputed, or a
-    // clip that is no longer on screen keeps its audio running.
-    ref.listen<List<PuntokPost>>(puntokFeedProvider, (previous, next) {
-      if (_activeId(previous) != _activeId(next)) _syncPlayers();
+    // A new page of rows, a tab switch or a fresh share can all move what is
+    // under the current page — recompute the player window, or a clip that
+    // is no longer on screen keeps its audio running.
+    ref.listen<AsyncValue<List<PuntokPost>>>(puntokFeedProvider,
+        (previous, next) {
+      if (_activeId(previous?.valueOrNull) != _activeId(next.valueOrNull)) {
+        _syncPlayers();
+      }
     });
 
     // A tab can be shorter than the page we were on, or empty.
@@ -89,8 +94,33 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
       background: Colors.black,
       child: Stack(
         children: [
-          if (posts.isEmpty)
-            _EmptyFeed(bottomInset: navHeight)
+          if (posts.isEmpty && feed.isLoading)
+            Padding(
+              padding: EdgeInsets.only(bottom: navHeight),
+              child: const Center(
+                child: CircularProgressIndicator(color: Colors.white70),
+              ),
+            )
+          else if (posts.isEmpty && feed.hasError)
+            _FeedMessage(
+              bottomInset: navHeight,
+              icon: Icons.wifi_off_rounded,
+              text: 'โหลดคลิปไม่สำเร็จ',
+              actionLabel: 'ลองอีกครั้ง',
+              onAction: () => ref.invalidate(puntokFeedProvider),
+            )
+          else if (posts.isEmpty)
+            _FeedMessage(
+              bottomInset: navHeight,
+              icon: tab == PuntokFeed.following
+                  ? Icons.people_outline
+                  : Icons.video_library_outlined,
+              // No follow API yet, so Following can never fill — say so
+              // rather than implying the traveller follows nobody.
+              text: tab == PuntokFeed.following
+                  ? 'ฟีดคนที่คุณติดตามยังไม่เปิดใช้งาน'
+                  : 'ยังไม่มีคลิป Puntok',
+            )
           else
             PageView.builder(
               controller: _pageController,
@@ -105,9 +135,13 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
                   paused: _paused && index == _index,
                   bottomInset: navHeight,
                   onTogglePlay: _togglePlay,
-                  onLike: () => _feed.toggleLike(post.id),
-                  onSave: () => _feed.toggleSave(post.id),
-                  onFollow: () => _feed.toggleFollow(post.id),
+                  onLike: () => _act(() => _feed.toggleLike(post.id)),
+                  onSave: () => _act(() => _feed.toggleSave(post.id)),
+                  onFollow: () => _notYet('ติดตาม'),
+                  onOpenPlan: (planId) => context.pushNamed(
+                    AppRoute.tripDetail.name,
+                    params: {'tripId': planId},
+                  ),
                   onComment: () => _notYet('คอมเมนต์'),
                   onShare: () => _notYet('แชร์'),
                   onCreator: () => _notYet('โปรไฟล์ครีเอเตอร์'),
@@ -169,8 +203,22 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
     _syncPlayers();
   }
 
+  /// Runs a like or a save; the page has already flipped, and flips back on
+  /// failure, so all that is left is saying why.
+  Future<void> _act(Future<void> Function() action) async {
+    try {
+      await action();
+    } on ApiException catch (error) {
+      _showMessage(error.statusCode == 401
+          ? 'เข้าสู่ระบบก่อน จึงจะกดถูกใจหรือบันทึกได้'
+          : 'ทำรายการไม่สำเร็จ ลองอีกครั้ง');
+    } catch (_) {
+      _showMessage('ทำรายการไม่สำเร็จ ลองอีกครั้ง');
+    }
+  }
+
   void _togglePlay() {
-    final posts = ref.read(puntokFeedProvider);
+    final posts = ref.read(puntokFeedProvider).valueOrNull ?? const [];
     if (posts.isEmpty) return;
 
     final activeId = _activeId(posts);
@@ -184,7 +232,7 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
   /// Holds players for the page in view and the next one, plays the first and
   /// pauses the rest, and lets go of everything else.
   Future<void> _syncPlayers() async {
-    final posts = ref.read(puntokFeedProvider);
+    final posts = ref.read(puntokFeedProvider).valueOrNull ?? const [];
     final active = _activeId(posts);
     final keep = <String>{
       if (active != null) active,
@@ -204,8 +252,8 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
   Future<void> _load(PuntokPost post) async {
     if (_players.containsKey(post.id)) return;
 
-    // A clip the traveller just shared lives on the server; the mock ones
-    // ship in the bundle.
+    // Clips stream from the server; a bundled asset path still plays, which
+    // is what the widget tests hand in.
     final player = post.video.startsWith('http')
         ? VideoPlayerController.networkUrl(Uri.parse(post.video))
         : VideoPlayerController.asset(post.video);
@@ -269,11 +317,22 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen>
   }
 }
 
-/// The Following tab with nothing in it.
-class _EmptyFeed extends StatelessWidget {
-  const _EmptyFeed({required this.bottomInset});
+/// Stands in for the feed when there is nothing to swipe: a load that
+/// failed, an empty tab, or Following, which has no API behind it yet.
+class _FeedMessage extends StatelessWidget {
+  const _FeedMessage({
+    required this.bottomInset,
+    required this.icon,
+    required this.text,
+    this.actionLabel,
+    this.onAction,
+  });
 
   final double bottomInset;
+  final IconData icon;
+  final String text;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -283,12 +342,22 @@ class _EmptyFeed extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.people_outline, color: Colors.white38, size: 48),
+            Icon(icon, color: Colors.white38, size: 48),
             const SizedBox(height: 12),
-            const Text(
-              'ยังไม่มีคลิปจากคนที่คุณติดตาม',
-              style: TextStyle(color: Colors.white70, fontSize: 14),
+            Text(
+              text,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
             ),
+            if (actionLabel != null) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: onAction,
+                child: Text(
+                  actionLabel!,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
           ],
         ),
       ),
