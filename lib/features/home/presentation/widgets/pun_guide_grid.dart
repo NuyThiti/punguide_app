@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/api/pluno_api.dart';
+import '../../../../shared/models/feed_rows.dart';
+import '../../../puntok/presentation/widgets/puntok_card.dart';
 import 'pun_guide_card.dart';
 
 /// The two-column wall of [PunGuideCard]s shared by Home and Search.
@@ -18,6 +20,7 @@ class PunGuideGrid extends StatelessWidget {
     this.distanceLabelOf,
     this.featuredOf,
     this.savedOf,
+    this.overlayOf,
   });
 
   final List<TripListItem> trips;
@@ -34,6 +37,11 @@ class PunGuideGrid extends StatelessWidget {
 
   /// Resolves the bookmark when something outside the row tracks it.
   final bool Function(TripListItem trip)? savedOf;
+
+  /// Something to lay over a card's top-left corner — Save Draft's "Editing"
+  /// tag. Null for rows that carry none. Stacked at the wall rather than
+  /// threaded through both card types, so one hook covers both.
+  final Widget? Function(TripListItem trip)? overlayOf;
 
   @override
   Widget build(BuildContext context) {
@@ -63,15 +71,34 @@ class PunGuideGrid extends StatelessWidget {
         for (final trip in column)
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
-            child: PunGuideCard(
-              trip: trip,
-              distanceLabel: distanceLabelOf?.call(trip),
-              featured: featuredOf?.call(trip) ?? false,
-              saved: savedOf?.call(trip),
-              onTap: () => onOpen(trip),
-              onSave: () => onSave(trip),
+            child: _withOverlay(
+              trip,
+              // A clip has no itinerary to print, so it gets the plainer
+              // card. Where the tap goes is still the caller's business.
+              trip.isClip
+                  ? PuntokCard(trip: trip, onTap: () => onOpen(trip))
+                  : PunGuideCard(
+                      trip: trip,
+                      distanceLabel: distanceLabelOf?.call(trip),
+                      featured: featuredOf?.call(trip) ?? false,
+                      saved: savedOf?.call(trip),
+                      onTap: () => onOpen(trip),
+                      onSave: () => onSave(trip),
+                    ),
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _withOverlay(TripListItem trip, Widget card) {
+    final overlay = overlayOf?.call(trip);
+    if (overlay == null) return card;
+
+    return Stack(
+      children: [
+        card,
+        Positioned(top: 10, left: 10, child: overlay),
       ],
     );
   }

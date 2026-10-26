@@ -20,6 +20,14 @@ import '../../core/api/pluno_api.dart';
 List<TripListItem> withoutClips(List<TripListItem> trips) =>
     List<TripListItem>.unmodifiable(trips.where((trip) => !trip.isClip));
 
-extension on TripListItem {
+/// The other half of [withoutClips], for the walls that want *only* clips —
+/// the Puntok tab on a traveller's own profile. Same two tests, so the two
+/// halves can never drift apart.
+List<TripListItem> onlyClips(List<TripListItem> trips) =>
+    List<TripListItem>.unmodifiable(trips.where((trip) => trip.isClip));
+
+/// Whether a row is a Puntok clip rather than something a card wall can
+/// print. Public because the walls now draw clips too, with their own card.
+extension ClipRow on TripListItem {
   bool get isClip => type == TripType.puntok || (coverImage?.isVideo ?? false);
 }

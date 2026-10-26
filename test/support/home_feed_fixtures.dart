@@ -4,6 +4,8 @@ import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/features/home/presentation/providers/home_feed_providers.dart';
+import 'package:pluno/features/my_trips/presentation/providers/my_trips_providers.dart';
+import 'package:pluno/features/profile/presentation/providers/profile_providers.dart';
 
 import 'fake_api.dart';
 
@@ -25,6 +27,7 @@ TripListItem feedTrip({
   int likeCount = 127,
   int remixCount = 127,
   double? distanceKm,
+  String type = 'plan_trip',
 }) =>
     TripListItem.fromJson(feedTripJson(
       id: id,
@@ -42,6 +45,7 @@ TripListItem feedTrip({
       likeCount: likeCount,
       remixCount: remixCount,
       distanceKm: distanceKm,
+      type: type,
     ));
 
 /// The same row as raw JSON, for a test that answers `GET /trips` through
@@ -94,7 +98,13 @@ Map<String, dynamic> feedTripJson({
       'coverImage': <String, dynamic>{
         'mediaId': 'm-$id',
         if (coverMediaType != null) 'mediaType': coverMediaType,
-        'urls': <String, dynamic>{'large': coverUrl, 'thumbnail': coverUrl},
+        // `original` as well as `large`: a clip is only playable through
+        // `original`, and the live feed sends all three.
+        'urls': <String, dynamic>{
+          'original': coverUrl,
+          'large': coverUrl,
+          'thumbnail': coverUrl,
+        },
       },
     if (creatorName != null)
       'creator': <String, dynamic>{'id': 'u-$id', 'name': creatorName},
@@ -154,3 +164,49 @@ FakeAdapter feedAdapter(List<Map<String, dynamic>> rows) => FakeAdapter(
         'GET /trips': <FakeReply>[FakeReply(200, rows)],
       },
     );
+
+/// Overrides that let the profile render without a server: the traveller's
+/// own shelf, their bookmarks, and a session with no API behind it.
+List<Override> profileOverrides({
+  List<TripListItem> mine = const <TripListItem>[],
+  List<TripListItem> saved = const <TripListItem>[],
+  AuthSession? session = AuthSession.demo,
+}) {
+  return <Override>[
+    myTripsProvider.overrideWith(() => _StubMyTrips(mine)),
+    savedFeedProvider.overrideWith(() => _StubSavedFeed(saved)),
+    authSessionProvider.overrideWith((ref) => AuthController(session)),
+  ];
+}
+
+class _StubMyTrips extends MyTripsNotifier {
+  _StubMyTrips(this._trips);
+
+  final List<TripListItem> _trips;
+
+  @override
+  Future<List<TripListItem>> build() async => _trips;
+
+  @override
+  Future<void> refresh() async {}
+}
+
+class _StubSavedFeed extends SavedFeedNotifier {
+  _StubSavedFeed(this._trips);
+
+  List<TripListItem> _trips;
+
+  @override
+  Future<List<TripListItem>> build() async => _trips;
+
+  @override
+  Future<void> refresh() async {}
+
+  @override
+  Future<void> unsave(String tripId) async {
+    _trips = List<TripListItem>.unmodifiable(
+      _trips.where((trip) => trip.id != tripId),
+    );
+    state = AsyncData<List<TripListItem>>(_trips);
+  }
+}

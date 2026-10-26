@@ -53,7 +53,7 @@ void main() {
     expect(find.text('Paigun'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
     expect(find.text('Puntok'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('My Post'), findsOneWidget);
     // The old private nav is gone, so none of its labels should remain.
     expect(find.text('Discover'), findsNothing);
     expect(find.text('Saved'), findsNothing);

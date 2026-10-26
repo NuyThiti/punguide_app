@@ -69,7 +69,7 @@ void main() {
     expect(find.text('Paigun'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
     expect(find.text('Puntok'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('My Post'), findsOneWidget);
     expect(find.text(_trips.first.title), findsOneWidget);
     expect(find.text('makitravels'), findsOneWidget);
   });

@@ -63,7 +63,7 @@ class HomeHero extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // _TitleBar(avatarImage: avatarImage, onProfile: onProfile),
-                const SizedBox(height: 40),
+                const SizedBox(height: 15),
                 const Text(
                   'วันนี้อยากไปหรือปัน ?',
                   textAlign: TextAlign.center,

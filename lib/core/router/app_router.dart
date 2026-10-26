@@ -17,8 +17,10 @@ import '../../features/location_access/presentation/providers/location_providers
 import '../../features/my_trips/presentation/my_trips_screen.dart';
 import '../../features/paigun/presentation/paigun_filter_screen.dart';
 import '../../features/paigun/presentation/paigun_screen.dart';
+import '../../features/profile/presentation/account_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
+import '../../features/puntok/presentation/puntok_viewer_screen.dart';
 import '../../features/remix_trip/presentation/post_done_screen.dart';
 import '../../features/remix_trip/presentation/remix_trip_screen.dart';
 import '../../features/saved_trips/presentation/saved_trips_screen.dart';
@@ -46,8 +48,10 @@ enum AppRoute {
   remixTrip,
   postDone,
   puntok,
+  puntokViewer,
   createPuntok,
   profile,
+  profileAccount,
   locationAccess,
   locationPicker,
 }
@@ -212,6 +216,20 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) =>
           _instantPage(state, const PuntokScreen()),
     ),
+    // Opened from a wall of clips with its rows as `extra`, so the viewer can
+    // keep swiping through them. Without it there is nothing to show.
+    GoRoute(
+      path: '/puntok/view',
+      name: AppRoute.puntokViewer.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        PuntokViewerScreen(
+          args: state.extra is PuntokViewerArgs
+              ? state.extra! as PuntokViewerArgs
+              : null,
+        ),
+      ),
+    ),
     GoRoute(
       path: '/puntok/create',
       name: AppRoute.createPuntok.name,
@@ -251,6 +269,14 @@ final appRouter = GoRouter(
         state,
         LoginScreen(then: state.queryParams['then']),
       ),
+    ),
+    // Declared before '/profile' is irrelevant here (distinct literals), but
+    // kept next to it so the pair stays obvious.
+    GoRoute(
+      path: '/profile/account',
+      name: AppRoute.profileAccount.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const AccountScreen()),
     ),
     GoRoute(
       path: '/profile',

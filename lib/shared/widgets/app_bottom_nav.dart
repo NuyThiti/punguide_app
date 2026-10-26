@@ -74,7 +74,7 @@ class AppBottomNav extends StatelessWidget {
                   ),
                   _NavItem(
                     asset: 'assets/icons/nav_profile.svg',
-                    label: 'Profile',
+                    label: 'My Post',
                     selected: active == AppRoute.profile,
                     onTap: () => onTap(AppRoute.profile),
                   ),

@@ -5,26 +5,37 @@ import 'package:go_router/go_router.dart';
 import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/models/feed_rows.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../../shared/widgets/dark_sheet_header.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../home/presentation/widgets/pun_guide_grid.dart';
+import '../../profile/presentation/profile_screen.dart' show profileCoverImage;
+import '../../profile/presentation/providers/profile_providers.dart';
+import '../../profile/presentation/widgets/profile_tab_bar.dart';
+import '../../puntok/domain/models/puntok_post.dart';
+import '../../puntok/presentation/puntok_viewer_screen.dart';
 import 'providers/my_trips_providers.dart';
-import 'widgets/my_trip_card.dart';
 
-/// ทริปฉัน — everything the traveller has made, from `GET /trips/mine`.
+/// Save Draft — everything the traveller has started but not published, from
+/// `GET /trips/mine`.
 ///
 /// The one list in the app that shows a trip before the world sees it: drafts
-/// and private trips never reach the feed, so without this page a plan that
-/// was closed halfway through is unreachable.
+/// never reach the feed, so without this page a plan that was closed halfway
+/// through is unreachable.
 class MyTripsScreen extends ConsumerWidget {
   const MyTripsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final signedIn = ref.watch(isSignedInProvider);
-    final filter = ref.watch(myTripsFilterProvider);
-    final rows = ref.watch(visibleMyTripsProvider);
+    final tab = ref.watch(draftTabProvider);
+    final rows = ref.watch(draftTabRowsProvider);
+
+    void unavailable(String message) => ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
 
     return AppFrame(
       background: AppColors.screen,
@@ -32,33 +43,35 @@ class MyTripsScreen extends ConsumerWidget {
         children: [
           Column(
             children: [
-              _MyTripsHeader(
+              DarkSheetHeader(
+                title: 'Save Draft',
+                coverImage: profileCoverImage,
                 onBack: () => _close(context),
-                count: ref.watch(myTripsProvider).valueOrNull?.length,
               ),
-              _FilterRow(
-                selected: filter,
-                onSelected: (next) =>
-                    ref.read(myTripsFilterProvider.notifier).state = next,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+                child: ProfileTabBar(
+                  active: tab,
+                  onSelected: (next) =>
+                      ref.read(draftTabProvider.notifier).state = next,
+                ),
               ),
               Expanded(
                 child: !signedIn
-                    ? const _SignedOutState()
+                    ? const _DraftNotice(
+                        icon: Icons.lock_outline,
+                        message: 'เข้าสู่ระบบเพื่อดูแบบร่างของคุณ',
+                      )
                     : RefreshIndicator(
                         color: AppColors.loading,
                         onRefresh: () =>
                             ref.read(myTripsProvider.notifier).refresh(),
-                        child: rows.when(
-                          data: (trips) => trips.isEmpty
-                              ? _EmptyState(filter: filter)
-                              : _TripList(trips: trips),
-                          loading: () =>
-                              const Center(child: CircularProgressIndicator()),
-                          error: (error, _) => _ErrorState(
-                            error: error,
-                            onRetry: () =>
-                                ref.read(myTripsProvider.notifier).refresh(),
-                          ),
+                        child: _DraftWall(
+                          tab: tab,
+                          rows: rows,
+                          bottomInset: AppBottomNav.heightOf(context) + 16,
+                          onRetry: () =>
+                              ref.read(myTripsProvider.notifier).refresh(),
                         ),
                       ),
               ),
@@ -78,7 +91,7 @@ class MyTripsScreen extends ConsumerWidget {
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
                 onPost: () => context.goNamed(AppRoute.createPost.name),
                 onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
-                onUnavailable: (message) => _showMessage(context, message),
+                onUnavailable: unavailable,
               ),
             ),
           ),
@@ -87,8 +100,6 @@ class MyTripsScreen extends ConsumerWidget {
     );
   }
 
-  /// Opened from the profile menu, but also reachable as a deep link, so there
-  /// is not always something to pop back to.
   void _close(BuildContext context) {
     if (context.canPop()) {
       context.pop();
@@ -96,392 +107,185 @@ class MyTripsScreen extends ConsumerWidget {
       context.goNamed(AppRoute.profile.name);
     }
   }
-
-  static void _showMessage(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
 }
 
-class _TripList extends ConsumerWidget {
-  const _TripList({required this.trips});
+/// The two-column wall of drafts, each card tagged "Editing".
+class _DraftWall extends ConsumerWidget {
+  const _DraftWall({
+    required this.tab,
+    required this.rows,
+    required this.bottomInset,
+    required this.onRetry,
+  });
 
-  final List<TripListItem> trips;
+  final ProfileTab tab;
+  final AsyncValue<List<TripListItem>>? rows;
+  final double bottomInset;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListView.separated(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        4,
-        16,
-        AppBottomNav.heightOf(context) + 16,
+    final rows = this.rows;
+    if (rows == null) {
+      return _scrollable(
+        _DraftNotice(icon: Icons.inbox_outlined, message: _nothingToDraft),
+      );
+    }
+
+    return rows.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => _scrollable(
+        _DraftNotice(
+          icon: Icons.cloud_off,
+          message: 'โหลดแบบร่างไม่สำเร็จ',
+          actionLabel: 'ลองอีกครั้ง',
+          onAction: onRetry,
+        ),
       ),
-      physics: const AlwaysScrollableScrollPhysics(
-        parent: BouncingScrollPhysics(),
-      ),
-      itemCount: trips.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final trip = trips[index];
-        return MyTripCard(
-          trip: trip,
-          onTap: () => context.goNamed(
-            AppRoute.tripDetail.name,
-            params: {'tripId': trip.id},
+      data: (drafts) {
+        if (drafts.isEmpty) {
+          return _scrollable(
+            _DraftNotice(icon: Icons.inbox_outlined, message: _empty),
+          );
+        }
+
+        return ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-          // The editor behind this is the plan editor; a post has no plan, so
-          // the row offers nothing rather than opening an editor for days it
-          // does not have.
-          onEdit: trip.type.isPost
-              ? null
-              : () => context.goNamed(
-                    AppRoute.editTrip.name,
-                    params: {'tripId': trip.id},
-                  ),
-          onDelete: () => _confirmDelete(context, ref, trip),
+          padding: EdgeInsets.only(bottom: bottomInset),
+          children: [
+            PunGuideGrid(
+              trips: drafts,
+              // Every row here is a draft, so every card wears the tag.
+              overlayOf: (_) => const _EditingTag(),
+              onOpen: (trip) => _open(context, drafts, trip),
+              onSave: (_) {},
+            ),
+          ],
         );
       },
     );
   }
 
-  Future<void> _confirmDelete(
+  /// A clip opens full screen with the rest of this wall still swipeable;
+  /// anything else opens its editor, which is where a draft is headed.
+  void _open(
     BuildContext context,
-    WidgetRef ref,
+    List<TripListItem> wall,
     TripListItem trip,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: const Text(
-          'ลบทริปนี้',
-          style: TextStyle(
-            color: AppColors.foreground,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: Text(
-          '“${trip.title}” จะถูกลบพร้อมกับแผน รูป และค่าใช้จ่ายทั้งหมด '
-          'และกู้คืนไม่ได้',
-          style: const TextStyle(
-            color: AppColors.muted,
-            fontSize: 13,
-            height: 1.4,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
-              'ยกเลิก',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text(
-              'ลบทริป',
-              style: TextStyle(
-                color: AppColors.brandOrangeDeep,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await ref.read(myTripsProvider.notifier).delete(trip.id);
-      messenger.showSnackBar(const SnackBar(content: Text('ลบทริปแล้ว')));
-    } on ApiException catch (failure) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            failure.isNetworkFailure
-                ? 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง'
-                : 'ลบทริปไม่สำเร็จ: ${failure.message}',
-          ),
-        ),
+  ) {
+    if (!trip.isClip) {
+      context.goNamed(
+        AppRoute.tripDetail.name,
+        params: {'tripId': trip.id},
       );
+      return;
     }
-  }
-}
 
-/// Back button, title, and how many trips are on the shelf.
-class _MyTripsHeader extends StatelessWidget {
-  const _MyTripsHeader({required this.onBack, this.count});
+    final posts = wall
+        .map(PuntokPost.fromListItem)
+        .whereType<PuntokPost>()
+        .toList(growable: false);
+    final index = posts.indexWhere((post) => post.id == trip.id);
+    if (index < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('คลิปนี้ยังเล่นไม่ได้')),
+      );
+      return;
+    }
 
-  final VoidCallback onBack;
-
-  /// Null until the first read lands, so the line does not flash "0 ทริป".
-  final int? count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        MediaQuery.of(context).padding.top + 10,
-        16,
-        10,
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: onBack,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.chipBorder),
-              ),
-              child: const Icon(Icons.arrow_back, size: 19),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'ทริปฉัน',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 22,
-                    height: 1.2,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (count != null)
-                  Text(
-                    '$count ทริปที่คุณสร้างไว้',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    context.pushNamed(
+      AppRoute.puntokViewer.name,
+      extra: PuntokViewerArgs(posts: posts, initialIndex: index),
     );
   }
-}
 
-/// ทั้งหมด / แผนเที่ยว / โพสต์, the chip in force filled dark — the same
-/// control the ไปกัน board uses, so the two shelves read as one family.
-class _FilterRow extends StatelessWidget {
-  const _FilterRow({required this.selected, required this.onSelected});
-
-  final MyTripsFilter selected;
-  final ValueChanged<MyTripsFilter> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    // Scrolls rather than wraps: a fourth chip, or a longer Thai label on a
-    // 320pt phone, must push sideways instead of overflowing the row.
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: SizedBox(
-        height: 36,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: MyTripsFilter.values.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (context, index) {
-            final filter = MyTripsFilter.values[index];
-            return _Chip(
-              label: filter.label,
-              active: filter == selected,
-              onTap: () => onSelected(filter),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active ? AppColors.paigunControl : Colors.white,
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(
-            color: active ? AppColors.paigunControl : AppColors.chipBorder,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.white : AppColors.foreground,
-            fontSize: 13,
-            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The shelf belongs to an account, so there is nothing to show — not even an
-/// empty list — until there is one.
-class _SignedOutState extends StatelessWidget {
-  const _SignedOutState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: AppBottomNav.heightOf(context)),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('🧳', style: TextStyle(fontSize: 38)),
-          const SizedBox(height: 10),
-          const Text(
-            'เข้าสู่ระบบเพื่อดูทริปของคุณ',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 14),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.brandOrange,
-            ),
-            onPressed: () => context.goNamed(AppRoute.login.name),
-            child: const Text('เข้าสู่ระบบ'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.filter});
-
-  final MyTripsFilter filter;
-
-  @override
-  Widget build(BuildContext context) {
-    final message = switch (filter) {
-      MyTripsFilter.all => 'ยังไม่มีทริปของคุณ เริ่มวางแผนทริปแรกได้เลย',
-      MyTripsFilter.plans => 'ยังไม่มีแผนเที่ยวของคุณ',
-      MyTripsFilter.posts => 'ยังไม่มีโพสต์ของคุณ',
-    };
-
-    // Scrollable so pull-to-refresh still works on an empty shelf.
+  /// Pull-to-refresh needs something scrollable even when the page is a
+  /// single line of text.
+  Widget _scrollable(Widget child) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
       ),
-      padding: EdgeInsets.only(bottom: AppBottomNav.heightOf(context)),
-      children: [
-        const SizedBox(height: 90),
-        const Center(child: Text('🗺️', style: TextStyle(fontSize: 38))),
-        const SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      children: [child],
+    );
+  }
+
+  String get _nothingToDraft => switch (tab) {
+        ProfileTab.albums => 'อัลบั้มไม่มีแบบร่าง',
+        ProfileTab.saved => 'ที่บันทึกไว้เป็นทริปของคนอื่น ไม่มีแบบร่าง',
+        _ => 'รีมิกซ์ไม่มีแบบร่าง',
+      };
+
+  String get _empty => switch (tab) {
+        ProfileTab.clips => 'ยังไม่มีคลิปที่ค้างไว้',
+        _ => 'ยังไม่มีแบบร่างที่ค้างไว้',
+      };
+}
+
+/// The "Editing" tag on a draft's cover.
+class _EditingTag extends StatelessWidget {
+  const _EditingTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Text(
+        'Editing',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _DraftNotice extends StatelessWidget {
+  const _DraftNotice({
+    required this.icon,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 64, 32, 48),
+      child: Column(
+        children: [
+          Icon(icon, size: 34, color: AppColors.navIconMuted),
+          const SizedBox(height: 12),
+          Text(
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: AppColors.muted,
               fontSize: 14,
+              height: 1.4,
               fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.error, required this.onRetry});
-
-  final Object error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final failure = error is ApiException ? error as ApiException : null;
-    final message = failure == null
-        ? 'โหลดทริปไม่สำเร็จ'
-        : failure.isNetworkFailure
-            ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'
-            : 'โหลดทริปไม่สำเร็จ (${failure.statusCode})';
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(
-        parent: BouncingScrollPhysics(),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 10),
+            TextButton(onPressed: onAction, child: Text(actionLabel!)),
+          ],
+        ],
       ),
-      padding: EdgeInsets.only(bottom: AppBottomNav.heightOf(context)),
-      children: [
-        const SizedBox(height: 80),
-        const Center(
-          child: Icon(Icons.cloud_off, size: 34, color: AppColors.muted),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 14),
-        Center(
-          child: OutlinedButton(
-            onPressed: onRetry,
-            child: const Text('ลองใหม่'),
-          ),
-        ),
-      ],
     );
   }
 }

@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
+import '../../../../shared/models/feed_rows.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../profile/presentation/providers/profile_providers.dart';
 
 /// The chips across the top of ทริปฉัน.
 ///
@@ -100,4 +102,38 @@ final visibleMyTripsProvider = Provider<AsyncValue<List<TripListItem>>>((ref) {
         (trips) =>
             List<TripListItem>.unmodifiable(trips.where(filter.accepts)),
       );
+});
+
+/// The tab in force on Save Draft. Its own state, so switching tabs there
+/// never moves the profile's strip underneath.
+final draftTabProvider =
+    StateProvider.autoDispose<ProfileTab>((ref) => ProfileTab.posts);
+
+/// Everything still unpublished, from the same `GET /trips/mine` shelf.
+///
+/// Drafts are the whole point of that endpoint: the feed only ever carries
+/// what is public, so a plan closed halfway through is reachable nowhere else.
+final draftsProvider = Provider<AsyncValue<List<TripListItem>>>((ref) {
+  return ref.watch(myTripsProvider).whenData(
+        (trips) => List<TripListItem>.unmodifiable(
+          trips.where((trip) => trip.status == TripStatus.draft),
+        ),
+      );
+});
+
+/// The drafts the tab in force shows, or null when that tab is not a wall of
+/// trips — the same contract `profileTabRowsProvider` uses.
+///
+/// Albums, bookmarks and remixes have no draft form: an album is not a trip,
+/// a bookmark is somebody else's, and a remix is published the moment it is
+/// made. Those resolve to null and the screen says so, rather than showing an
+/// empty wall that reads as "you have no drafts".
+final draftTabRowsProvider =
+    Provider.autoDispose<AsyncValue<List<TripListItem>>?>((ref) {
+  final drafts = ref.watch(draftsProvider);
+  return switch (ref.watch(draftTabProvider)) {
+    ProfileTab.posts => drafts.whenData(withoutClips),
+    ProfileTab.clips => drafts.whenData(onlyClips),
+    ProfileTab.albums || ProfileTab.saved || ProfileTab.remixes => null,
+  };
 });
