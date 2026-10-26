@@ -11,10 +11,19 @@ import '../../../../shared/widgets/cover_image.dart';
 /// where it was shot. Tapping it opens the clip full screen rather than the
 /// trip page.
 class PuntokCard extends StatelessWidget {
-  const PuntokCard({super.key, required this.trip, required this.onTap});
+  const PuntokCard({
+    super.key,
+    required this.trip,
+    required this.onTap,
+    this.onDelete,
+  });
 
   final TripListItem trip;
   final VoidCallback onTap;
+
+  /// Puts a delete on the cover. Only a wall of the traveller's own clips
+  /// passes this — see [PunGuideCard.onDelete].
+  final VoidCallback? onDelete;
 
   /// Matches [PunGuideCard.coverAspectRatio] so clips and plans line up when
   /// a wall holds both.
@@ -47,18 +56,29 @@ class PuntokCard extends StatelessWidget {
           children: [
             AspectRatio(
               aspectRatio: coverAspectRatio,
-              child: still == null
-                  ? const ColoredBox(
-                      color: AppColors.optionIconBg,
-                      child: Center(
-                        child: Icon(
-                          Icons.videocam_outlined,
-                          size: 28,
-                          color: AppColors.navIconMuted,
-                        ),
-                      ),
-                    )
-                  : CoverImage(source: still, fit: BoxFit.cover),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  still == null
+                      ? const ColoredBox(
+                          color: AppColors.optionIconBg,
+                          child: Center(
+                            child: Icon(
+                              Icons.videocam_outlined,
+                              size: 28,
+                              color: AppColors.navIconMuted,
+                            ),
+                          ),
+                        )
+                      : CoverImage(source: still, fit: BoxFit.cover),
+                  if (onDelete case final onDelete?)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: _DeleteButton(onTap: onDelete),
+                    ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
@@ -103,6 +123,38 @@ class PuntokCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The white disc on a clip's cover, matching the one a trip card wears.
+class _DeleteButton extends StatelessWidget {
+  const _DeleteButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'ลบคลิป',
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.delete_outline,
+            size: 16,
+            color: AppColors.brandOrangeDeep,
+          ),
         ),
       ),
     );

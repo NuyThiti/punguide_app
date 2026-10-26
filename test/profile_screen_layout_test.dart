@@ -6,8 +6,6 @@ import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/home/presentation/widgets/pun_guide_card.dart';
-import 'package:pluno/features/profile/data/mock_albums.dart';
-import 'package:pluno/features/profile/domain/album.dart';
 import 'package:pluno/features/profile/presentation/profile_screen.dart';
 import 'package:pluno/features/profile/presentation/providers/profile_providers.dart';
 import 'package:pluno/features/profile/presentation/widgets/profile_albums_view.dart';
@@ -21,16 +19,23 @@ import 'package:pluno/shared/widgets/app_bottom_nav.dart';
 import 'support/home_feed_fixtures.dart';
 
 final _mine = <TripListItem>[
-  feedTrip(id: 'mine-1', title: 'รวมคาเฟ่ลับย่านพระนคร'),
-  feedTrip(id: 'mine-2', title: 'อั๋วจะไปเยาวราช'),
-  // A clip: the live feed marks one with a video cover, not the type.
+  feedTrip(id: 'plan-1', title: 'เที่ยวดานัง 4 วัน'),
+  feedTrip(id: 'post-1', title: 'รวมคาเฟ่ลับย่านพระนคร', type: 'content'),
+  // The live server still sends a clip as type "content" with a video cover,
+  // which is exactly the row the two tabs must not both claim.
   feedTrip(
     id: 'clip-1',
     title: 'คลิปเยาวราช',
     destination: 'เยาวราช, กรุงเทพฯ',
+    type: 'content',
     coverUrl: 'https://cdn.test/videos/clip-1.mov',
     coverMediaType: 'video',
   ),
+];
+
+final _albums = <TripListItem>[
+  feedTrip(id: 'album-1', title: 'มุมถ่ายรูปย่านเมืองเก่า', type: 'content'),
+  feedTrip(id: 'album-2', title: 'ของอร่อยเยาวราช', type: 'content'),
 ];
 
 final _saved = <TripListItem>[
@@ -47,12 +52,14 @@ List<TripListItem> _tallWall() => <TripListItem>[
 Widget _harness({
   List<TripListItem>? mine,
   List<TripListItem>? saved,
+  List<TripListItem>? albums,
   AuthSession? session = AuthSession.demo,
 }) {
   return ProviderScope(
     overrides: profileOverrides(
       mine: mine ?? _mine,
       saved: saved ?? _saved,
+      albums: albums ?? _albums,
       session: session,
     ),
     child: MaterialApp.router(
@@ -205,95 +212,81 @@ void main() {
 
     expect(find.byType(ProfileAlbumsView), findsOneWidget);
     expect(find.text('Personal'), findsOneWidget);
-    expect(find.text('Share'), findsOneWidget);
+    // Share has no endpoint, so it is hidden rather than shown as a dead tab.
+    expect(find.text('Share'), findsNothing);
 
-    for (final album in albumsFor(AlbumShelf.personal)) {
+    for (final album in _albums) {
       expect(find.text(album.title), findsOneWidget);
     }
     // It is not a wall of trips.
     expect(find.byType(PunGuideCard), findsNothing);
   });
 
-  testWidgets('Share swaps the shelf under the grid', (tester) async {
+  testWidgets('an album opens its trip page', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
     await _tapTab(tester, ProfileTab.albums);
 
-    await tester.tap(find.text('Share'));
+    await tester.tap(find.text(_albums.first.title));
     await tester.pumpAndSettle();
 
-    for (final album in albumsFor(AlbumShelf.shared)) {
-      expect(find.text(album.title), findsOneWidget);
-    }
-    expect(
-      find.text(albumsFor(AlbumShelf.personal).first.title),
-      findsNothing,
-    );
+    expect(find.text('detail-stub'), findsOneWidget);
   });
 
-  testWidgets('an album with nothing behind it reports instead of opening',
+  testWidgets('an empty album shelf says so', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness(albums: const <TripListItem>[]));
+    await tester.pumpAndSettle();
+    await _tapTab(tester, ProfileTab.albums);
+
+    expect(find.text('ยังไม่มีอัลบั้มของคุณ'), findsOneWidget);
+  });
+
+  testWidgets('own trips carry a delete where a bookmark would be',
       (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // Saving your own trip does nothing, so the corner is a delete instead —
+    // one per card, clip cards included.
+    expect(find.byIcon(Icons.delete_outline), findsNWidgets(_mine.length));
+  });
+
+  testWidgets('deleting asks first, then drops the card', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+
+    // Cancelling leaves the wall alone.
+    await tester.tap(find.widgetWithText(TextButton, 'ยกเลิก'));
+    await tester.pumpAndSettle();
+    expect(find.text(_mine.first.title), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'ลบ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(_mine.first.title), findsNothing);
+  });
+
+  testWidgets('albums carry no delete', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
     await _tapTab(tester, ProfileTab.albums);
 
-    final first = albumsFor(AlbumShelf.personal).first;
-    await tester.tap(find.text(first.title));
-    await tester.pump();
-
-    expect(find.text('อัลบั้ม "${first.title}" ยังไม่เปิดใช้งาน'), findsOneWidget);
-  });
-
-  testWidgets('the posts tab walls the traveller own trips, clips excluded',
-      (tester) async {
-    _usePhone(tester);
-
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-
-    expect(find.byType(PunGuideCard), findsNWidgets(2));
-    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsOneWidget);
-    expect(find.text('อั๋วจะไปเยาวราช'), findsOneWidget);
-    expect(find.text('คลิปเยาวราช'), findsNothing);
-  });
-
-  testWidgets('the bookmark tab reads GET /trips/saved, not the own shelf',
-      (tester) async {
-    _usePhone(tester);
-
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await _tapTab(tester, ProfileTab.saved);
-
-    expect(find.text('ทริปที่บุ๊กมาร์กไว้'), findsOneWidget);
-    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsNothing);
-  });
-
-  testWidgets('the remix tab says so rather than showing an empty wall',
-      (tester) async {
-    _usePhone(tester);
-
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await _tapTab(tester, ProfileTab.remixes);
-
-    expect(find.text('รีมิกซ์ของฉันยังไม่เปิดใช้งาน'), findsOneWidget);
-    expect(find.byType(PunGuideCard), findsNothing);
-  });
-
-  testWidgets('the Puntok tab keeps only the clips', (tester) async {
-    _usePhone(tester);
-
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await _tapTab(tester, ProfileTab.clips);
-
-    expect(find.text('คลิปเยาวราช'), findsOneWidget);
-    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsNothing);
+    expect(find.byIcon(Icons.delete_outline), findsNothing);
   });
 
   testWidgets('a clip gets the plainer card, a plan does not', (tester) async {
@@ -313,71 +306,53 @@ void main() {
     expect(find.text('Editing'), findsNothing);
   });
 
-  testWidgets('tapping a clip opens it full screen, not the trip page',
+  testWidgets('tab 1 walls everything the traveller owns', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    for (final trip in _mine) {
+      expect(find.text(trip.title), findsOneWidget);
+    }
+  });
+
+  testWidgets('tab 2 keeps posts and leaves the clip to the Puntok tab',
       (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await _tapTab(tester, ProfileTab.content);
+
+    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsOneWidget);
+    // Same wire type, but a video cover makes it a clip, not a post.
+    expect(find.text('คลิปเยาวราช'), findsNothing);
+    expect(find.text('เที่ยวดานัง 4 วัน'), findsNothing);
+  });
+
+  testWidgets('tab 3 keeps only plan trips', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await _tapTab(tester, ProfileTab.plans);
+
+    expect(find.text('เที่ยวดานัง 4 วัน'), findsOneWidget);
+    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsNothing);
+    expect(find.text('คลิปเยาวราช'), findsNothing);
+  });
+
+  testWidgets('tab 4 keeps only the clips', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
     await _tapTab(tester, ProfileTab.clips);
 
-    await tester.tap(find.byType(PuntokCard));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(PuntokViewerScreen), findsOneWidget);
-    expect(find.text('detail-stub'), findsNothing);
-  });
-
-  testWidgets('the viewer opens on the clip that was tapped', (tester) async {
-    _usePhone(tester);
-
-    await tester.pumpWidget(_harness(
-      mine: <TripListItem>[
-        feedTrip(
-          id: 'clip-a',
-          title: 'คลิปหนึ่ง',
-          coverUrl: 'https://cdn.test/videos/a.mov',
-          coverMediaType: 'video',
-        ),
-        feedTrip(
-          id: 'clip-b',
-          title: 'คลิปสอง',
-          coverUrl: 'https://cdn.test/videos/b.mov',
-          coverMediaType: 'video',
-        ),
-      ],
-    ));
-    await tester.pumpAndSettle();
-    await _tapTab(tester, ProfileTab.clips);
-
-    await tester.tap(find.widgetWithText(PuntokCard, 'คลิปสอง'));
-    await tester.pumpAndSettle();
-
-    final viewer = tester.widget<PuntokViewerScreen>(
-      find.byType(PuntokViewerScreen),
-    );
-    expect(viewer.args!.posts.map((post) => post.id), ['clip-a', 'clip-b']);
-    expect(viewer.args!.initialIndex, 1);
-  });
-
-  testWidgets('a clip with no playable cover says so instead of stalling',
-      (tester) async {
-    _usePhone(tester);
-
-    await tester.pumpWidget(_harness(
-      // type puntok, but the cover carries no video file to play.
-      mine: <TripListItem>[
-        feedTrip(id: 'clip-dead', title: 'คลิปเสีย', type: 'puntok'),
-      ],
-    ));
-    await tester.pumpAndSettle();
-    await _tapTab(tester, ProfileTab.clips);
-
-    await tester.tap(find.byType(PuntokCard));
-    await tester.pump();
-
-    expect(find.text('คลิปนี้ยังเล่นไม่ได้'), findsOneWidget);
-    expect(find.byType(PuntokViewerScreen), findsNothing);
+    expect(find.text('คลิปเยาวราช'), findsOneWidget);
+    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsNothing);
+    expect(find.text('เที่ยวดานัง 4 วัน'), findsNothing);
   });
 
   testWidgets('an empty shelf explains itself per tab', (tester) async {
@@ -386,7 +361,7 @@ void main() {
     await tester.pumpWidget(_harness(mine: const <TripListItem>[]));
     await tester.pumpAndSettle();
 
-    expect(find.text('ยังไม่มีโพสต์หรือทริปของคุณ'), findsOneWidget);
+    expect(find.text('ยังไม่มีอะไรของคุณที่นี่'), findsOneWidget);
   });
 
   testWidgets('a guest sees neither counts nor a wall', (tester) async {

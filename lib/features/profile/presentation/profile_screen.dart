@@ -11,11 +11,11 @@ import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../../shared/models/feed_rows.dart';
 import '../../home/presentation/widgets/pun_guide_grid.dart';
+import '../../my_trips/presentation/delete_trip.dart';
 import '../../paigun/domain/nearby_trip.dart';
 import '../../puntok/domain/models/puntok_post.dart';
 import '../../puntok/presentation/puntok_viewer_screen.dart';
 import 'providers/profile_providers.dart';
-import '../domain/album.dart';
 import 'widgets/profile_albums_view.dart';
 import 'widgets/profile_hero.dart';
 import 'widgets/profile_tab_bar.dart';
@@ -188,17 +188,6 @@ class _TabBody extends ConsumerWidget {
       );
     }
 
-    // Remixes have no endpoint to read back, so the tab says that rather than
-    // showing an empty wall that reads as "you have none".
-    if (rows == null) {
-      return _filler(
-        const _ProfileNotice(
-          icon: Icons.shuffle,
-          message: 'รีมิกซ์ของฉันยังไม่เปิดใช้งาน',
-        ),
-      );
-    }
-
     return rows!.when(
       loading: () => _filler(
         const Padding(
@@ -230,6 +219,7 @@ class _TabBody extends ConsumerWidget {
             child: PunGuideGrid(
               trips: trips,
               featuredOf: (trip) => featured.contains(trip.id),
+              onDelete: (trip) => confirmDeleteTrip(context, ref, trip),
               onOpen: (trip) => _open(context, trips, trip),
               onSave: (trip) => _toggleSaved(context, ref, trip),
             ),
@@ -239,20 +229,22 @@ class _TabBody extends ConsumerWidget {
     );
   }
 
-  /// There is no album screen behind a card yet — the API has no albums at
-  /// all — so a tap says so rather than opening a blank page.
-  void _openAlbum(BuildContext context, Album album) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('อัลบั้ม "${album.title}" ยังไม่เปิดใช้งาน')),
+  /// An album *is* a trip — a photo post or a clip — so it opens the same
+  /// page any other row would.
+  void _openAlbum(BuildContext context, TripListItem album) {
+    context.goNamed(
+      AppRoute.tripDetail.name,
+      params: {'tripId': album.id},
     );
   }
 
   String get _empty => switch (tab) {
-        ProfileTab.posts => 'ยังไม่มีโพสต์หรือทริปของคุณ',
-        ProfileTab.albums => 'ยังไม่มีอัลบั้ม',
-        ProfileTab.saved => 'ยังไม่ได้บันทึกทริปไหนไว้',
-        ProfileTab.remixes => 'ยังไม่มีรีมิกซ์',
+        ProfileTab.all => 'ยังไม่มีอะไรของคุณที่นี่',
+        ProfileTab.content => 'ยังไม่มีโพสต์ของคุณ',
+        ProfileTab.plans => 'ยังไม่มีแผนทริปของคุณ',
         ProfileTab.clips => 'ยังไม่มีคลิป Puntok ของคุณ',
+        // Albums never reach here — that tab draws its own grid.
+        ProfileTab.albums => 'ยังไม่มีอัลบั้ม',
       };
 
   /// A clip opens full screen with the rest of this wall still swipeable;
@@ -290,25 +282,16 @@ class _TabBody extends ConsumerWidget {
     );
   }
 
-  Future<void> _toggleSaved(
+  /// Every wall here is the traveller's own, so there is no bookmark of
+  /// theirs to flip — saving your own trip is not a thing.
+  void _toggleSaved(
     BuildContext context,
     WidgetRef ref,
     TripListItem trip,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      // On the bookmarks wall the row *is* the bookmark, so it leaves the
-      // list; elsewhere there is nothing to flip, the shelf is the owner's.
-      if (tab == ProfileTab.saved) {
-        await ref.read(savedFeedProvider.notifier).unsave(trip.id);
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('บันทึกทริปของตัวเองไม่ได้')),
-        );
-      }
-    } on ApiException catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(error.message)));
-    }
+  ) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('บันทึกทริปของตัวเองไม่ได้')),
+    );
   }
 
   SliverToBoxAdapter _filler(Widget child) => SliverToBoxAdapter(

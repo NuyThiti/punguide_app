@@ -107,7 +107,7 @@ final visibleMyTripsProvider = Provider<AsyncValue<List<TripListItem>>>((ref) {
 /// The tab in force on Save Draft. Its own state, so switching tabs there
 /// never moves the profile's strip underneath.
 final draftTabProvider =
-    StateProvider.autoDispose<ProfileTab>((ref) => ProfileTab.posts);
+    StateProvider.autoDispose<ProfileTab>((ref) => ProfileTab.all);
 
 /// Everything still unpublished, from the same `GET /trips/mine` shelf.
 ///
@@ -124,16 +124,28 @@ final draftsProvider = Provider<AsyncValue<List<TripListItem>>>((ref) {
 /// The drafts the tab in force shows, or null when that tab is not a wall of
 /// trips — the same contract `profileTabRowsProvider` uses.
 ///
-/// Albums, bookmarks and remixes have no draft form: an album is not a trip,
-/// a bookmark is somebody else's, and a remix is published the moment it is
-/// made. Those resolve to null and the screen says so, rather than showing an
-/// empty wall that reads as "you have no drafts".
+/// Albums have no draft form — an album is a view over published posts, not a
+/// trip — so that tab resolves to null and the screen says so, rather than
+/// showing an empty wall that reads as "you have no drafts".
+///
+/// Clips are judged by their cover, not their type: the server still sends a
+/// Puntok as `type: "content"` with a video cover.
 final draftTabRowsProvider =
     Provider.autoDispose<AsyncValue<List<TripListItem>>?>((ref) {
   final drafts = ref.watch(draftsProvider);
   return switch (ref.watch(draftTabProvider)) {
-    ProfileTab.posts => drafts.whenData(withoutClips),
+    ProfileTab.all => drafts,
+    ProfileTab.content => drafts.whenData(
+        (trips) => List<TripListItem>.unmodifiable(
+          trips.where((trip) => trip.type == TripType.content && !trip.isClip),
+        ),
+      ),
+    ProfileTab.plans => drafts.whenData(
+        (trips) => List<TripListItem>.unmodifiable(
+          trips.where((trip) => trip.type == TripType.planTrip),
+        ),
+      ),
     ProfileTab.clips => drafts.whenData(onlyClips),
-    ProfileTab.albums || ProfileTab.saved || ProfileTab.remixes => null,
+    ProfileTab.albums => null,
   };
 });

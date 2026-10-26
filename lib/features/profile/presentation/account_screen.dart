@@ -107,6 +107,14 @@ class AccountScreen extends ConsumerWidget {
                   onTap: () => context.goNamed(AppRoute.myTrips.name),
                 ),
                 const _RowDivider(),
+                // The bookmark button on every card writes to this shelf, so
+                // it needs a way in now the profile's saved tab is gone.
+                AccountRow(
+                  icon: Icons.bookmark_added_outlined,
+                  label: 'ทริปที่บันทึกไว้',
+                  onTap: () => context.goNamed(AppRoute.savedTrips.name),
+                ),
+                const _RowDivider(),
                 AccountRow(
                   icon: Icons.bookmark_border,
                   label: 'บุ๊คมาร์คสถานที่',

@@ -21,6 +21,7 @@ class PunGuideGrid extends StatelessWidget {
     this.featuredOf,
     this.savedOf,
     this.overlayOf,
+    this.onDelete,
   });
 
   final List<TripListItem> trips;
@@ -42,6 +43,11 @@ class PunGuideGrid extends StatelessWidget {
   /// tag. Null for rows that carry none. Stacked at the wall rather than
   /// threaded through both card types, so one hook covers both.
   final Widget? Function(TripListItem trip)? overlayOf;
+
+  /// Turns every card's corner button into a delete. Passed only by walls of
+  /// the traveller's own trips — the album grid is a different widget and
+  /// never gets one.
+  final ValueChanged<TripListItem>? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +82,11 @@ class PunGuideGrid extends StatelessWidget {
               // A clip has no itinerary to print, so it gets the plainer
               // card. Where the tap goes is still the caller's business.
               trip.isClip
-                  ? PuntokCard(trip: trip, onTap: () => onOpen(trip))
+                  ? PuntokCard(
+                      trip: trip,
+                      onTap: () => onOpen(trip),
+                      onDelete: _deleteFor(trip),
+                    )
                   : PunGuideCard(
                       trip: trip,
                       distanceLabel: distanceLabelOf?.call(trip),
@@ -84,11 +94,17 @@ class PunGuideGrid extends StatelessWidget {
                       saved: savedOf?.call(trip),
                       onTap: () => onOpen(trip),
                       onSave: () => onSave(trip),
+                      onDelete: _deleteFor(trip),
                     ),
             ),
           ),
       ],
     );
+  }
+
+  VoidCallback? _deleteFor(TripListItem trip) {
+    final onDelete = this.onDelete;
+    return onDelete == null ? null : () => onDelete(trip);
   }
 
   Widget _withOverlay(TripListItem trip, Widget card) {

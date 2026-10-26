@@ -47,6 +47,7 @@ final _rows = <Map<String, dynamic>>[
 FakeAdapter _adapter({List<Map<String, dynamic>>? rows}) =>
     FakeAdapter(<String, List<FakeReply>>{
       'GET /trips/mine': <FakeReply>[FakeReply(200, rows ?? _rows)],
+      'DELETE /trips/draft-plan': <FakeReply>[const FakeReply(200, null)],
     });
 
 Widget _harness(FakeAdapter adapter, {AuthSession? session}) {
@@ -120,9 +121,34 @@ void main() {
     await tester.pumpWidget(_harness(_adapter(), session: AuthSession.demo));
     await tester.pumpAndSettle();
 
-    // One draft plan on this tab, and it carries the tag.
+    // Tab 1 is every draft now — the plan and the clip — and each card
+    // carries the tag, whichever kind of card it is.
     expect(find.byType(PunGuideCard), findsOneWidget);
-    expect(find.text('Editing'), findsOneWidget);
+    expect(find.byType(PuntokCard), findsOneWidget);
+    expect(find.text('Editing'), findsNWidgets(2));
+  });
+
+  testWidgets('a draft can be deleted from its card', (tester) async {
+    _phone(tester);
+    final adapter = _adapter();
+    List<String> adapterRequests() =>
+        adapter.requests.map((r) => '${r.method} ${r.path}').toList();
+
+    await tester.pumpWidget(_harness(adapter, session: AuthSession.demo));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'ลบ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เชียงราย 2 วัน 1 คืน'), findsNothing);
+    expect(
+      adapterRequests(),
+      contains('DELETE /trips/draft-plan'),
+    );
   });
 
   testWidgets('the clips tab keeps the draft clip and drops the plan',
@@ -140,17 +166,14 @@ void main() {
     expect(find.text('Editing'), findsOneWidget);
   });
 
-  testWidgets('a tab that cannot hold a draft says so', (tester) async {
+  testWidgets('the albums tab cannot hold a draft and says so', (tester) async {
     _phone(tester);
 
     await tester.pumpWidget(_harness(_adapter(), session: AuthSession.demo));
     await tester.pumpAndSettle();
-    await _tapTab(tester, ProfileTab.saved);
+    await _tapTab(tester, ProfileTab.albums);
 
-    expect(
-      find.text('ที่บันทึกไว้เป็นทริปของคนอื่น ไม่มีแบบร่าง'),
-      findsOneWidget,
-    );
+    expect(find.text('อัลบั้มไม่มีแบบร่าง'), findsOneWidget);
     expect(find.byType(PunGuideCard), findsNothing);
   });
 

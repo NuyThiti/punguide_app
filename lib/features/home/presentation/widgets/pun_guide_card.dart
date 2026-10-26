@@ -25,6 +25,7 @@ class PunGuideCard extends StatelessWidget {
     this.distanceLabel,
     this.featured = false,
     this.saved,
+    this.onDelete,
   });
 
   final TripListItem trip;
@@ -41,6 +42,11 @@ class PunGuideCard extends StatelessWidget {
   /// track — the board flips one on a card that sits in two walls at once.
   /// Null falls back to what the row itself came back with.
   final bool? saved;
+
+  /// Turns the corner button into a delete. Only a wall of the traveller's
+  /// *own* trips passes this: bookmarking your own trip does nothing, so the
+  /// slot is better spent on the one action that belongs there.
+  final VoidCallback? onDelete;
 
   /// Only the cover has a fixed shape; the card is as tall as its own text.
   static const double coverAspectRatio = 0.97;
@@ -93,18 +99,28 @@ class PunGuideCard extends StatelessWidget {
                   Positioned(
                     top: 10,
                     right: 10,
-                    child: _SaveButton(
-                      saved: saved ?? trip.isSaved,
-                      onTap: onSave,
-                    ),
+                    child: onDelete == null
+                        ? _SaveButton(
+                            saved: saved ?? trip.isSaved,
+                            onTap: onSave,
+                          )
+                        : _CornerButton(
+                            icon: Icons.delete_outline,
+                            tooltip: 'ลบทริป',
+                            color: AppColors.brandOrangeDeep,
+                            onTap: onDelete!,
+                          ),
                   ),
                   Positioned(
                     left: 8,
                     right: 8,
                     bottom: 10,
+                    // Both pills flex. Only the creator did before, so on a
+                    // narrow phone the type pill took the whole cover and
+                    // left the creator a few points to overflow out of.
                     child: Row(
                       children: [
-                        _TypePill(guide: guide, accent: accent),
+                        Flexible(child: _TypePill(guide: guide, accent: accent)),
                         const SizedBox(width: 6),
                         Flexible(child: _CreatorPill(creator: trip.creator)),
                       ],
@@ -248,6 +264,43 @@ class _SaveButton extends StatelessWidget {
   }
 }
 
+/// The same white disc as [_SaveButton], for an action that is not a
+/// bookmark.
+class _CornerButton extends StatelessWidget {
+  const _CornerButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 16, color: color),
+        ),
+      ),
+    );
+  }
+}
+
 /// The dark pill the cover's two labels share.
 class _CoverPill extends StatelessWidget {
   const _CoverPill({required this.leading, required this.label});
@@ -263,9 +316,14 @@ class _CoverPill extends StatelessWidget {
         color: AppColors.cardCoverPill.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(99),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [leading, const SizedBox(width: 5), Flexible(child: label)],
+      // ClipRect so a pill squeezed below even its badge width trims rather
+      // than painting outside itself — two pills on one cover can get that
+      // tight at 320pt.
+      child: ClipRect(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [leading, const SizedBox(width: 5), Flexible(child: label)],
+        ),
       ),
     );
   }

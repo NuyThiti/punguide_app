@@ -6,11 +6,14 @@ import '../../../../shared/models/feed_rows.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../my_trips/presentation/providers/my_trips_providers.dart';
 
-/// The four icons under the profile hero (Figma 1539-8068).
-enum ProfileTab { posts, albums, saved, remixes, clips }
+/// The five icons under the profile hero (Figma 1539-8068).
+///
+/// Tabs 1–4 are the traveller's own shelf filtered by what a row *is*; the
+/// fifth is the album grid, which is a different view rather than a filter.
+enum ProfileTab { all, content, plans, clips, albums }
 
 final profileTabProvider =
-    StateProvider.autoDispose<ProfileTab>((ref) => ProfileTab.posts);
+    StateProvider.autoDispose<ProfileTab>((ref) => ProfileTab.all);
 
 /// Trips the traveller has bookmarked.
 ///
@@ -66,24 +69,124 @@ class SavedFeedNotifier extends AsyncNotifier<List<TripListItem>> {
   }
 }
 
-/// The rows the tab in force shows.
+/// The rows the tab in force shows, or null when that tab is not a wall of
+/// trips — [ProfileTab.albums] draws its own grid instead.
 ///
-/// Null means "this tab is not a wall of trips": [ProfileTab.albums] draws
-/// its own grid, and [ProfileTab.remixes] has no endpoint at all —
-/// `POST /trips/:id/remix` makes one but nothing lists them back, so the
-/// screen says so rather than showing an empty wall that reads as "you have
-/// none".
+/// **Clips are judged by their cover, not their type.** The server still
+/// sends a Puntok as `type: "content"` with a video cover (see
+/// `shared/models/feed_rows.dart`), so filtering `type == puntok` alone would
+/// leave the Puntok tab empty and spill every clip into the posts tab. Both
+/// tabs therefore go through `isClip`, which tests the type *and* the cover —
+/// and keeps working unchanged once the server starts sending the real type.
 final profileTabRowsProvider =
     Provider.autoDispose<AsyncValue<List<TripListItem>>?>((ref) {
-  switch (ref.watch(profileTabProvider)) {
-    case ProfileTab.posts:
-      return ref.watch(myTripsProvider).whenData(withoutClips);
-    case ProfileTab.saved:
-      return ref.watch(savedFeedProvider);
-    case ProfileTab.albums:
-    case ProfileTab.remixes:
-      return null;
-    case ProfileTab.clips:
-      return ref.watch(myTripsProvider).whenData(onlyClips);
-  }
+  final mine = ref.watch(myTripsProvider);
+
+  return switch (ref.watch(profileTabProvider)) {
+    // Everything the traveller owns. Albums are a view, not a kind, so
+    // nothing is held back here.
+    ProfileTab.all => mine,
+    ProfileTab.content => mine.whenData(
+        (trips) => List<TripListItem>.unmodifiable(
+          trips.where((trip) => trip.type == TripType.content && !trip.isClip),
+        ),
+      ),
+    ProfileTab.plans => mine.whenData(
+        (trips) => List<TripListItem>.unmodifiable(
+          trips.where((trip) => trip.type == TripType.planTrip),
+        ),
+      ),
+    ProfileTab.clips => mine.whenData(onlyClips),
+    ProfileTab.albums => null,
+  };
 });
+
+/// How many albums one page of อัลบั้มของฉัน asks for. The endpoint caps
+/// `limit` at 100 and 400s above it.
+const albumsPageSize = 20;
+
+/// The kinds of trip that are albums: photo posts and Puntok clips. Plans are
+/// not albums — they live on the posts tab.
+const albumTypes = <TripType>[TripType.content, TripType.puntok];
+
+/// อัลบั้มของฉัน (Personal), from `GET /trips/mine?type=content,puntok`.
+///
+/// Paged rather than read whole: the shelf grows without bound, so the grid
+/// asks for [albumsPageSize] at a time and walks forward on [loadMore].
+final myAlbumsProvider =
+    AsyncNotifierProvider<MyAlbumsNotifier, List<TripListItem>>(
+  MyAlbumsNotifier.new,
+);
+
+class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
+  /// True once a page came back shorter than asked for — the documented way
+  /// this endpoint says "that was the last one", since it sends no total.
+  bool _exhausted = false;
+  bool get hasMore => !_exhausted;
+
+  @override
+  Future<List<TripListItem>> build() async {
+    _exhausted = false;
+    // 401 for an anonymous caller, so an empty shelf rather than an error —
+    // and a re-read the moment the session changes.
+    if (ref.watch(authSessionProvider) == null) {
+      _exhausted = true;
+      return const <TripListItem>[];
+    }
+
+    final api = await ref.watch(plunoApiProvider.future);
+    final page = await api.trips.mine(
+      types: albumTypes,
+      limit: albumsPageSize,
+      offset: 0,
+    );
+    _exhausted = page.length < albumsPageSize;
+    return page;
+  }
+
+  /// Appends the next page. Does nothing while one is already in flight or
+  /// the shelf is spent, so a scroll that fires twice cannot double-read.
+  Future<void> loadMore() async {
+    final current = state.valueOrNull;
+    if (current == null || _exhausted || state.isLoading) return;
+
+    state = AsyncLoading<List<TripListItem>>()
+        .copyWithPrevious(AsyncData<List<TripListItem>>(current));
+    state = await AsyncValue.guard(() async {
+      final api = await ref.read(plunoApiProvider.future);
+      final page = await api.trips.mine(
+        types: albumTypes,
+        limit: albumsPageSize,
+        offset: current.length,
+      );
+      _exhausted = page.length < albumsPageSize;
+      // The window can shift when a trip is created mid-walk, so drop any id
+      // already held rather than printing it twice.
+      final seen = {for (final trip in current) trip.id};
+      return <TripListItem>[
+        ...current,
+        ...page.where((trip) => !seen.contains(trip.id)),
+      ];
+    });
+  }
+
+  /// Pull-to-refresh starts the walk again from zero rather than patching a
+  /// window that may have moved underneath it.
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(() async {
+      _exhausted = false;
+      if (ref.read(authSessionProvider) == null) {
+        _exhausted = true;
+        return const <TripListItem>[];
+      }
+      final api = await ref.read(plunoApiProvider.future);
+      final page = await api.trips.mine(
+        types: albumTypes,
+        limit: albumsPageSize,
+        offset: 0,
+      );
+      _exhausted = page.length < albumsPageSize;
+      return page;
+    });
+  }
+}

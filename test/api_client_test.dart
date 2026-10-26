@@ -101,6 +101,31 @@ void main() {
     expect(adapter.authHeaders.last, 'Bearer token-1');
   });
 
+  test('mine() sends type, limit and offset only when asked', () async {
+    final adapter = _FakeAdapter(<String, List<_Reply>>{
+      'GET /trips/mine': [
+        const _Reply(200, <dynamic>[]),
+        const _Reply(200, <dynamic>[]),
+      ],
+    });
+    final api = PlunoApi(_client(adapter));
+
+    // No arguments: the whole shelf, exactly as before the params existed.
+    await api.trips.mine();
+    expect(adapter.requests.last.queryParameters, isEmpty);
+
+    // The อัลบั้มของฉัน grid: types OR'd on one comma-joined key.
+    await api.trips.mine(
+      types: const <TripType>[TripType.content, TripType.puntok],
+      limit: 20,
+      offset: 20,
+    );
+    expect(
+      adapter.requests.last.queryParameters,
+      <String, dynamic>{'type': 'content,puntok', 'limit': 20, 'offset': 20},
+    );
+  });
+
   test('an optional-auth call is still authenticated, for the quota', () async {
     final store = AuthTokenStore(storage: InMemorySecretStore());
     await store.save(accessToken: 'token-1', expiresIn: '15m');

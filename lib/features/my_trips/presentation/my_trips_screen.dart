@@ -17,6 +17,7 @@ import '../../profile/presentation/providers/profile_providers.dart';
 import '../../profile/presentation/widgets/profile_tab_bar.dart';
 import '../../puntok/domain/models/puntok_post.dart';
 import '../../puntok/presentation/puntok_viewer_screen.dart';
+import 'delete_trip.dart';
 import 'providers/my_trips_providers.dart';
 
 /// Save Draft — everything the traveller has started but not published, from
@@ -159,6 +160,7 @@ class _DraftWall extends ConsumerWidget {
               trips: drafts,
               // Every row here is a draft, so every card wears the tag.
               overlayOf: (_) => const _EditingTag(),
+              onDelete: (trip) => confirmDeleteTrip(context, ref, trip),
               onOpen: (trip) => _open(context, drafts, trip),
               onSave: (_) {},
             ),
@@ -213,13 +215,11 @@ class _DraftWall extends ConsumerWidget {
     );
   }
 
-  String get _nothingToDraft => switch (tab) {
-        ProfileTab.albums => 'อัลบั้มไม่มีแบบร่าง',
-        ProfileTab.saved => 'ที่บันทึกไว้เป็นทริปของคนอื่น ไม่มีแบบร่าง',
-        _ => 'รีมิกซ์ไม่มีแบบร่าง',
-      };
+  String get _nothingToDraft => 'อัลบั้มไม่มีแบบร่าง';
 
   String get _empty => switch (tab) {
+        ProfileTab.content => 'ยังไม่มีโพสต์ที่ค้างไว้',
+        ProfileTab.plans => 'ยังไม่มีแผนทริปที่ค้างไว้',
         ProfileTab.clips => 'ยังไม่มีคลิปที่ค้างไว้',
         _ => 'ยังไม่มีแบบร่างที่ค้างไว้',
       };

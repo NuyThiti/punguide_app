@@ -16,36 +16,36 @@ class ProfileTabBar extends StatelessWidget {
   final ProfileTab active;
   final ValueChanged<ProfileTab> onSelected;
 
-  /// Named for the tab rather than the glyph, so swapping the art later does
-  /// not leave the filenames lying about what they are for.
+  /// Named for the tab it serves rather than the glyph, so swapping the art
+  /// later does not leave the filenames lying about what they are for.
   ///
-  /// Albums is the one drawn from a Material glyph: there is no supplied
-  /// asset for it, and the album SVG is already spoken for by ที่บันทึกไว้.
+  /// Albums is the one drawn from a Material glyph — there is no supplied
+  /// asset for it.
   static const _tabs = <_TabSpec>[
     _TabSpec.asset(
-      ProfileTab.posts,
-      'assets/icons/profile_tab_posts.svg',
-      'โพสต์ของฉัน',
-    ),
-    _TabSpec.glyph(
-      ProfileTab.albums,
-      Icons.photo_library_outlined,
-      'อัลบั้มของฉัน',
+      ProfileTab.all,
+      'assets/icons/profile_tab_all.svg',
+      'ทั้งหมด',
     ),
     _TabSpec.asset(
-      ProfileTab.saved,
-      'assets/icons/profile_tab_saved.svg',
-      'ที่บันทึกไว้',
+      ProfileTab.content,
+      'assets/icons/profile_tab_content.svg',
+      'โพสต์',
     ),
     _TabSpec.asset(
-      ProfileTab.remixes,
-      'assets/icons/profile_tab_remixes.svg',
-      'รีมิกซ์ของฉัน',
+      ProfileTab.plans,
+      'assets/icons/profile_tab_plans.svg',
+      'แผนทริป',
     ),
     _TabSpec.asset(
       ProfileTab.clips,
       'assets/icons/profile_tab_clips.svg',
-      'Puntok ของฉัน',
+      'Puntok',
+    ),
+    _TabSpec.glyph(
+      ProfileTab.albums,
+      Icons.photo_library_outlined,
+      'อัลบั้ม',
     ),
   ];
 

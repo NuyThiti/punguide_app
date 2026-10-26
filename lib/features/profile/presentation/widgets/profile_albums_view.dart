@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
-import '../../data/mock_albums.dart';
 import '../../domain/album.dart';
+import '../providers/profile_providers.dart';
 
 /// The albums tab: the Personal / Share shelves, then a two-column grid of
-/// album covers with the title burned into the bottom of each (album.jpg).
-class ProfileAlbumsView extends StatefulWidget {
+/// covers with the title burned into the bottom of each (album.jpg).
+class ProfileAlbumsView extends ConsumerStatefulWidget {
   const ProfileAlbumsView({super.key, required this.onOpen});
 
-  final ValueChanged<Album> onOpen;
+  final ValueChanged<TripListItem> onOpen;
 
   @override
-  State<ProfileAlbumsView> createState() => _ProfileAlbumsViewState();
+  ConsumerState<ProfileAlbumsView> createState() => _ProfileAlbumsViewState();
 }
 
-class _ProfileAlbumsViewState extends State<ProfileAlbumsView> {
+class _ProfileAlbumsViewState extends ConsumerState<ProfileAlbumsView> {
   AlbumShelf _shelf = AlbumShelf.personal;
 
   @override
   Widget build(BuildContext context) {
-    final albums = albumsFor(_shelf);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -31,46 +31,75 @@ class _ProfileAlbumsViewState extends State<ProfileAlbumsView> {
           onSelected: (shelf) => setState(() => _shelf = shelf),
         ),
         const SizedBox(height: 14),
-        if (albums.isEmpty)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(32, 32, 32, 48),
-            child: Center(
-              child: Text(
-                'ยังไม่มีอัลบั้มในชั้นนี้',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.muted,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+        _PersonalShelf(onOpen: widget.onOpen),
+      ],
+    );
+  }
+}
+
+class _PersonalShelf extends ConsumerWidget {
+  const _PersonalShelf({required this.onOpen});
+
+  final ValueChanged<TripListItem> onOpen;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final albums = ref.watch(myAlbumsProvider);
+    final rows = albums.valueOrNull;
+
+    // A page in flight keeps the grid on screen underneath it, so loading
+    // more never blanks what is already there.
+    if (rows == null) {
+      if (albums.hasError) {
+        return _AlbumsNotice(
+          message: 'โหลดอัลบั้มไม่สำเร็จ',
+          actionLabel: 'ลองอีกครั้ง',
+          onAction: () => ref.read(myAlbumsProvider.notifier).refresh(),
+        );
+      }
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (rows.isEmpty) {
+      return const _AlbumsNotice(message: 'ยังไม่มีอัลบั้มของคุณ');
+    }
+
+    final notifier = ref.read(myAlbumsProvider.notifier);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          GridView.builder(
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            shrinkWrap: true,
+            itemCount: rows.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              // Fixed shape, unlike the trip walls: every card prints one
+              // line of title over the image, so none can outgrow its row.
+              childAspectRatio: 0.92,
             ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GridView.builder(
-              padding: EdgeInsets.zero,
-              physics: const NeverScrollableScrollPhysics(),
-              shrinkWrap: true,
-              itemCount: albums.length,
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                // The covers are a fixed shape here, unlike the trip walls:
-                // every card prints one line of title over the image, so
-                // nothing can grow taller than its neighbour.
-                childAspectRatio: 0.92,
-              ),
-              itemBuilder: (context, index) => _AlbumCard(
-                album: albums[index],
-                onTap: () => widget.onOpen(albums[index]),
-              ),
+            itemBuilder: (context, index) => _AlbumCard(
+              album: rows[index],
+              onTap: () => onOpen(rows[index]),
             ),
           ),
-      ],
+          if (notifier.hasMore) ...[
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: albums.isLoading ? null : notifier.loadMore,
+              child: Text(albums.isLoading ? 'กำลังโหลด…' : 'โหลดเพิ่ม'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -87,7 +116,7 @@ class _ShelfTabs extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          for (final shelf in AlbumShelf.values)
+          for (final shelf in visibleAlbumShelves)
             Padding(
               padding: const EdgeInsets.only(right: 24),
               child: GestureDetector(
@@ -130,11 +159,15 @@ class _ShelfTabs extends StatelessWidget {
 class _AlbumCard extends StatelessWidget {
   const _AlbumCard({required this.album, required this.onTap});
 
-  final Album album;
+  final TripListItem album;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    // Documented as sometimes absent, so the card draws a well rather than a
+    // broken box.
+    final thumbnail = album.coverImage?.urls.thumbnail;
+
     return GestureDetector(
       onTap: onTap,
       child: ClipRRect(
@@ -142,7 +175,19 @@ class _AlbumCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CoverImage(source: album.cover, fit: BoxFit.cover),
+            if (thumbnail == null)
+              const ColoredBox(
+                color: AppColors.optionIconBg,
+                child: Center(
+                  child: Icon(
+                    Icons.photo_outlined,
+                    size: 28,
+                    color: AppColors.navIconMuted,
+                  ),
+                ),
+              )
+            else
+              CoverImage(source: thumbnail, fit: BoxFit.cover),
             // The title sits on the photo, so it carries its own scrim
             // rather than trusting the image to be dark down there.
             Positioned(
@@ -177,6 +222,42 @@ class _AlbumCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AlbumsNotice extends StatelessWidget {
+  const _AlbumsNotice({
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 32, 32, 48),
+      child: Column(
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 8),
+            TextButton(onPressed: onAction, child: Text(actionLabel!)),
+          ],
+        ],
       ),
     );
   }

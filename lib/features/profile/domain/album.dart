@@ -1,31 +1,17 @@
-import 'package:flutter/foundation.dart';
-
-/// A photo album on a traveller's profile.
+/// Which shelf of อัลบั้มของฉัน the sub-tabs are showing.
 ///
-/// Thin on purpose: the API has no albums endpoint yet (checked 2026-10-21),
-/// so this carries only what the grid prints. When one ships, this gains a
-/// `fromJson` and the mock list goes away — nothing else on the tab changes.
-@immutable
-class Album {
-  const Album({
-    required this.id,
-    required this.title,
-    required this.cover,
-    this.photoCount,
-  });
-
-  final String id;
-  final String title;
-
-  /// A bundled asset or an `http(s)` URL — [CoverImage] takes either.
-  final String cover;
-
-  /// Null hides the count rather than printing a made-up one.
-  final int? photoCount;
-}
-
-/// Which shelf of albums the sub-tabs are showing.
+/// Personal is `GET /trips/mine?type=content,puntok`. Share has no endpoint
+/// yet — the backend note that opened the Personal shelf says it was left out
+/// of that round — so it is deliberately empty rather than mocked.
 enum AlbumShelf { personal, shared }
+
+/// The shelves the tab actually renders.
+///
+/// `shared` is left out rather than shown as a dead tab: the backend note
+/// that opened Personal (`GET /trips/mine?type=content,puntok`) said Share
+/// was cut from that round and has no endpoint. Add it back to this list the
+/// day one exists — nothing else needs to change.
+const visibleAlbumShelves = <AlbumShelf>[AlbumShelf.personal];
 
 extension AlbumShelfLabel on AlbumShelf {
   String get label => switch (this) {

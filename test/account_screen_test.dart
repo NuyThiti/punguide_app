@@ -40,6 +40,11 @@ Widget _harness(ProviderContainer container) {
             builder: (_, __) => const Scaffold(body: Text('my-trips-stub')),
           ),
           GoRoute(
+            path: '/saved',
+            name: AppRoute.savedTrips.name,
+            builder: (_, __) => const Scaffold(body: Text('saved-stub')),
+          ),
+          GoRoute(
             path: '/profile',
             name: AppRoute.profile.name,
             builder: (_, __) => const Scaffold(body: Text('profile-stub')),
@@ -73,6 +78,7 @@ void main() {
 
     const labels = [
       'Save Draft',
+      'ทริปที่บันทึกไว้',
       'บุ๊คมาร์คสถานที่',
       'ตั้งค่าระบบ',
     ];
@@ -100,6 +106,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('my-trips-stub'), findsOneWidget);
+  });
+
+  testWidgets('ทริปที่บันทึกไว้ opens the bookmarks shelf', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness(_container()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ทริปที่บันทึกไว้'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('saved-stub'), findsOneWidget);
   });
 
   testWidgets('a row with nothing behind it reports instead of dead-ending',
@@ -189,6 +207,6 @@ void main() {
     await tester.pumpWidget(_harness(_container()));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AccountRow), findsNWidgets(3));
+    expect(find.byType(AccountRow), findsNWidgets(4));
   });
 }

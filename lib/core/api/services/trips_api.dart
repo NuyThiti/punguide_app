@@ -218,9 +218,32 @@ class TripsApi {
     return TripListItem.listFrom(body);
   }
 
-  /// Every trip the signed-in traveller owns, at any visibility.
-  Future<List<TripListItem>> mine() async {
-    final body = await _client.get<List<dynamic>>('/trips/mine');
+  /// Every trip the signed-in traveller owns, at any visibility, newest
+  /// first — drafts included.
+  ///
+  /// All three parameters are optional and additive: sending none returns the
+  /// whole shelf, exactly as before they existed. [types] are OR'd, so
+  /// `[content, puntok]` is the อัลบั้มของฉัน grid. A value the endpoint does
+  /// not whitelist — an unknown type, `limit` outside 1–100 — fails the whole
+  /// request with a `400`, so nothing here is invented client-side.
+  ///
+  /// Pagination is by offset: ask for [limit] at a time and walk [offset]
+  /// forward until a page comes back shorter than asked for. A trip created
+  /// mid-walk shifts the window by one, which is why the caller re-reads from
+  /// zero on pull-to-refresh rather than patching.
+  Future<List<TripListItem>> mine({
+    List<TripType> types = const <TripType>[],
+    int? limit,
+    int? offset,
+  }) async {
+    final body = await _client.get<List<dynamic>>(
+      '/trips/mine',
+      query: <String, dynamic>{
+        if (types.isNotEmpty) 'type': types.map((type) => type.wire).join(','),
+        if (limit != null) 'limit': limit,
+        if (offset != null) 'offset': offset,
+      },
+    );
     return TripListItem.listFrom(body);
   }
 

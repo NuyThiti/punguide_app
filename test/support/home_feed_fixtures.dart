@@ -170,25 +170,51 @@ FakeAdapter feedAdapter(List<Map<String, dynamic>> rows) => FakeAdapter(
 List<Override> profileOverrides({
   List<TripListItem> mine = const <TripListItem>[],
   List<TripListItem> saved = const <TripListItem>[],
+  List<TripListItem> albums = const <TripListItem>[],
   AuthSession? session = AuthSession.demo,
 }) {
   return <Override>[
     myTripsProvider.overrideWith(() => _StubMyTrips(mine)),
     savedFeedProvider.overrideWith(() => _StubSavedFeed(saved)),
+    myAlbumsProvider.overrideWith(() => _StubMyAlbums(albums)),
     authSessionProvider.overrideWith((ref) => AuthController(session)),
   ];
+}
+
+class _StubMyAlbums extends MyAlbumsNotifier {
+  _StubMyAlbums(this._albums);
+
+  final List<TripListItem> _albums;
+
+  @override
+  Future<List<TripListItem>> build() async => _albums;
+
+  @override
+  Future<void> refresh() async {}
+
+  @override
+  Future<void> loadMore() async {}
 }
 
 class _StubMyTrips extends MyTripsNotifier {
   _StubMyTrips(this._trips);
 
-  final List<TripListItem> _trips;
+  List<TripListItem> _trips;
 
   @override
   Future<List<TripListItem>> build() async => _trips;
 
   @override
   Future<void> refresh() async {}
+
+  /// Drops the row the way the real one does, without a server behind it.
+  @override
+  Future<void> delete(String tripId) async {
+    _trips = List<TripListItem>.unmodifiable(
+      _trips.where((trip) => trip.id != tripId),
+    );
+    state = AsyncData<List<TripListItem>>(_trips);
+  }
 }
 
 class _StubSavedFeed extends SavedFeedNotifier {
