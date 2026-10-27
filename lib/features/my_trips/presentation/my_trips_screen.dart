@@ -160,9 +160,10 @@ class _DraftWall extends ConsumerWidget {
               trips: drafts,
               // Every row here is a draft, so every card wears the tag.
               overlayOf: (_) => const _EditingTag(),
-              onDelete: (trip) => confirmDeleteTrip(context, ref, trip),
+              onDelete: tripDeleteEnabled
+                  ? (trip) => confirmDeleteTrip(context, ref, trip)
+                  : null,
               onOpen: (trip) => _open(context, drafts, trip),
-              onSave: (_) {},
             ),
           ],
         );

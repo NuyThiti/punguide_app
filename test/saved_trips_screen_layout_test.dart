@@ -89,7 +89,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.delete_outline), findsNothing);
-    // The corner stays a bookmark, so a tap un-saves rather than deletes.
+    // The corner stays a bookmark, so a tap un-saves rather than deletes —
+    // unlike a wall of the traveller's own trips, which offers neither.
+    final cards = tester.widgetList<PunGuideCard>(find.byType(PunGuideCard));
+    expect(cards.every((card) => card.onSave != null), isTrue);
     expect(find.byIcon(Icons.bookmark), findsNWidgets(2));
   });
 

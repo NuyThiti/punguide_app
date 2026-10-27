@@ -6,6 +6,14 @@ import '../../../core/theme/app_colors.dart';
 import '../../profile/presentation/providers/profile_providers.dart';
 import 'providers/my_trips_providers.dart';
 
+/// Whether a card offers to delete the trip behind it.
+///
+/// Off for now. Everything behind it stays wired — the dialog, the optimistic
+/// removal, the album invalidation and their tests — so bringing the trash
+/// back on the profile tabs and Save Draft is this one line. The walls that
+/// never offered it (bookmarks, the album grid) are unaffected either way.
+const tripDeleteEnabled = false;
+
 /// Asks first, then deletes the trip and everything filed under it.
 ///
 /// Shared by every wall of the traveller's own trips, so the wording and the

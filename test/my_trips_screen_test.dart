@@ -7,6 +7,7 @@ import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/home/presentation/widgets/pun_guide_card.dart';
+import 'package:pluno/features/my_trips/presentation/delete_trip.dart';
 import 'package:pluno/features/my_trips/presentation/my_trips_screen.dart';
 import 'package:pluno/features/profile/presentation/providers/profile_providers.dart';
 import 'package:pluno/features/profile/presentation/widgets/profile_tab_bar.dart';
@@ -128,6 +129,17 @@ void main() {
     expect(find.text('Editing'), findsNWidgets(2));
   });
 
+  testWidgets('drafts offer no bookmark either', (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(_harness(_adapter(), session: AuthSession.demo));
+    await tester.pumpAndSettle();
+
+    final cards = tester.widgetList<PunGuideCard>(find.byType(PunGuideCard));
+    expect(cards, isNotEmpty);
+    expect(cards.every((card) => card.onSave == null), isTrue);
+  });
+
   testWidgets('a draft can be deleted from its card', (tester) async {
     _phone(tester);
     final adapter = _adapter();
@@ -149,7 +161,7 @@ void main() {
       adapterRequests(),
       contains('DELETE /trips/draft-plan'),
     );
-  });
+  }, skip: !tripDeleteEnabled);
 
   testWidgets('the clips tab keeps the draft clip and drops the plan',
       (tester) async {

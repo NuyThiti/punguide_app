@@ -219,9 +219,10 @@ class _TabBody extends ConsumerWidget {
             child: PunGuideGrid(
               trips: trips,
               featuredOf: (trip) => featured.contains(trip.id),
-              onDelete: (trip) => confirmDeleteTrip(context, ref, trip),
+              onDelete: tripDeleteEnabled
+                  ? (trip) => confirmDeleteTrip(context, ref, trip)
+                  : null,
               onOpen: (trip) => _open(context, trips, trip),
-              onSave: (trip) => _toggleSaved(context, ref, trip),
             ),
           ),
         );
@@ -279,18 +280,6 @@ class _TabBody extends ConsumerWidget {
     context.pushNamed(
       AppRoute.puntokViewer.name,
       extra: PuntokViewerArgs(posts: posts, initialIndex: index),
-    );
-  }
-
-  /// Every wall here is the traveller's own, so there is no bookmark of
-  /// theirs to flip — saving your own trip is not a thing.
-  void _toggleSaved(
-    BuildContext context,
-    WidgetRef ref,
-    TripListItem trip,
-  ) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('บันทึกทริปของตัวเองไม่ได้')),
     );
   }
 

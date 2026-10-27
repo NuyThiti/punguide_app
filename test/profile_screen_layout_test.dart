@@ -6,6 +6,7 @@ import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/home/presentation/widgets/pun_guide_card.dart';
+import 'package:pluno/features/my_trips/presentation/delete_trip.dart';
 import 'package:pluno/features/profile/presentation/profile_screen.dart';
 import 'package:pluno/features/profile/presentation/providers/profile_providers.dart';
 import 'package:pluno/features/profile/presentation/widgets/profile_albums_view.dart';
@@ -245,16 +246,31 @@ void main() {
     expect(find.text('ยังไม่มีอัลบั้มของคุณ'), findsOneWidget);
   });
 
-  testWidgets('own trips carry a delete where a bookmark would be',
-      (tester) async {
+  testWidgets('own trips offer no bookmark at all', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Saving your own trip does nothing, so the corner is a delete instead —
-    // one per card, clip cards included.
-    expect(find.byIcon(Icons.delete_outline), findsNWidgets(_mine.length));
+    // You cannot bookmark your own trip, so the corner stays empty rather
+    // than holding a button that answers "no".
+    final cards = tester.widgetList<PunGuideCard>(find.byType(PunGuideCard));
+    expect(cards, isNotEmpty);
+    expect(cards.every((card) => card.onSave == null), isTrue);
+  });
+
+  testWidgets('the delete on own trips follows its flag', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // Saving your own trip does nothing, so when the trash is on it takes
+    // that corner — one per card, clip cards included.
+    expect(
+      find.byIcon(Icons.delete_outline),
+      tripDeleteEnabled ? findsNWidgets(_mine.length) : findsNothing,
+    );
   });
 
   testWidgets('deleting asks first, then drops the card', (tester) async {
@@ -277,9 +293,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(_mine.first.title), findsNothing);
-  });
+  }, skip: !tripDeleteEnabled);
 
-  testWidgets('albums carry no delete', (tester) async {
+  testWidgets('albums carry no delete, whatever the flag says',
+      (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());

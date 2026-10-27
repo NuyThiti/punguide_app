@@ -21,7 +21,7 @@ class PunGuideCard extends StatelessWidget {
     super.key,
     required this.trip,
     required this.onTap,
-    required this.onSave,
+    this.onSave,
     this.distanceLabel,
     this.featured = false,
     this.saved,
@@ -30,7 +30,11 @@ class PunGuideCard extends StatelessWidget {
 
   final TripListItem trip;
   final VoidCallback onTap;
-  final VoidCallback onSave;
+
+  /// Null leaves the corner empty. A wall of the traveller's *own* trips
+  /// passes null: you cannot bookmark your own trip, so an inert button there
+  /// was only ever something to tap and be told no.
+  final VoidCallback? onSave;
 
   /// "2.3 Km", or null when the destination has no coordinates.
   final String? distanceLabel;
@@ -50,6 +54,21 @@ class PunGuideCard extends StatelessWidget {
 
   /// Only the cover has a fixed shape; the card is as tall as its own text.
   static const double coverAspectRatio = 0.97;
+
+  Widget? _corner(BuildContext context) {
+    if (onDelete case final onDelete?) {
+      return _CornerButton(
+        icon: Icons.delete_outline,
+        tooltip: 'ลบทริป',
+        color: AppColors.brandOrangeDeep,
+        onTap: onDelete,
+      );
+    }
+    if (onSave case final onSave?) {
+      return _SaveButton(saved: saved ?? trip.isSaved, onTap: onSave);
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,21 +115,10 @@ class PunGuideCard extends StatelessWidget {
                       left: 10,
                       child: _FeaturedBadge(),
                     ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: onDelete == null
-                        ? _SaveButton(
-                            saved: saved ?? trip.isSaved,
-                            onTap: onSave,
-                          )
-                        : _CornerButton(
-                            icon: Icons.delete_outline,
-                            tooltip: 'ลบทริป',
-                            color: AppColors.brandOrangeDeep,
-                            onTap: onDelete!,
-                          ),
-                  ),
+                  // Delete wins the corner when a wall offers it; otherwise
+                  // the bookmark, and nothing at all when neither applies.
+                  if (_corner(context) case final corner?)
+                    Positioned(top: 10, right: 10, child: corner),
                   Positioned(
                     left: 8,
                     right: 8,

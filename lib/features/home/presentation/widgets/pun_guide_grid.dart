@@ -15,7 +15,7 @@ class PunGuideGrid extends StatelessWidget {
     super.key,
     required this.trips,
     required this.onOpen,
-    required this.onSave,
+    this.onSave,
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
     this.distanceLabelOf,
     this.featuredOf,
@@ -26,7 +26,9 @@ class PunGuideGrid extends StatelessWidget {
 
   final List<TripListItem> trips;
   final ValueChanged<TripListItem> onOpen;
-  final ValueChanged<TripListItem> onSave;
+
+  /// Null leaves the bookmark off every card — see [PunGuideCard.onSave].
+  final ValueChanged<TripListItem>? onSave;
   final EdgeInsetsGeometry padding;
 
   /// "2.3 Km" for a row, or null to leave the violet chip off. Search has no
@@ -93,13 +95,18 @@ class PunGuideGrid extends StatelessWidget {
                       featured: featuredOf?.call(trip) ?? false,
                       saved: savedOf?.call(trip),
                       onTap: () => onOpen(trip),
-                      onSave: () => onSave(trip),
+                      onSave: _saveFor(trip),
                       onDelete: _deleteFor(trip),
                     ),
             ),
           ),
       ],
     );
+  }
+
+  VoidCallback? _saveFor(TripListItem trip) {
+    final onSave = this.onSave;
+    return onSave == null ? null : () => onSave(trip);
   }
 
   VoidCallback? _deleteFor(TripListItem trip) {
