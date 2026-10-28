@@ -72,3 +72,52 @@ String spotTimeText({
   if (weekdayDescriptions.length != 7) return null;
   return openCloseFromLine(weekdayDescriptions[DateTime.now().weekday - 1]);
 }
+
+/// Monday first, the order Google's `weekdayDescriptions` comes in.
+const _thaiDaysShort = <String>['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+
+/// Google's seven worded lines, grouped into runs of days that share hours —
+/// `"จ - อา : 06.00 - 14.30 น."`, or
+/// `"จ - ศ : 09.00 - 18.00 น. · ส - อา : 10.00 - 16.00 น."` when they differ.
+///
+/// With [only], a day counts only when its hours are exactly that pair. That
+/// is how the writer's own hours get their days: the days are printed only
+/// where Google agrees with what the writer said, never invented around it.
+///
+/// Null when the list is not the standard seven lines or no day qualifies —
+/// a closed day, "open 24 hours" and anything [openCloseFromLine] cannot read
+/// are simply left out of the runs rather than guessed at.
+String? weeklyHoursText(
+  List<String> weekdayDescriptions, {
+  (String, String)? only,
+}) {
+  if (weekdayDescriptions.length != 7) return null;
+
+  final pairs = <(String, String)?>[
+    for (final line in weekdayDescriptions)
+      switch (openCloseFromLine(line)) {
+        final pair? when only == null || pair == only => pair,
+        _ => null,
+      },
+  ];
+
+  final runs = <String>[];
+  var i = 0;
+  while (i < 7) {
+    final pair = pairs[i];
+    if (pair == null) {
+      i++;
+      continue;
+    }
+    var end = i;
+    while (end + 1 < 7 && pairs[end + 1] == pair) {
+      end++;
+    }
+    final days = i == end
+        ? _thaiDaysShort[i]
+        : '${_thaiDaysShort[i]} - ${_thaiDaysShort[end]}';
+    runs.add('$days : ${hoursRangeText(pair.$1, pair.$2)}');
+    i = end + 1;
+  }
+  return runs.isEmpty ? null : runs.join(' · ');
+}

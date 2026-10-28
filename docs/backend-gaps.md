@@ -166,7 +166,7 @@ test กับ widget test ที่ยืนยัน body ที่ส่ง�
 ## 4. ของที่ยังไม่มี endpoint เลย
 
 - **อัลบั้มแท็บ `Share`** — หน้าอัลบั้มของฉันมีสองชั้น Personal / Share
-  ชั้น Personal ต่อแล้วด้วย `GET /trips/mine?type=content,puntok` (เปิดให้
+  ชั้น Personal ต่อแล้วด้วย `GET /trips/mine?type=content,plan_trip` (เปิดให้
   2026-10-26) แต่ Share หลังบ้านตัดออกจากรอบนั้นเอง ตอนนี้**ซ่อนแท็บไว้เลย**
   (`visibleAlbumShelves` ใน `features/profile/domain/album.dart`) พอมี
   endpoint แล้วเติม `AlbumShelf.shared` กลับเข้า list เดียวนั้นก็ขึ้นเอง
@@ -179,6 +179,10 @@ test กับ widget test ที่ยืนยัน body ที่ส่ง�
     ของทริปตัวเองใน `GET /trips/mine` ถ้าหลังบ้านยังไม่พร้อม
   - Follower / Following ทำไม่ได้เลย ต้องมีระบบ follow ก่อน — อันเดียวกับที่
     ทำให้แท็บ Following ใน Puntok ว่างเปล่า
+- **หน้าอัลบั้ม: Select / เมนู ⋮ / Share Album / รายชื่อคนที่เห็นอัลบั้ม** —
+  วาดตามดีไซน์แล้วใน `AlbumDetailScreen` แต่ยังไม่มี endpoint รองรับสักอัน
+  สามอันแรกกดแล้วขึ้นว่ายังไม่เปิดใช้งาน ส่วนวงกลมมุมขวาโชว์ได้แค่รูปของ
+  เจ้าของอัลบั้มเอง เพราะไม่มี API บอกว่าใครร่วมอัลบั้มได้บ้าง
 - **รูปปกโปรไฟล์** — ดีไซน์มีรูปปกหลัง avatar แต่ไม่มีฟิลด์ cover บน user
   ตอนนี้ทุกโปรไฟล์ใช้ `assets/images/puntok_osaka.jpg` ร่วมกัน
 - **แท็บ `ห้องแชท`** — โผล่ในภาพอ้างอิงของหน้าแผน (Figma 1008-32393) เป็นแท็บที่ห้า

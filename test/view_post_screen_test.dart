@@ -150,9 +150,11 @@ Future<void> _pumpPost(
   Map<String, dynamic>? trip,
   AuthUser? viewer,
   bool viewerPending = false,
+  Map<String, List<FakeReply>> extra = const {},
 }) async {
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(200, trip ?? _postJson())],
+    ...extra,
   });
   await tester.pumpWidget(
     _harness(viewer: viewer, viewerPending: viewerPending),
@@ -452,7 +454,130 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('เปิด/ปิด 08.00 - 17.00 น.'), findsOneWidget);
-    expect(find.text('ซ่อนรายละเอียด'), findsOneWidget);
+    expect(find.text('ย่อรายละเอียด'), findsOneWidget);
+  });
+
+  // ---- Google's own hours, phone and website for a pinned place ----------
+
+  const placeId = '7f1c2a9e-4b3d-4e8a-9c21-5d6e7f8a9b0c';
+
+  Map<String, dynamic> pinnedSpot({String opens = '06:00'}) => {
+        'title': 'ร้านอาหารที่ต้องแวะ',
+        'content': 'มื้อเช้าคลาสสิก',
+        'opensAt': opens,
+        'closesAt': '14:30',
+        'location': {
+          'status': 'confirmed',
+          'name': 'On Lok Yun',
+          'placeId': placeId,
+        },
+      };
+
+  Map<String, List<FakeReply>> google({String hours = '6:00–14:30'}) => {
+        'GET /places/$placeId': [
+          FakeReply(200, {
+            'externalRef': 'g-1',
+            'name': 'On Lok Yun',
+            'nationalPhoneNumber': '085 809 0835',
+            'internationalPhoneNumber': '+66 85 809 0835',
+            'websiteUri': 'https://onlokyun.example',
+            'regularOpeningHours': {
+              'weekdayDescriptions': [
+                for (final day in [
+                  'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี',
+                  'วันศุกร์', 'วันเสาร์', 'วันอาทิตย์',
+                ])
+                  '$day: $hours',
+              ],
+            },
+          }),
+        ],
+      };
+
+  testWidgets("the writer's hours borrow Google's days when they agree",
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [pinnedSpot()]),
+      extra: google(),
+    );
+    await _openDetails(tester);
+
+    expect(find.text('จ - อา : 06.00 - 14.30 น.'), findsOneWidget);
+  });
+
+  testWidgets('hours Google disagrees with keep their own wording, no days',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [pinnedSpot(opens: '07:00')]),
+      extra: google(),
+    );
+    await _openDetails(tester);
+
+    // Days are never invented around hours Google does not confirm.
+    expect(find.text('เปิด/ปิด 07.00 - 14.30 น.'), findsOneWidget);
+    expect(find.textContaining('จ - อา'), findsNothing);
+  });
+
+  testWidgets("the place's phone and website share one row of links",
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [pinnedSpot()]),
+      extra: google(),
+    );
+    await _openDetails(tester);
+
+    final number = find.text('085 809 0835');
+    final web = find.text('เว็บร้าน');
+    expect(number, findsOneWidget);
+    expect(web, findsOneWidget);
+    // One row, not two.
+    expect(tester.getCenter(number).dy,
+        closeTo(tester.getCenter(web).dy, 2));
+    // The raw address never shows; the link carries it.
+    expect(find.text('https://onlokyun.example'), findsNothing);
+  });
+
+  // ---- ดูรูป (N) --------------------------------------------------------------
+
+  testWidgets('ดูรูป counts every openable photo and opens them together',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [
+        ..._photoSpot(), // three loadable, one lost
+        <String, dynamic>{
+          'title': 'อีกจุด',
+          'content': 'เนื้อหา',
+          'imageUrls': const ['https://img/a', 'https://img/b'],
+        },
+      ]),
+    );
+
+    expect(find.text('ดูรูป (5)'), findsOneWidget);
+
+    await tester.tap(find.text('ดูรูป (5)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 / 5'), findsOneWidget);
+  });
+
+  testWidgets('a post with no photos offers no ดูรูป', (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [
+        <String, dynamic>{'title': 'ไม่มีรูป', 'content': 'เนื้อหา'},
+      ]),
+    );
+
+    expect(find.textContaining('ดูรูป'), findsNothing);
   });
 
   testWidgets('a spot with nothing extra is offered no drawer',

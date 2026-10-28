@@ -82,6 +82,11 @@ Widget _harness({
             builder: (_, __) => const Scaffold(body: Text('detail-stub')),
           ),
           GoRoute(
+            path: '/albums/:albumId',
+            name: AppRoute.albumDetail.name,
+            builder: (_, __) => const Scaffold(body: Text('album-stub')),
+          ),
+          GoRoute(
             path: '/puntok/view',
             name: AppRoute.puntokViewer.name,
             builder: (_, state) => PuntokViewerScreen(
@@ -223,7 +228,8 @@ void main() {
     expect(find.byType(PunGuideCard), findsNothing);
   });
 
-  testWidgets('an album opens its trip page', (tester) async {
+  testWidgets('an album opens the album page, not the post page',
+      (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
@@ -233,7 +239,8 @@ void main() {
     await tester.tap(find.text(_albums.first.title));
     await tester.pumpAndSettle();
 
-    expect(find.text('detail-stub'), findsOneWidget);
+    expect(find.text('album-stub'), findsOneWidget);
+    expect(find.text('detail-stub'), findsNothing);
   });
 
   testWidgets('an empty album shelf says so', (tester) async {

@@ -23,6 +23,7 @@ let package = Package(
         .package(name: "image_picker_ios", path: "../.packages/image_picker_ios-0.8.13+6"),
         .package(name: "package_info_plus", path: "../.packages/package_info_plus-10.2.1"),
         .package(name: "shared_preferences_foundation", path: "../.packages/shared_preferences_foundation-2.5.7"),
+        .package(name: "url_launcher_ios", path: "../.packages/url_launcher_ios-6.4.2"),
         .package(name: "video_player_avfoundation", path: "../.packages/video_player_avfoundation-2.12.0"),
         .package(name: "FlutterFramework", path: "../.packages/FlutterFramework")
     ],
@@ -38,6 +39,7 @@ let package = Package(
                 .product(name: "image-picker-ios", package: "image_picker_ios"),
                 .product(name: "package-info-plus", package: "package_info_plus"),
                 .product(name: "shared-preferences-foundation", package: "shared_preferences_foundation"),
+                .product(name: "url-launcher-ios", package: "url_launcher_ios"),
                 .product(name: "video-player-avfoundation", package: "video_player_avfoundation"),
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ]

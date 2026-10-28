@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/models/place.dart';
@@ -8,6 +9,21 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/formatting/spot_detail_text.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../../../shared/widgets/full_image_viewer.dart';
+
+/// Every photo in a post a reader can actually open, in reading order.
+///
+/// Uploaded media wins over a section's legacy URLs, the same rule a spot's
+/// own carousel follows, and an `unavailable` upload is left out — it has no
+/// picture to show.
+List<String> postPhotoUrls(List<TripContent> sections) => [
+      for (final section in sections)
+        if (section.mediaIds != null)
+          for (final image in section.images)
+            if (!image.unavailable && image.urls != null) image.urls!.full
+            else ...[]
+        else
+          ...section.imageUrls,
+    ];
 
 /// A post's spots, as a reader sees them.
 ///
@@ -216,8 +232,11 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
     final transport =
         transportText(section.transportModes, section.transportCost);
     final contact = section.contactInfo?.trim() ?? '';
+    // The national form is what the design prints ("085 809 0835"); the
+    // international one dials from anywhere, so it is what the link calls.
     final phone =
-        live?.internationalPhoneNumber ?? live?.nationalPhoneNumber;
+        live?.nationalPhoneNumber ?? live?.internationalPhoneNumber;
+    final dial = live?.internationalPhoneNumber ?? live?.nationalPhoneNumber;
     final website = live?.websiteUri?.trim();
     final hack = section.tripHack?.trim() ?? '';
     final photos = _photos;
@@ -280,16 +299,17 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                     const SizedBox(height: 8),
                     _InfoRow(icon: Icons.call_outlined, text: contact),
                   ],
-                  // Google's own phone/website for this place — automatic, and
-                  // only ever shown when Google actually has them. Separate from
-                  // `contact` above, which is whatever the writer typed by hand.
-                  if (phone != null && phone.trim().isNotEmpty) ...[
+                  // Google's own phone and website for this place, on one row of
+                  // links — "085 809 0835 · เว็บร้าน". Automatic, and only shown when
+                  // Google actually has them; separate from `contact` above, which
+                  // is what the writer typed.
+                  if (_hasText(phone) || _hasText(website)) ...[
                     const SizedBox(height: 8),
-                    _InfoRow(icon: Icons.phone_outlined, text: phone.trim()),
-                  ],
-                  if (website != null && website.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    _InfoRow(icon: Icons.language, text: website),
+                    _LinkRow(
+                      phone: _hasText(phone) ? phone!.trim() : null,
+                      dial: dial,
+                      website: _hasText(website) ? website : null,
+                    ),
                   ],
                   if (hack.isNotEmpty) ...[
                     const SizedBox(height: 14),
@@ -315,6 +335,9 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
     );
   }
 
+  static bool _hasText(String? value) =>
+      value != null && value.trim().isNotEmpty;
+
   static bool _hasDetails(String time, String transport, String contact,
           String? phone, String? website, String hack) =>
       time.isNotEmpty ||
@@ -335,15 +358,37 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
   String _timeLine(PlaceDetails? live) {
     final section = widget.section;
     final ownHours = hoursRangeText(section.opensAt, section.closesAt);
+    // `regular` is the standing week; `current` can carry a holiday override
+    // for the next seven days only, so it is the fallback, not the source.
+    final week = live?.regularOpeningHours?.weekdayDescriptions ??
+        live?.currentOpeningHours?.weekdayDescriptions ??
+        const <String>[];
     final openNow =
         live?.currentOpeningHours?.openNow ?? live?.regularOpeningHours?.openNow;
+
+    final opens = section.opensAt;
+    final closes = section.closesAt;
+    final String? hours;
+    if (ownHours != null) {
+      // The writer's hours stand; Google only lends them the days it agrees
+      // on — "จ - อา : 06.00 - 14.30 น." — and none if it disagrees.
+      final days = opens != null && closes != null
+          ? weeklyHoursText(week, only: (opens, closes))
+          : null;
+      hours = days ?? 'เปิด/ปิด $ownHours';
+    } else {
+      hours = weeklyHoursText(week) ??
+          switch (openNow) {
+            true => 'เปิดอยู่ตอนนี้',
+            false => 'ปิดอยู่ตอนนี้',
+            null => null,
+          };
+    }
+
     final parts = <String>[
       if (section.visitedAt != null)
         'ไปตอน ${section.visitedAt!.replaceAll(':', '.')} น.',
-      if (ownHours != null)
-        'เปิด/ปิด $ownHours'
-      else if (openNow != null)
-        openNow ? 'เปิดอยู่ตอนนี้' : 'ปิดอยู่ตอนนี้',
+      if (hours != null) hours,
     ];
     return parts.join(' | ');
   }
@@ -390,7 +435,7 @@ class _DetailsToggle extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            open ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด',
+            open ? 'ย่อรายละเอียด' : 'ดูรายละเอียด',
             style: const TextStyle(
               color: AppColors.foreground,
               fontSize: 13.5,
@@ -580,6 +625,102 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The place's phone and website as links on one row.
+///
+/// A phone opens the dialler and the website opens in the browser. A link
+/// that cannot open stays where it is rather than failing loudly — there is
+/// nothing the reader could do about it.
+class _LinkRow extends StatelessWidget {
+  const _LinkRow({this.phone, this.dial, this.website});
+
+  /// As printed.
+  final String? phone;
+
+  /// As dialled; spaces and dashes are dropped before it becomes `tel:`.
+  final String? dial;
+  final String? website;
+
+  Future<void> _open(Uri uri) async {
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // No handler on this device (a simulator has no dialler) — nothing the
+      // reader could act on.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final number = phone;
+    final site = website;
+    final siteUri = site == null ? null : Uri.tryParse(site);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 1),
+          child: Icon(
+            Icons.phone_in_talk_outlined,
+            size: 14,
+            color: AppColors.postPurple,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (number != null)
+                _Link(
+                  text: number,
+                  onTap: () => _open(Uri(
+                    scheme: 'tel',
+                    path: (dial ?? number).replaceAll(RegExp(r'[\s-]'), ''),
+                  )),
+                ),
+              if (number != null && siteUri != null)
+                const Text(
+                  '·',
+                  style: TextStyle(color: AppColors.muted, fontSize: 13),
+                ),
+              if (siteUri != null)
+                _Link(text: 'เว็บร้าน', onTap: () => _open(siteUri)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Link extends StatelessWidget {
+  const _Link({required this.text, required this.onTap});
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.postPurple,
+          fontSize: 13,
+          height: 1.45,
+          decoration: TextDecoration.underline,
+          decorationColor: AppColors.postPurple,
+        ),
+      ),
     );
   }
 }

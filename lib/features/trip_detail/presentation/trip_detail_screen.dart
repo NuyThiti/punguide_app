@@ -13,6 +13,7 @@ import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/formatting/compact_count.dart';
 import '../../../shared/layout/screen_class.dart';
 import '../../../shared/widgets/cover_image.dart';
+import '../../../shared/widgets/full_image_viewer.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../create_trip/domain/plan_labels.dart';
 import '../../saved_trips/presentation/saved_trips_notifier.dart';
@@ -402,9 +403,10 @@ class _StickyTopBarState extends State<_StickyTopBar> {
                     ),
                   ),
                   _RoundGlassButton(
-                    icon: Icons.ios_share,
+                    icon: Icons.share_outlined,
                     tooltip: 'แชร์',
                     onTap: widget.onShare,
+                    iconColor: AppColors.postPurple,
                   ),
                 ],
               ),
@@ -505,6 +507,7 @@ class _PostHero extends StatelessWidget {
                             label: 'Remix Trip',
                             icon: Icons.shuffle,
                             color: AppColors.brandPurple,
+                            foreground: AppColors.handleChipRing,
                             onTap: onRemix,
                           ),
                       },
@@ -527,12 +530,16 @@ class _HeroAction extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onTap,
+    this.foreground = Colors.white,
   });
 
   final String label;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
+
+  /// The label and glyph — lime on Remix's purple, white on edit's coral.
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
@@ -545,7 +552,7 @@ class _HeroAction extends StatelessWidget {
       ),
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
-        foregroundColor: Colors.white,
+        foregroundColor: foreground,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(99),
@@ -633,6 +640,8 @@ class _PostFacts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Every photo in the post, across all its spots — "ดูรูป (24)".
+    final photos = postPhotoUrls(trip.contents);
     final linked = trip.linkedTrip;
     final schedule = linked?.schedule ?? trip.schedule;
     final start = schedule.startDate;
@@ -655,8 +664,15 @@ class _PostFacts extends StatelessWidget {
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 6,
-      runSpacing: 4,
+      runSpacing: 6,
       children: [
+        if (photos.isNotEmpty) ...[
+          _PhotosPill(
+            count: photos.length,
+            onTap: () => showFullImages(context, urls: photos),
+          ),
+          const SizedBox(width: 2),
+        ],
         if (trip.destination.isNotEmpty) ...[
           const Icon(
             Icons.location_on_outlined,
@@ -678,6 +694,45 @@ class _PostFacts extends StatelessWidget {
           _FactText(fact),
         ],
       ],
+    );
+  }
+}
+
+/// "ดูรูป (24)" — every photo in the post, opened full size in one gallery.
+class _PhotosPill extends StatelessWidget {
+  const _PhotosPill({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.brandPurple,
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.photo_library_outlined,
+                size: 15, color: Colors.white),
+            const SizedBox(width: 5),
+            Text(
+              'ดูรูป ($count)',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -705,11 +760,13 @@ class _RoundGlassButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    this.iconColor = AppColors.foreground,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -725,7 +782,7 @@ class _RoundGlassButton extends StatelessWidget {
             shape: BoxShape.circle,
             color: Colors.white.withValues(alpha: 0.9),
           ),
-          child: Icon(icon, size: 16, color: AppColors.foreground),
+          child: Icon(icon, size: 16, color: iconColor),
         ),
       ),
     );
@@ -1313,7 +1370,7 @@ class _CountChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.line,
+        color: compact ? AppColors.postPurpleWell : AppColors.line,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(

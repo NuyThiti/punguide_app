@@ -230,12 +230,12 @@ class _TabBody extends ConsumerWidget {
     );
   }
 
-  /// An album *is* a trip — a photo post or a clip — so it opens the same
-  /// page any other row would.
+  /// An album *is* a trip, but it opens its own page rather than the post
+  /// one: the album view is the pictures, not the write-up around them.
   void _openAlbum(BuildContext context, TripListItem album) {
-    context.goNamed(
-      AppRoute.tripDetail.name,
-      params: {'tripId': album.id},
+    context.pushNamed(
+      AppRoute.albumDetail.name,
+      params: {'albumId': album.id},
     );
   }
 

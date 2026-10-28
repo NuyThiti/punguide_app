@@ -105,9 +105,13 @@ final profileTabRowsProvider =
 /// `limit` at 100 and 400s above it.
 const albumsPageSize = 20;
 
-/// The kinds of trip that are albums: photo posts and Puntok clips. Plans are
-/// not albums — they live on the posts tab.
-const albumTypes = <TripType>[TripType.content, TripType.puntok];
+/// The kinds of trip that are albums: photo posts and plan trips.
+///
+/// Puntok is deliberately absent — a clip is not a page of pictures. Asking
+/// the server to leave it out is not enough on its own, though: it still
+/// answers a clip as `type: "content"` with a video cover, so the rows come
+/// back through `withoutClips` as well. See `shared/models/feed_rows.dart`.
+const albumTypes = <TripType>[TripType.content, TripType.planTrip];
 
 /// อัลบั้มของฉัน (Personal), from `GET /trips/mine?type=content,puntok`.
 ///
@@ -124,9 +128,15 @@ class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
   bool _exhausted = false;
   bool get hasMore => !_exhausted;
 
+  /// Rows pulled from the server, which is what `offset` counts. Kept apart
+  /// from the list length: clips are dropped after the fetch, so walking the
+  /// offset by what survives would re-read rows already seen.
+  int _fetched = 0;
+
   @override
   Future<List<TripListItem>> build() async {
     _exhausted = false;
+    _fetched = 0;
     // 401 for an anonymous caller, so an empty shelf rather than an error —
     // and a re-read the moment the session changes.
     if (ref.watch(authSessionProvider) == null) {
@@ -135,13 +145,7 @@ class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
     }
 
     final api = await ref.watch(plunoApiProvider.future);
-    final page = await api.trips.mine(
-      types: albumTypes,
-      limit: albumsPageSize,
-      offset: 0,
-    );
-    _exhausted = page.length < albumsPageSize;
-    return page;
+    return _page(api, offset: 0);
   }
 
   /// Appends the next page. Does nothing while one is already in flight or
@@ -154,12 +158,7 @@ class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
         .copyWithPrevious(AsyncData<List<TripListItem>>(current));
     state = await AsyncValue.guard(() async {
       final api = await ref.read(plunoApiProvider.future);
-      final page = await api.trips.mine(
-        types: albumTypes,
-        limit: albumsPageSize,
-        offset: current.length,
-      );
-      _exhausted = page.length < albumsPageSize;
+      final page = await _page(api, offset: _fetched);
       // The window can shift when a trip is created mid-walk, so drop any id
       // already held rather than printing it twice.
       final seen = {for (final trip in current) trip.id};
@@ -175,18 +174,30 @@ class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
   Future<void> refresh() async {
     state = await AsyncValue.guard(() async {
       _exhausted = false;
+      _fetched = 0;
       if (ref.read(authSessionProvider) == null) {
         _exhausted = true;
         return const <TripListItem>[];
       }
       final api = await ref.read(plunoApiProvider.future);
-      final page = await api.trips.mine(
-        types: albumTypes,
-        limit: albumsPageSize,
-        offset: 0,
-      );
-      _exhausted = page.length < albumsPageSize;
-      return page;
+      return _page(api, offset: 0);
     });
+  }
+
+  /// One page: asked for by type, then stripped of the clips the server sends
+  /// back as `content` anyway.
+  ///
+  /// `_exhausted` is judged on what the *server* sent, never on what survives
+  /// the filter — a page of twenty that happens to be all clips means the
+  /// shelf goes on, not that it ended.
+  Future<List<TripListItem>> _page(PlunoApi api, {required int offset}) async {
+    final page = await api.trips.mine(
+      types: albumTypes,
+      limit: albumsPageSize,
+      offset: offset,
+    );
+    _fetched = offset + page.length;
+    _exhausted = page.length < albumsPageSize;
+    return withoutClips(page);
   }
 }

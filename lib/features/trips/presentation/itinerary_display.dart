@@ -145,6 +145,10 @@ const _monthNames = <String>[
   'Dec',
 ];
 
+/// "12 Oct 2026" — the long form an album header prints.
+String dayMonthYear(DateTime date) =>
+    '${date.day} ${_monthNames[date.month - 1]} ${date.year}';
+
 String slashDate(DateTime date) =>
     '${_two(date.day)}/${_two(date.month)}/${date.year}';
 

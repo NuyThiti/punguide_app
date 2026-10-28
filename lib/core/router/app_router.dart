@@ -18,6 +18,7 @@ import '../../features/my_trips/presentation/my_trips_screen.dart';
 import '../../features/paigun/presentation/paigun_filter_screen.dart';
 import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/account_screen.dart';
+import '../../features/profile/presentation/album_detail_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
 import '../../features/puntok/presentation/puntok_viewer_screen.dart';
@@ -52,6 +53,7 @@ enum AppRoute {
   createPuntok,
   profile,
   profileAccount,
+  albumDetail,
   locationAccess,
   locationPicker,
 }
@@ -272,6 +274,14 @@ final appRouter = GoRouter(
     ),
     // Declared before '/profile' is irrelevant here (distinct literals), but
     // kept next to it so the pair stays obvious.
+    GoRoute(
+      path: '/albums/:albumId',
+      name: AppRoute.albumDetail.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        AlbumDetailScreen(albumId: state.params['albumId']!),
+      ),
+    ),
     GoRoute(
       path: '/profile/account',
       name: AppRoute.profileAccount.name,
