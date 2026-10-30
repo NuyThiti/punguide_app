@@ -9,7 +9,6 @@ import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/features/home/presentation/widgets/home_assistant_fab.dart';
 import 'package:pluno/shared/widgets/app_bottom_nav.dart';
 
-import 'support/fake_api.dart';
 import 'support/home_feed_fixtures.dart';
 
 Widget _harness(List<TripListItem> trips) {
@@ -58,16 +57,20 @@ void main() {
     await tester.pumpWidget(_harness(_trips));
     await tester.pumpAndSettle();
 
-    expect(find.text('PunGuide'), findsOneWidget);
+    // The hero's own "PunGuide" title bar was retired when the nav bar took
+    // over the profile entry (36e0aa8); the greeting is the hero's first line
+    // now.
     expect(find.text('วันนี้อยากไปหรือปัน ?'), findsOneWidget);
     expect(find.text('ไปกัน'), findsOneWidget);
     expect(find.text('ปันไกด์'), findsOneWidget);
-    // Each appears twice: once as a filter chip, once as a section heading.
+    // Each is both a filter chip and a section heading. "Top PunGuide" also
+    // rides on the cards themselves as a badge, so the count depends on the
+    // feed — what matters here is that the chip and the heading are both up.
     expect(find.text('Top Destination'), findsNWidgets(2));
-    expect(find.text('Top PunGuide'), findsNWidgets(2));
+    expect(find.text('Top PunGuide'), findsAtLeastNWidgets(2));
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Paigun'), findsOneWidget);
-    expect(find.text('Create'), findsOneWidget);
+    // The create button is the unlabelled bump in the middle of the bar.
     expect(find.text('Puntok'), findsOneWidget);
     expect(find.text('My Post'), findsOneWidget);
     expect(find.text(_trips.first.title), findsOneWidget);

@@ -88,6 +88,17 @@ void main() {
     expect(find.text('ค้นหาชื่อที่ ย่าน หรือประเทศ'), findsOneWidget);
   });
 
+  testWidgets('the focused search field types from the left', (tester) async {
+    await tester.pumpWidget(_harness(_FakeLookup(), [feedTrip()]));
+    await tester.pumpAndSettle();
+    await _openPicker(tester);
+
+    // The picker autofocuses, so the caret would otherwise sit stranded in
+    // the middle of the centred hint.
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.textAlign, TextAlign.start);
+  });
+
   testWidgets('before typing it offers destinations drawn from the feed',
       (tester) async {
     await tester.pumpWidget(_harness(_FakeLookup(), [

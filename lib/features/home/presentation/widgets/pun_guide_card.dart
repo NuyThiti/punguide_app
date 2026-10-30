@@ -26,14 +26,16 @@ class PunGuideCard extends StatelessWidget {
     this.featured = false,
     this.saved,
     this.onDelete,
+    this.isMine = false,
   });
 
   final TripListItem trip;
   final VoidCallback onTap;
 
-  /// Null leaves the corner empty. A wall of the traveller's *own* trips
-  /// passes null: you cannot bookmark your own trip, so an inert button there
-  /// was only ever something to tap and be told no.
+  /// Null leaves the bookmark inert — a readout rather than a button. A wall
+  /// of the traveller's own trips passes null, because you cannot bookmark
+  /// your own trip; say so with [isMine] as well, which is what the card
+  /// reads for the rest of its decisions.
   final VoidCallback? onSave;
 
   /// "2.3 Km", or null when the destination has no coordinates.
@@ -52,9 +54,22 @@ class PunGuideCard extends StatelessWidget {
   /// slot is better spent on the one action that belongs there.
   final VoidCallback? onDelete;
 
+  /// Whether this row belongs to the traveller looking at it.
+  ///
+  /// A wall of their own trips says so once, for the whole wall. Two things
+  /// turn on it: the creator pill goes (they know whose these are, and the
+  /// cover has better uses for the width), and a tally nobody has added to
+  /// disappears instead of leaving a bare icon they cannot act on.
+  final bool isMine;
+
   /// Only the cover has a fixed shape; the card is as tall as its own text.
   static const double coverAspectRatio = 0.97;
 
+  /// The cover's corner holds delete and nothing else.
+  ///
+  /// Bookmarking moved down to the counts row, where the save tally already
+  /// sits — one place to read the number and one place to change it, instead
+  /// of a button up here that said the same thing twice.
   Widget? _corner(BuildContext context) {
     if (onDelete case final onDelete?) {
       return _CornerButton(
@@ -63,9 +78,6 @@ class PunGuideCard extends StatelessWidget {
         color: AppColors.brandOrangeDeep,
         onTap: onDelete,
       );
-    }
-    if (onSave case final onSave?) {
-      return _SaveButton(saved: saved ?? trip.isSaved, onTap: onSave);
     }
     return null;
   }
@@ -115,8 +127,7 @@ class PunGuideCard extends StatelessWidget {
                       left: 10,
                       child: _FeaturedBadge(),
                     ),
-                  // Delete wins the corner when a wall offers it; otherwise
-                  // the bookmark, and nothing at all when neither applies.
+                  // Delete is the only thing the corner carries now.
                   if (_corner(context) case final corner?)
                     Positioned(top: 10, right: 10, child: corner),
                   Positioned(
@@ -128,9 +139,15 @@ class PunGuideCard extends StatelessWidget {
                     // left the creator a few points to overflow out of.
                     child: Row(
                       children: [
-                        Flexible(child: _TypePill(guide: guide, accent: accent)),
-                        const SizedBox(width: 6),
-                        Flexible(child: _CreatorPill(creator: trip.creator)),
+                        Flexible(
+                          child: _TypePill(guide: guide, accent: accent),
+                        ),
+                        // Whose trip this is only tells the traveller
+                        // something on someone else's wall.
+                        if (!isMine) ...[
+                          const SizedBox(width: 6),
+                          Flexible(child: _CreatorPill(creator: trip.creator)),
+                        ],
                       ],
                     ),
                   ),
@@ -163,7 +180,12 @@ class PunGuideCard extends StatelessWidget {
                         : Colors.white,
                   ),
                   const SizedBox(height: 10),
-                  _StatsLine(trip: trip),
+                  _StatsLine(
+                    trip: trip,
+                    saved: saved ?? trip.isSaved,
+                    onSave: onSave,
+                    isMine: isMine,
+                  ),
                 ],
               ),
             ),
@@ -245,35 +267,7 @@ class _FeaturedBadge extends StatelessWidget {
   }
 }
 
-class _SaveButton extends StatelessWidget {
-  const _SaveButton({required this.saved, required this.onTap});
-
-  final bool saved;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          saved ? Icons.bookmark : Icons.bookmark_border,
-          size: 16,
-          color: AppColors.cardPlanAccent,
-        ),
-      ),
-    );
-  }
-}
-
-/// The same white disc as [_SaveButton], for an action that is not a
-/// bookmark.
+/// A white disc in the cover's corner.
 class _CornerButton extends StatelessWidget {
   const _CornerButton({
     required this.icon,
@@ -480,9 +474,24 @@ class _PlaceLine extends StatelessWidget {
 /// The left half is [tripFactsLine], so a post prints its places where a plan
 /// prints its days and budget rather than leaving the line blank.
 class _StatsLine extends StatelessWidget {
-  const _StatsLine({required this.trip});
+  const _StatsLine({
+    required this.trip,
+    required this.saved,
+    required this.isMine,
+    this.onSave,
+  });
 
   final TripListItem trip;
+  final bool saved;
+  final bool isMine;
+
+  /// Null leaves the bookmark a readout rather than a button.
+  final VoidCallback? onSave;
+
+  /// A tally nobody has added to yet is still worth an icon on someone else's
+  /// card — it is the affordance. On the traveller's own card there is nothing
+  /// to do with it, so a zero leaves no trace at all.
+  bool _shows(int count) => count > 0 || !isMine;
 
   @override
   Widget build(BuildContext context) {
@@ -522,15 +531,16 @@ class _StatsLine extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _Stat(
-                  icon: Icons.shuffle,
-                  label: compactCount(trip.remixCount),
-                ),
-                const SizedBox(width: 10),
-                _Stat(
-                  icon: Icons.bookmark_border,
-                  label: compactCount(trip.likeCount),
-                ),
+                if (_shows(trip.remixCount)) ...[
+                  _Stat(icon: Icons.shuffle, count: trip.remixCount),
+                  if (_shows(trip.likeCount)) const SizedBox(width: 10),
+                ],
+                if (_shows(trip.likeCount))
+                  _Stat(
+                    icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                    count: trip.likeCount,
+                    onTap: onSave,
+                  ),
               ],
             ),
           ),
@@ -540,28 +550,51 @@ class _StatsLine extends StatelessWidget {
   }
 }
 
+/// One tally. The count is dropped at zero — the icon alone reads as "none
+/// yet" without the noise of a 0 on every fresh card.
 class _Stat extends StatelessWidget {
-  const _Stat({required this.icon, required this.label});
+  const _Stat({required this.icon, required this.count, this.onTap});
 
   final IconData icon;
-  final String label;
+  final int count;
+
+  /// Null leaves the tally inert, which is the case for every one but the
+  /// bookmark on someone else's card.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 13, color: AppColors.cardPlanAccent),
-        const SizedBox(width: 3),
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.cardFacts,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+        if (count > 0) ...[
+          const SizedBox(width: 3),
+          Text(
+            compactCount(count),
+            style: const TextStyle(
+              color: AppColors.cardFacts,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
+        ],
       ],
     );
+
+    if (onTap case final onTap?) {
+      return GestureDetector(
+        onTap: onTap,
+        // Opaque, so the tap stops here instead of opening the trip behind it,
+        // and so the padding counts as part of the target.
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: row,
+        ),
+      );
+    }
+    return row;
   }
 }
+

@@ -1698,7 +1698,7 @@ class _DestinationSearchPageState
 }
 
 /// The picker's hero bar: back, then the search pill.
-class _SearchHeader extends StatelessWidget {
+class _SearchHeader extends StatefulWidget {
   const _SearchHeader({
     required this.controller,
     required this.loading,
@@ -1714,7 +1714,43 @@ class _SearchHeader extends StatelessWidget {
   final VoidCallback onBack;
 
   @override
+  State<_SearchHeader> createState() => _SearchHeaderState();
+}
+
+class _SearchHeaderState extends State<_SearchHeader> {
+  /// Held here so the field's alignment can follow it: the hint is centred
+  /// while the field is idle, but a centred caret sitting in the middle of
+  /// the placeholder reads as though the cursor is lost, so typing starts at
+  /// the left like any other search box.
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChanged);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Only an untouched, empty field keeps the design's centred hint.
+  bool get _centred => !_focus.hasFocus && widget.controller.text.isEmpty;
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final loading = widget.loading;
+    final onChanged = widget.onChanged;
+    final onSubmit = widget.onSubmit;
+    final onBack = widget.onBack;
     // The hero runs behind the status bar, so its height has to include that
     // inset as well: at a fixed 118 the padding below the notch exceeded the
     // box and collapsed the search pill to nothing on any device with one.
@@ -1757,8 +1793,9 @@ class _SearchHeader extends StatelessWidget {
                   Expanded(
                     child: TextField(
                       controller: controller,
+                      focusNode: _focus,
                       autofocus: true,
-                      textAlign: TextAlign.center,
+                      textAlign: _centred ? TextAlign.center : TextAlign.start,
                       textInputAction: TextInputAction.search,
                       onChanged: onChanged,
                       onSubmitted: (_) => onSubmit(),

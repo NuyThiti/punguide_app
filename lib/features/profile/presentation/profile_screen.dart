@@ -219,6 +219,8 @@ class _TabBody extends ConsumerWidget {
             child: PunGuideGrid(
               trips: trips,
               featuredOf: (trip) => featured.contains(trip.id),
+              // Every tab here is the traveller's own shelf.
+              isMine: true,
               onDelete: tripDeleteEnabled
                   ? (trip) => confirmDeleteTrip(context, ref, trip)
                   : null,

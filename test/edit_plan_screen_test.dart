@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pluno/features/location_access/presentation/providers/location_providers.dart';
+import 'package:pluno/features/location_access/domain/location_service.dart';
+import 'package:pluno/features/location_access/data/location_permission_store.dart';
+import 'package:pluno/shared/widgets/cover_image.dart';
+import 'package:pluno/features/create_trip/presentation/widgets/location_picker_sheet.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/travel_leg_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -276,6 +281,20 @@ Future<void> dragStopTo(WidgetTester tester, Finder handle, Offset to) async {
   await gesture.up();
 }
 
+/// Opens the first stop's ⋯ menu and picks [label] (แก้ไข or ลบ) from it.
+Future<void> openStopAction(WidgetTester tester, String label) async {
+  final more = find.byIcon(Icons.more_horiz).first;
+  await tester.ensureVisible(more);
+  await tester.pumpAndSettle();
+  await tester.tap(more);
+  await tester.pumpAndSettle();
+  await tester.tap(find.descendant(
+    of: find.byKey(stopMenuSheetKey),
+    matching: find.text(label),
+  ));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(() {
     adapter = FakeAdapter({
@@ -371,7 +390,8 @@ void main() {
     expect(find.text('วันที่ 2'), findsOneWidget);
     expect(find.text('วันที่ 3'), findsOneWidget);
     expect(find.text('Sat, 22 Aug'), findsOneWidget);
-    expect(find.text('สถานที่'), findsNWidgets(3));
+    // One add button, in the ตารางแผน heading — not one per day.
+    expect(find.text('สถานที่'), findsOneWidget);
   });
 
   testWidgets('ตารางแผน collapses and ที่พักของคุณ opens', (tester) async {
@@ -462,21 +482,14 @@ void main() {
     expect(find.text('งบ/วัน'), findsOneWidget);
   });
 
-  testWidgets('สภาพอากาศ says so instead of reusing จัดแผน', (tester) async {
+  testWidgets('สภาพอากาศ is not offered as a tab', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    expect(find.text('ตารางแผน'), findsOneWidget);
-
-    await tester.tap(find.text('สภาพอากาศ'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ตารางแผน'), findsNothing);
-    expect(find.text('สภาพอากาศ ยังไม่เปิดใช้งาน'), findsOneWidget);
-
-    await tester.tap(find.text('จัดแผน'));
-    await tester.pumpAndSettle();
-    expect(find.text('ตารางแผน'), findsOneWidget);
+    expect(find.text('จัดแผน'), findsOneWidget);
+    expect(find.text('ทริปของฉัน'), findsOneWidget);
+    expect(find.text('สรุปงบ'), findsOneWidget);
+    expect(find.text('สภาพอากาศ'), findsNothing);
   });
 
   testWidgets('a stop shows its time, note, cost and position', (tester) async {
@@ -558,10 +571,13 @@ void main() {
     await tester.pumpAndSettle();
 
     // Day 1's only leg is already described, and nothing follows its last
-    // stop, so there is no add-travel row; days 2 and 3 do not exist here.
+    // stop, so there is no add-travel row.
     expect(find.text('เพิ่มการเดินทาง'), findsNothing);
+    // The trip claims three days and only day 1 has a row, but all three are
+    // listed — a day with no row is still a day you can add to.
     expect(find.text('วันที่ 1'), findsOneWidget);
-    expect(find.text('วันที่ 2'), findsNothing);
+    expect(find.text('วันที่ 2'), findsOneWidget);
+    expect(find.text('วันที่ 3'), findsOneWidget);
   });
 
   testWidgets('a filled day lays out on a phone without overflow',
@@ -636,6 +652,44 @@ void main() {
     expect(find.text('วัดเชียงทอง'), findsNothing);
     expect(find.text('น้ำตกกวางสี'), findsOneWidget);
     expect(find.text('น้ำใสสีเทอร์ควอยซ์ ไปเช้าคนน้อย'), findsOneWidget);
+  });
+
+  testWidgets('each day here has its own + เพิ่มกิจกรรม, adding to that day',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _twoDays()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เพิ่มกิจกรรมในวันที่ 1'), findsOneWidget);
+
+    await tester.tap(find.text('วันที่ 2'));
+    await tester.pumpAndSettle();
+    final add = find.byKey(addActivityButtonKey);
+    expect(find.text('เพิ่มกิจกรรมในวันที่ 2'), findsOneWidget);
+
+    await tester.ensureVisible(add);
+    await tester.pumpAndSettle();
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+
+    // The sheet opens on the day the picker was showing, not the first.
+    expect(find.byType(AddPlaceSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AddPlaceSheet),
+        matching: find.text('Fri, 21 Aug'),
+      ),
+      findsWidgets,
+    );
   });
 
   testWidgets('a stop here shows its time in orange with leg and cost chips',
@@ -779,6 +833,132 @@ void main() {
     expect(find.text('แก้ไขทริป'), findsOneWidget);
   });
 
+  testWidgets('a photo added to a stop shows on its card, over the place photo',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    const uploaded = 'https://cdn.example.com/media/s1-thumb.jpg';
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+    // The stop's own upload only lives in the gallery, tagged with its id.
+    adapter.replies['GET /trips/trip-1/media'] = [
+      FakeReply(200, {
+        'tripId': 'trip-1',
+        'total': 2,
+        'page': 1,
+        'limit': 200,
+        'items': [
+          {
+            'id': 'm2',
+            'source': 'activity',
+            'sourceActivityId': 's1',
+            'urls': {
+              'large': 'https://cdn.example.com/l.jpg',
+              'thumbnail': uploaded
+            },
+          },
+          {
+            'id': 'm1',
+            'source': 'activity',
+            'sourceActivityId': 's1',
+            'urls': {
+              'large': 'https://cdn.example.com/old-l.jpg',
+              'thumbnail': 'https://cdn.example.com/old.jpg',
+            },
+          },
+        ],
+      })
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    bool showsUpload(Widget w) => w is CoverImage && w.source == uploaded;
+    // Newest first, so the latest upload is the one on the card.
+    expect(find.byWidgetPredicate(showsUpload), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is CoverImage && w.source == 'https://cdn.example.com/old.jpg'),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+    expect(find.byWidgetPredicate(showsUpload), findsOneWidget);
+  });
+
+  testWidgets('a stop card has one ⋯ button whose sheet offers แก้ไข and ลบ',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // The old inline edit and delete buttons are gone from the card.
+    expect(find.byTooltip('ลบสถานที่'), findsNothing);
+    expect(find.byTooltip('แก้ไขสถานที่'), findsNothing);
+
+    final more = find.byTooltip('ตัวเลือกสถานที่').first;
+    await tester.ensureVisible(more);
+    await tester.pumpAndSettle();
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+
+    final sheet = find.byKey(stopMenuSheetKey);
+    expect(sheet, findsOneWidget);
+    expect(find.descendant(of: sheet, matching: find.text('แก้ไข')),
+        findsOneWidget);
+    expect(
+        find.descendant(of: sheet, matching: find.text('ลบ')), findsOneWidget);
+
+    // Picking แก้ไข closes the menu and opens the stop's own sheet.
+    await tester.tap(find.descendant(of: sheet, matching: find.text('แก้ไข')));
+    await tester.pumpAndSettle();
+    expect(sheet, findsNothing);
+    expect(find.text('แก้ไขสถานที่'), findsOneWidget);
+  });
+
+  testWidgets('+ สถานที่ sits in the ตารางแผน heading and adds to day 1',
+      (tester) async {
+    tester.view.physicalSize = const Size(320 * 3, 1800 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    adapter.replies['GET /trips/trip-1'] = [
+      FakeReply(200, _tripJson(days: _filledDay()))
+    ];
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // Same row as the heading, even on the narrowest phone.
+    final add = find.text('สถานที่');
+    expect(add, findsOneWidget);
+    expect(
+        tester.getCenter(add).dy,
+        moreOrLessEquals(tester.getCenter(find.text('ตารางแผน')).dy,
+            epsilon: 2));
+
+    await tester.ensureVisible(add);
+    await tester.pumpAndSettle();
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    expect(find.byType(AddPlaceSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AddPlaceSheet),
+        matching: find.text('Thu, 20 Aug'),
+      ),
+      findsWidgets,
+    );
+  });
+
   testWidgets('ลบ asks first, then deletes the stop and refreshes the plan',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
@@ -793,7 +973,7 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await openStopAction(tester, 'ลบ');
     await tester.pumpAndSettle();
     expect(find.text('ลบสถานที่นี้?'), findsOneWidget);
 
@@ -802,7 +982,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(adapter.paths.contains('DELETE /items/s1'), isFalse);
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await openStopAction(tester, 'ลบ');
     await tester.pumpAndSettle();
     await tester.tap(find.text('ลบ').last);
     await tester.pumpAndSettle();
@@ -831,7 +1011,7 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await openStopAction(tester, 'ลบ');
     await tester.pumpAndSettle();
     await tester.tap(find.text('ลบ').last);
     await tester.pumpAndSettle();
@@ -881,7 +1061,7 @@ void main() {
       expect(inSheet('เพิ่มสถานที่'), findsNWidgets(2)); // title and button
       expect(inSheet('ยังไม่รู้จะไปไหน? สำรวจสถานที่แนะนำ'), findsOneWidget);
       for (final label in [
-        'ชื่อสถานที่ / กิจกรรม',
+        'ชื่อกิจกรรม',
         'วัน',
         'เวลา',
         'ประเภท',
@@ -937,6 +1117,119 @@ void main() {
       expect(body.containsKey('notes'), isFalse);
     });
 
+    testWidgets('every field the form collects reaches the server',
+        (tester) async {
+      // Two days, so the day picker has somewhere else to send the stop.
+      adapter = FakeAdapter(<String, List<FakeReply>>{
+        'GET /trips/trip-1': [
+          FakeReply(
+              200,
+              _tripJson(days: [
+                ..._filledDay(),
+                <String, dynamic>{
+                  'id': 'd2',
+                  'dayNumber': 2,
+                  'date': '2026-08-21',
+                  'activities': <Map<String, dynamic>>[],
+                },
+              ])),
+        ],
+        'POST /days/d2/items': [
+          FakeReply(201, <String, dynamic>{
+            'activity': <String, dynamic>{
+              'id': 'new',
+              'title': 'x',
+              'order': 0
+            },
+          }),
+        ],
+        'POST /trips/trip-1/itinerary/travel-segments/retry': [
+          FakeReply(200, <String, dynamic>{}),
+        ],
+      });
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      final add = find.text('สถานที่').first;
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'เช่น ทานอาหารเช้า, ชมพระอาทิตย์ตก'),
+          'วัดร่องขุ่น');
+      await tester.enterText(find.widgetWithText(TextField, '0'), '350');
+      await tester.enterText(
+          find.widgetWithText(TextField, 'เช่น ออกก่อนเวลา ~5 นาที'),
+          'ไปเช้าคนน้อย');
+      await tester.pumpAndSettle();
+
+      // Category
+      await tester.tap(find.text('ประเภทการเที่ยว'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ร้านอาหาร').last);
+      await tester.pumpAndSettle();
+
+      // Move it to วันที่ 2
+      await tester.tap(find.byType(DropdownButton<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('21 Aug').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(inSheet('เพิ่มสถานที่').last);
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('POST /days/d2/items');
+      expect(body, isNotNull, reason: 'the stop should go to the chosen day');
+      expect(body!['customName'], 'วัดร่องขุ่น');
+      expect(body['costAmount'], 350);
+      expect(body['costCurrency'], 'THB');
+      expect(body['notes'], 'ไปเช้าคนน้อย');
+      expect(body['category'], 'food');
+    });
+
+    testWidgets('a stop that was added is not reported as a failure',
+        (tester) async {
+      adapter = FakeAdapter(<String, List<FakeReply>>{
+        'GET /trips/trip-1': [FakeReply(200, _tripJson(days: _filledDay()))],
+        'POST /days/d1/items': [
+          FakeReply(201, <String, dynamic>{
+            'activity': <String, dynamic>{
+              'id': 'new',
+              'title': 'x',
+              'order': 0
+            },
+          }),
+        ],
+        // Re-measuring the legs is a courtesy after the write; the stop is
+        // already saved whether or not it succeeds.
+        'POST /trips/trip-1/travel-segments/retry': [
+          FakeReply(500, <String, dynamic>{'message': 'boom'}),
+        ],
+      });
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      final add = find.text('สถานที่').first;
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextField, 'เช่น ทานอาหารเช้า, ชมพระอาทิตย์ตก'),
+          'วัดร่องขุ่น');
+      await tester.pumpAndSettle();
+      await tester.tap(inSheet('เพิ่มสถานที่').last);
+      await tester.pumpAndSettle();
+
+      // The stop exists on the server…
+      expect(adapter.bodyOf('POST /days/d1/items'), isNotNull);
+      // …so the sheet must close rather than accuse the traveller of failing
+      // and invite a second tap that adds the stop twice.
+      expect(find.byType(AddPlaceSheet), findsNothing);
+      expect(find.textContaining('เพิ่มสถานที่ไม่สำเร็จ'), findsNothing);
+    });
+
     testWidgets('สำรวจ hands over to the explorer instead of stacking',
         (tester) async {
       await openSheet(tester);
@@ -983,6 +1276,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getRect(find.text('สร้างทริป')), navPinned);
     expect(tester.getRect(find.text('จัดแผน')), tabsPinned);
+  });
+
+  testWidgets('a stop added with no category still counts as a place',
+      (tester) async {
+    adapter = FakeAdapter(<String, List<FakeReply>>{
+      'GET /trips/trip-1': [
+        FakeReply(
+            200,
+            _tripJson(days: [
+              <String, dynamic>{
+                'id': 'd1',
+                'dayNumber': 1,
+                'date': '2026-08-20',
+                'activities': <Map<String, dynamic>>[
+                  // The add form leaves ประเภท empty unless it is picked.
+                  {'id': 's1', 'title': 'ร้านลับ', 'order': 0},
+                ],
+              },
+            ])),
+      ],
+    });
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // The plan gained a place, so the hero must not still read zero.
+    expectStat(tester, 'ที่เที่ยว', '1');
+  });
+
+  testWidgets('a part-filled plan still shows every day it claims',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 2200 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    // Four days of duration, but only day 1 has an itinerary row — the state
+    // a plan is in the moment something is added to its first day.
+    adapter = FakeAdapter(<String, List<FakeReply>>{
+      'GET /trips/trip-1': [
+        FakeReply(
+            200,
+            _tripJson(
+              days: _filledDay(),
+              schedule: <String, dynamic>{
+                'durationDays': 4,
+                'durationNights': 3
+              },
+            )),
+      ],
+    });
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // The days with no row yet must still be reachable, or nothing can ever
+    // be added to them.
+    for (final day in ['วันที่ 1', 'วันที่ 2', 'วันที่ 3', 'วันที่ 4']) {
+      expect(find.text(day), findsWidgets, reason: day);
+    }
   });
 
   testWidgets('a plan with no day rows yet creates one before adding',
@@ -1131,8 +1481,11 @@ void main() {
 
     expect(inBudgetTab('Thu, 20 Aug'), findsOneWidget);
     expect(inBudgetTab('฿9,200'), findsOneWidget);
+    // Days 2 and 3 are both in the plan — the trip is three days long — and
+    // neither was spent on.
     expect(inBudgetTab('Fri, 21 Aug'), findsOneWidget);
-    expect(inBudgetTab('฿0'), findsOneWidget);
+    expect(inBudgetTab('Sat, 22 Aug'), findsOneWidget);
+    expect(inBudgetTab('฿0'), findsNWidgets(2));
   });
 
   testWidgets('opening a day lists its own lines and nothing else',
@@ -1453,7 +1806,7 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.edit_outlined).first);
+    await openStopAction(tester, 'แก้ไข');
     await tester.pumpAndSettle();
 
     // Same sheet as + สถานที่, retitled, with the stop's own values in it.
@@ -1509,7 +1862,7 @@ void main() {
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.edit_outlined).first);
+    await openStopAction(tester, 'แก้ไข');
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).last, '');
@@ -1639,8 +1992,8 @@ void main() {
 
     await tester.tap(find.widgetWithText(FilledButton, 'บันทึก'));
     await tester.pumpAndSettle();
-    expect(adapter.bodyOf('PATCH /items/s2')?['travelTypeFromPrev'],
-        'rental_car');
+    expect(
+        adapter.bodyOf('PATCH /items/s2')?['travelTypeFromPrev'], 'rental_car');
   });
 
   testWidgets('ใช้กับทุกช่วงที่ว่าง fills every blank leg, and only those',
@@ -1668,10 +2021,12 @@ void main() {
     await tester.tap(find.byKey(travelTypeChipKey(TravelType.other)));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.descendant(
-        of: find.byType(TravelLegSheet),
-        matching: find.byType(TextField),
-      ).first,
+      find
+          .descendant(
+            of: find.byType(TravelLegSheet),
+            matching: find.byType(TextField),
+          )
+          .first,
       'สองแถว',
     );
     await tester.pumpAndSettle();
@@ -1825,7 +2180,7 @@ void main() {
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.edit_outlined).first);
+    await openStopAction(tester, 'แก้ไข');
     await tester.pumpAndSettle();
 
     // Day 1 is "Thu, 20 Aug"; pick day 2.
@@ -1901,7 +2256,8 @@ void main() {
       FakeReply(200, _tripJson(days: _filledDay())..['visibility'] = 'public')
     ];
     adapter.replies['PATCH /trips/trip-1'] = [
-      FakeReply(200, _tripJson(days: _filledDay())..['visibility'] = 'followers')
+      FakeReply(
+          200, _tripJson(days: _filledDay())..['visibility'] = 'followers')
     ];
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -1946,4 +2302,356 @@ void main() {
     expect(find.text('เข้าสู่ระบบก่อนเปลี่ยนการมองเห็น'), findsOneWidget);
     expect(find.text('Only me'), findsOneWidget);
   });
+
+  group('stop location', () {
+    Finder inSheet(String text) => find.descendant(
+          of: find.byType(AddPlaceSheet),
+          matching: find.text(text),
+        );
+
+    Map<String, dynamic> place(String id, String name) => <String, dynamic>{
+          'id': id,
+          'name': name,
+          'address': 'หลวงพระบาง',
+          'lat': 19.89,
+          'lng': 102.13,
+          'imageUrl': '',
+        };
+
+    Future<void> openAdd(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _filledDay()))
+      ];
+      adapter.replies['GET /places/search'] = [
+        FakeReply(
+            200, [place('p-wat', 'วัดเชียงทอง'), place('p-x', 'ตลาดเช้า')])
+      ];
+      adapter.replies['POST /days/d1/items'] = [
+        FakeReply(201, <String, dynamic>{
+          'activity': <String, dynamic>{'id': 'new', 'title': 'x', 'order': 2},
+        })
+      ];
+      adapter.replies['POST /trips/trip-1/travel-segments/retry'] = [
+        FakeReply(200, const <dynamic>[])
+      ];
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      final add = find.text('สถานที่').first;
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> pickPlace(
+        WidgetTester tester, String query, String name) async {
+      await tester.tap(find.byKey(const ValueKey('stop-location-field')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(LocationPickerSheet),
+          matching: find.byType(TextField),
+        ),
+        query,
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      await tester.tap(find
+          .descendant(
+            of: find.byType(LocationPickerSheet),
+            matching: find.text(name),
+          )
+          .first);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a name and a place go up together', (tester) async {
+      await openAdd(tester);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'เช่น ทานอาหารเช้า, ชมพระอาทิตย์ตก'),
+        'ใส่บาตรตอนเช้า',
+      );
+      await pickPlace(tester, 'วัด', 'วัดเชียงทอง');
+
+      // The pick shows in the field, apart from the name.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('stop-location-field')),
+          matching: find.text('วัดเชียงทอง'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(inSheet('เพิ่มสถานที่').last);
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('POST /days/d1/items')!;
+      expect(body['customName'], 'ใส่บาตรตอนเช้า');
+      expect(body['placeId'], 'p-wat');
+      // Our own place ids, with photos resolved — never a photo-less record.
+      final search =
+          adapter.requests.firstWhere((r) => r.path == '/places/search');
+      expect(search.queryParameters['resolvePhotos'], true);
+    });
+
+    testWidgets('a place alone is enough; the server names the stop',
+        (tester) async {
+      await openAdd(tester);
+
+      FilledButton add() => tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'เพิ่มสถานที่'));
+      expect(add().onPressed, isNull);
+
+      await pickPlace(tester, 'ตลาด', 'ตลาดเช้า');
+      expect(add().onPressed, isNotNull);
+
+      await tester.tap(inSheet('เพิ่มสถานที่').last);
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('POST /days/d1/items')!;
+      expect(body['placeId'], 'p-x');
+      expect(body.containsKey('customName'), isFalse);
+    });
+
+    testWidgets('editing a place-only stop starts with an empty name',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      final days = _filledDay();
+      final first = (days[0]['activities'] as List)[0] as Map<String, dynamic>;
+      first['location'] = <String, dynamic>{
+        'name': 'วัดเชียงทอง',
+        'placeId': 'p-wat',
+        'lat': 19.89,
+        'lng': 102.13,
+      };
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: days))
+      ];
+      adapter.replies['GET /places/search'] = [
+        FakeReply(200, [place('p-x', 'ตลาดเช้า')])
+      ];
+      adapter.replies['PATCH /items/s1'] = [
+        FakeReply(200, <String, dynamic>{
+          'id': 's1',
+          'title': 'ตลาดเช้า',
+          'order': 0,
+          'cost': 300,
+        })
+      ];
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await openStopAction(tester, 'แก้ไข');
+      await tester.pumpAndSettle();
+
+      // Title == place name, so the stop is just the place: the name field
+      // stays empty rather than repeating it.
+      expect(
+        tester
+            .widget<TextField>(find.widgetWithText(
+                TextField, 'เช่น ทานอาหารเช้า, ชมพระอาทิตย์ตก'))
+            .controller!
+            .text,
+        isEmpty,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('stop-location-field')),
+          matching: find.text('วัดเชียงทอง'),
+        ),
+        findsOneWidget,
+      );
+
+      // Removing the place with no name leaves nothing to save.
+      await tester.tap(find.byTooltip('เอาสถานที่ออก'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'บันทึก'))
+            .onPressed,
+        isNull,
+      );
+
+      // Picking another place sends only the place.
+      await pickPlace(tester, 'ตลาด', 'ตลาดเช้า');
+      await tester.tap(find.text('บันทึก'));
+      await tester.pumpAndSettle();
+      final body = adapter.bodyOf('PATCH /items/s1')!;
+      expect(body['placeId'], 'p-x');
+      expect(body.containsKey('customName'), isFalse);
+    });
+  });
+
+  group('Add Location sheet', () {
+    Map<String, dynamic> place(String id, String name, double lat) =>
+        <String, dynamic>{
+          'id': id,
+          'name': name,
+          'address': 'หลวงพระบาง',
+          'lat': lat,
+          'lng': 102.13,
+          'imageUrl': '',
+        };
+
+    Future<void> openPicker(
+      WidgetTester tester, {
+      required LocationService service,
+      List<Map<String, dynamic>>? days,
+    }) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: days ?? _filledDay()))
+      ];
+      adapter.replies['GET /places/suggest'] = [
+        // Popularity order from the server; the sheet re-sorts by distance.
+        FakeReply(200, [
+          place('p-far', 'พูสี', 19.9),
+          place('p-near', 'วัดเชียงทอง', 19.8901),
+        ])
+      ];
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+          locationServiceProvider.overrideWithValue(service),
+          locationPermissionStoreProvider
+              .overrideWithValue(InMemoryLocationPermissionStore()),
+        ],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(routes: [
+            GoRoute(
+              path: '/',
+              name: AppRoute.editTrip.name,
+              builder: (_, __) => const EditTripScreen(tripId: 'trip-1'),
+            ),
+          ]),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> tapAddAndLocation(WidgetTester tester) async {
+      final add = find.text('สถานที่').first;
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('stop-location-field')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('opens as the reference draws it', (tester) async {
+      await openPicker(tester, service: const UnsupportedLocationService());
+      await tapAddAndLocation(tester);
+
+      expect(find.text('Add Location'), findsOneWidget);
+      expect(find.text('ค้นหาสถานที่'), findsOneWidget);
+      expect(find.text('Use Current location'), findsOneWidget);
+      // A new stop has no place to take off.
+      expect(find.text('ลบสถานที่ออกจากจุดนี้'), findsNothing);
+    });
+
+    testWidgets('Use Current location lists places nearby, nearest first',
+        (tester) async {
+      await openPicker(tester, service: _FixedLocation(19.89, 102.13));
+      await tapAddAndLocation(tester);
+
+      await tester.tap(find.text('Use Current location'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ใกล้ตำแหน่งของคุณ'), findsOneWidget);
+      final near = tester.getTopLeft(find.text('วัดเชียงทอง').last).dy;
+      final far = tester.getTopLeft(find.text('พูสี').last).dy;
+      expect(near, lessThan(far));
+
+      final suggest =
+          adapter.requests.firstWhere((r) => r.path == '/places/suggest');
+      expect(suggest.queryParameters['lat'], 19.89);
+
+      // Picking one fills the field with a real place.
+      await tester.tap(find
+          .descendant(
+            of: find.byType(LocationPickerSheet),
+            matching: find.text('วัดเชียงทอง'),
+          )
+          .first);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('stop-location-field')),
+          matching: find.text('วัดเชียงทอง'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('with no way to locate, it says so instead of failing',
+        (tester) async {
+      // What every phone does today: no location plugin, and signed out
+      // here, so there is no stored position to fall back on either.
+      await openPicker(tester, service: const UnsupportedLocationService());
+      await tapAddAndLocation(tester);
+
+      await tester.tap(find.text('Use Current location'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ยังไม่มีตำแหน่งปัจจุบัน ลองค้นหาด้วยชื่อแทน'),
+          findsOneWidget);
+      expect(adapter.paths.any((p) => p.contains('/places/suggest')), isFalse);
+    });
+
+    testWidgets('ลบสถานที่ออกจากจุดนี้ takes the place off the stop',
+        (tester) async {
+      final days = _filledDay();
+      ((days[0]['activities'] as List)[0] as Map<String, dynamic>)['location'] =
+          <String, dynamic>{
+        'name': 'วัดเชียงทอง',
+        'placeId': 'p-wat',
+        'lat': 19.89,
+        'lng': 102.13,
+      };
+      await openPicker(tester,
+          service: const UnsupportedLocationService(), days: days);
+
+      await openStopAction(tester, 'แก้ไข');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('stop-location-field')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('ลบสถานที่ออกจากจุดนี้'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LocationPickerSheet), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('stop-location-field')),
+          matching: find.text('เลือกสถานที่'),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+}
+
+/// A device that grants permission and reports one fixed position.
+class _FixedLocation implements LocationService {
+  _FixedLocation(this.latitude, this.longitude);
+
+  final double latitude;
+  final double longitude;
+
+  @override
+  Future<LocationPermissionStatus> requestPermission() async =>
+      LocationPermissionStatus.granted;
+
+  @override
+  Future<LocationFix?> currentFix() async =>
+      LocationFix(latitude: latitude, longitude: longitude);
 }

@@ -6,16 +6,21 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:pluno/features/launch/presentation/launch_screen.dart';
 import 'package:pluno/main.dart';
 
 void main() {
-  testWidgets('shows the PunGuide home screen', (WidgetTester tester) async {
+  testWidgets('the app boots to the launch screen',
+      (WidgetTester tester) async {
     debugNetworkImageHttpClientProvider = () => _MockHttpClient();
     await tester.pumpWidget(const ProviderScope(child: PlunoApp()));
     await tester.pump();
 
-    expect(find.text('PunGuide'), findsOneWidget);
-    expect(find.text('วันนี้อยากไปหรือปัน ?'), findsOneWidget);
+    // The app opens on /start, not Home — the launch screen decides where to
+    // send the traveller once the session has been restored. It carries no
+    // text of its own, so the screen itself is what there is to assert.
+    expect(find.byType(LaunchScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
 
     debugNetworkImageHttpClientProvider = null;
   });

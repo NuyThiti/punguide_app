@@ -8,6 +8,7 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../trips/presentation/itinerary_display.dart';
+import 'location_picker_sheet.dart';
 
 /// One day the new stop can be filed under.
 class AddPlaceDay {
@@ -102,13 +103,32 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   final List<XFile> _photos = <XFile>[];
   bool _saving = false;
 
+  /// Where the stop happens — one of our `places`, kept apart from the
+  /// activity name. The server titles a stop `customName ?? place.name`, so
+  /// both can be set: "ทานอาหารเช้า" at "ร้านโจ๊กสามย่าน".
+  String? _placeId;
+  String? _placeName;
+
+  /// What edit mode opened with, so only real changes go up.
+  String? _initialPlaceId;
+  String _initialName = '';
+
   @override
   void initState() {
     super.initState();
     _dayId = widget.initialDayId;
     final stop = widget.editing;
     if (stop != null) {
-      _nameController.text = stop.title;
+      final location = stop.location;
+      _placeId = location?.placeId;
+      _placeName = location?.name;
+      _initialPlaceId = _placeId;
+      // The response has no customName: a title equal to the place's name
+      // means the stop is just the place, so the name field starts empty
+      // rather than repeating the location underneath it.
+      _initialName =
+          location != null && stop.title == location.name ? '' : stop.title;
+      _nameController.text = _initialName;
       _time = _parseTime(stop.time);
       _category = stop.category;
       if (stop.cost > 0) _costController.text = _trimCost(stop.cost);
@@ -144,10 +164,34 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
       ? value.round().toString()
       : value.toStringAsFixed(2);
 
-  /// The name is the only thing the stop cannot do without — everything else
-  /// on this form is optional, which is why the design greys the button out
-  /// until something is typed.
-  bool get _canAdd => _nameController.text.trim().isNotEmpty && !_saving;
+  /// A stop needs a name or a place — the server takes either, and rejects a
+  /// stop with neither. Everything else on the form is optional.
+  bool get _canAdd =>
+      (_nameController.text.trim().isNotEmpty || _placeId != null) && !_saving;
+
+  Future<void> _pickLocation() async {
+    final name = _nameController.text.trim();
+    final picked = await showLocationPicker(
+      context,
+      // The name is often the place ("วัดเชียงทอง"), so start the search there.
+      initial: _placeId != null ? null : (name.isEmpty ? null : name),
+      hasPlace: _placeId != null,
+    );
+    if (picked == null || !mounted) return;
+    if (identical(picked, clearedLocation) || picked.id.isEmpty) {
+      _clearLocation();
+      return;
+    }
+    setState(() {
+      _placeId = picked.id;
+      _placeName = picked.name;
+    });
+  }
+
+  void _clearLocation() => setState(() {
+        _placeId = null;
+        _placeName = null;
+      });
 
   double? get _cost {
     final parsed =
@@ -187,11 +231,16 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
     if (!_canAdd) return;
     if (_isEditing) return _save();
     setState(() => _saving = true);
+    // Held because the snackbar below is shown after this sheet has gone.
+    final messenger = ScaffoldMessenger.of(context);
+    final String activityId;
     try {
       final api = await ref.read(plunoApiProvider.future);
+      final name = _nameController.text.trim();
       final created = await api.itinerary.addItem(
         _dayId,
-        customName: _nameController.text.trim(),
+        customName: name.isEmpty ? null : name,
+        placeId: _placeId,
         startTime: _startTime,
         category: _category,
         costAmount: _cost,
@@ -202,24 +251,66 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
         // Legs are recalculated once at the end rather than per write.
         calculateTravelSegments: false,
       );
+      activityId = created.activity.id;
+    } on ApiException catch (failure) {
+      _fail('เพิ่มสถานที่ไม่สำเร็จ: ${failure.message}');
+      return;
+    } catch (error) {
+      _fail('เพิ่มสถานที่ไม่สำเร็จ: $error');
+      return;
+    }
 
-      // Photos cannot ride along with the stop — they are uploaded against the
-      // activity id the server just handed back.
+    // The stop exists from here on. Anything that fails below is follow-up
+    // work, and saying "เพิ่มสถานที่ไม่สำเร็จ" for it would be a lie that
+    // also invites a second tap — and a duplicate stop.
+    final problem = await _afterWrite(activityId);
+
+    if (!mounted) return;
+    Navigator.of(context).pop(AddPlaceOutcome.added);
+    if (problem != null) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(problem)));
+    }
+  }
+
+  /// Pushes the picked photos at the stop the server just made. Returns a
+  /// message when they did not make it, or null when there was nothing to
+  /// send or it all went up.
+  Future<String?> _uploadPhotos(String activityId) async {
+    if (_photos.isEmpty) return null;
+    try {
+      final api = await ref.read(plunoApiProvider.future);
       for (final photo in _photos) {
         await api.media.upload(
           widget.tripId,
           filePath: photo.path,
-          activityId: created.activity.id,
+          activityId: activityId,
         );
       }
-      await api.itinerary.retryTravelSegments(widget.tripId);
-
-      if (mounted) Navigator.of(context).pop(AddPlaceOutcome.added);
-    } on ApiException catch (failure) {
-      _fail('เพิ่มสถานที่ไม่สำเร็จ: ${failure.message}');
+      return null;
     } catch (error) {
-      _fail('เพิ่มสถานที่ไม่สำเร็จ: $error');
+      debugPrint('Stop photo upload failed: $error');
+      return 'บันทึกสถานที่แล้ว แต่อัปโหลดรูปไม่สำเร็จ';
     }
+  }
+
+  /// Uploads the photos and asks the server to re-measure the legs, reporting
+  /// only what the traveller can act on. Returns null when all was well.
+  Future<String?> _afterWrite(String activityId) async {
+    String? problem;
+    final api = await ref.read(plunoApiProvider.future);
+
+    problem = await _uploadPhotos(activityId);
+
+    try {
+      await api.itinerary.retryTravelSegments(widget.tripId);
+    } catch (error) {
+      // The legs are re-measured on later writes too, and a missing one shows
+      // as a blank leg rather than wrong information — not worth a message.
+      debugPrint('Leg re-measure failed: $error');
+    }
+    return problem;
   }
 
   /// Edit mode: send only what changed. A field the traveller emptied is a
@@ -227,6 +318,8 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   Future<void> _save() async {
     final stop = widget.editing!;
     setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    String? photoProblem;
     try {
       final api = await ref.read(plunoApiProvider.future);
       final name = _nameController.text.trim();
@@ -236,7 +329,13 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
 
       await api.itinerary.updateItem(
         stop.id,
-        customName: name == stop.title ? null : Patch.value(name),
+        customName: name == _initialName
+            ? null
+            : (name.isEmpty ? const Patch.clear() : Patch.value(name)),
+        // Clearing both is a 400; [_canAdd] keeps one of them set.
+        placeId: _placeId == _initialPlaceId
+            ? null
+            : (_placeId == null ? const Patch.clear() : Patch.value(_placeId!)),
         startTime: _startTime == stop.time
             ? null
             : (_startTime == null
@@ -254,20 +353,23 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
         // move its legs — let the server re-measure on this one write.
       );
 
-      for (final photo in _photos) {
-        await api.media.upload(
-          widget.tripId,
-          filePath: photo.path,
-          activityId: stop.id,
-        );
-      }
-
-      // Moved to another day: it joins the end of that day.
+      // Moved to another day: it joins the end of that day. Done before the
+      // photos because it is something the traveller asked for, not a
+      // courtesy — a failure here is worth stopping on.
       if (_dayId != widget.initialDayId) {
         await api.itinerary.assignItem(stop.id, tripDayId: _dayId);
       }
 
-      if (mounted) Navigator.of(context).pop(AddPlaceOutcome.updated);
+      photoProblem = await _uploadPhotos(stop.id);
+
+      if (!mounted) return;
+      Navigator.of(context).pop(AddPlaceOutcome.updated);
+      if (photoProblem != null) {
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(content: Text(photoProblem)));
+      }
+      return;
     } on ApiException catch (failure) {
       _fail(failure.isUnauthorized
           ? 'เข้าสู่ระบบก่อนแก้ไขสถานที่'
@@ -361,12 +463,11 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
 
   List<Widget> _fields() {
     return [
-      const _FieldLabel('ชื่อสถานที่ / กิจกรรม'),
+      const _FieldLabel('ชื่อกิจกรรม'),
       _FieldBox(
         child: Row(
           children: [
-            const Icon(Icons.location_on_outlined,
-                size: 18, color: AppColors.muted),
+            const Icon(Icons.edit_note, size: 20, color: AppColors.muted),
             const SizedBox(width: 9),
             Expanded(
               child: TextField(
@@ -374,7 +475,7 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
                 decoration: const InputDecoration(
                   isDense: true,
                   border: InputBorder.none,
-                  hintText: 'เช่น วัดเชียงทอง',
+                  hintText: 'เช่น ทานอาหารเช้า, ชมพระอาทิตย์ตก',
                 ),
                 style: const TextStyle(
                   fontSize: 14,
@@ -385,6 +486,8 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
           ],
         ),
       ),
+      const SizedBox(height: 14),
+      _locationField(),
       const SizedBox(height: 14),
       // The design pairs these two, and the pair still fits a phone.
       Row(
@@ -428,6 +531,61 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
         ),
       ),
     ];
+  }
+
+  Widget _locationField() {
+    final name = _placeName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _FieldLabel('สถานที่ (ไม่บังคับ)'),
+        GestureDetector(
+          key: const ValueKey('stop-location-field'),
+          onTap: _pickLocation,
+          behavior: HitTestBehavior.opaque,
+          child: _FieldBox(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.location_on_outlined,
+                  size: 18,
+                  color: name == null ? AppColors.muted : AppColors.brandOrange,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    name ?? 'เลือกสถานที่',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color:
+                          name == null ? AppColors.muted : AppColors.foreground,
+                    ),
+                  ),
+                ),
+                if (name == null)
+                  const Icon(Icons.chevron_right,
+                      size: 20, color: AppColors.muted)
+                else
+                  Tooltip(
+                    message: 'เอาสถานที่ออก',
+                    child: GestureDetector(
+                      onTap: _clearLocation,
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child:
+                            Icon(Icons.close, size: 18, color: AppColors.muted),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _dayField() {

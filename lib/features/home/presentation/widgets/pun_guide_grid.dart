@@ -22,6 +22,7 @@ class PunGuideGrid extends StatelessWidget {
     this.savedOf,
     this.overlayOf,
     this.onDelete,
+    this.isMine = false,
   });
 
   final List<TripListItem> trips;
@@ -50,6 +51,11 @@ class PunGuideGrid extends StatelessWidget {
   /// the traveller's own trips — the album grid is a different widget and
   /// never gets one.
   final ValueChanged<TripListItem>? onDelete;
+
+  /// Whether this whole wall is the traveller's own trips — see
+  /// [PunGuideCard.isMine]. A wall is one person's or it is not, so this is
+  /// settled once here rather than asked per row.
+  final bool isMine;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +100,7 @@ class PunGuideGrid extends StatelessWidget {
                       distanceLabel: distanceLabelOf?.call(trip),
                       featured: featuredOf?.call(trip) ?? false,
                       saved: savedOf?.call(trip),
+                      isMine: isMine,
                       onTap: () => onOpen(trip),
                       onSave: _saveFor(trip),
                       onDelete: _deleteFor(trip),

@@ -10,6 +10,7 @@ import 'travel_segment.dart';
 class ActivityLocation {
   const ActivityLocation({
     required this.name,
+    this.placeId,
     this.latitude,
     this.longitude,
     this.rating,
@@ -19,6 +20,7 @@ class ActivityLocation {
   factory ActivityLocation.fromJson(Map<String, dynamic> json) =>
       ActivityLocation(
         name: Json.requiredString(json, 'name'),
+        placeId: Json.string(json, 'placeId'),
         latitude: Json.number(json, 'lat'),
         longitude: Json.number(json, 'lng'),
         rating: Json.number(json, 'rating'),
@@ -33,6 +35,10 @@ class ActivityLocation {
   }
 
   final String name;
+
+  /// Our own `places.id` — what `addItem`/`updateItem` take as `placeId`.
+  /// Not a Google place id.
+  final String? placeId;
   final double? latitude;
   final double? longitude;
   final double? rating;
@@ -42,6 +48,7 @@ class ActivityLocation {
 
   Map<String, dynamic> toJson() => Json.compact(<String, dynamic>{
         'name': name,
+        'placeId': placeId,
         'lat': latitude,
         'lng': longitude,
         'rating': rating,

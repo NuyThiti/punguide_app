@@ -302,7 +302,7 @@ class _HeadingRow extends StatelessWidget {
             _BudgetAction(
               label: 'เพิ่มค่าใช้จ่าย',
               icon: Icons.add,
-              background: _planGreen,
+              background: AppColors.brandPurple,
               foreground: Colors.white,
               onTap: onAddExpense,
             ),
@@ -384,7 +384,7 @@ class _TotalCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       decoration: BoxDecoration(
-        color: filled ? _planGreen : AppColors.screen,
+        color: filled ? AppColors.brandPurple : AppColors.screen,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(

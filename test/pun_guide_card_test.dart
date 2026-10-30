@@ -20,6 +20,9 @@ Widget _card(
   TripListItem trip, {
   String? distanceLabel,
   bool featured = false,
+  VoidCallback? onSave = _noop,
+  VoidCallback? onTap = _noop,
+  bool isMine = false,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -30,8 +33,9 @@ Widget _card(
             trip: trip,
             distanceLabel: distanceLabel,
             featured: featured,
-            onTap: () {},
-            onSave: () {},
+            onTap: onTap ?? () {},
+            onSave: onSave,
+            isMine: isMine,
           ),
         ),
       ),
@@ -159,4 +163,103 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('the cover carries no bookmark; the tally is the save action',
+      (tester) async {
+    var saves = 0;
+    var opens = 0;
+    await tester.pumpWidget(
+      _card(
+        feedTrip(likeCount: 12),
+        onSave: () => saves++,
+        onTap: () => opens++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // One bookmark on the card, and it is the one in the counts row.
+    expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.bookmark_border));
+    await tester.pumpAndSettle();
+
+    expect(saves, 1);
+    // The tap stopped at the tally rather than opening the trip behind it.
+    expect(opens, 0);
+  });
+
+  testWidgets('a saved row shows the filled bookmark', (tester) async {
+    await tester.pumpWidget(_card(feedTrip(isSaved: true, likeCount: 3)));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.bookmark), findsOneWidget);
+    expect(find.byIcon(Icons.bookmark_border), findsNothing);
+  });
+
+  testWidgets('a zero tally keeps its icon on someone else\'s card',
+      (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(likeCount: 0, remixCount: 0)),
+    );
+    await tester.pumpAndSettle();
+
+    // The icons are the affordance, so they stay; the 0s do not.
+    expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
+    expect(find.byIcon(Icons.shuffle), findsOneWidget);
+    expect(find.text('0'), findsNothing);
+  });
+
+  testWidgets('on my own card a zero tally disappears entirely',
+      (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(likeCount: 0, remixCount: 0), isMine: true, onSave: null),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.bookmark_border), findsNothing);
+    expect(find.byIcon(Icons.shuffle), findsNothing);
+  });
+
+  testWidgets('on my own card a tally that has a number still shows, inert',
+      (tester) async {
+    var opens = 0;
+    await tester.pumpWidget(
+      _card(
+        feedTrip(likeCount: 9, remixCount: 0),
+        isMine: true,
+        onSave: null,
+        onTap: () => opens++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('9'), findsOneWidget);
+    expect(find.byIcon(Icons.shuffle), findsNothing);
+
+    // A readout, not a button: the tap falls through to the card itself.
+    await tester.tap(find.byIcon(Icons.bookmark_border));
+    await tester.pumpAndSettle();
+    expect(opens, 1);
+  });
+
+  testWidgets('my own wall drops the creator pill', (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(creatorName: 'makitravels'), isMine: true, onSave: null),
+    );
+    await tester.pumpAndSettle();
+
+    // They know whose these are; the cover has better uses for the width.
+    expect(find.text('makitravels'), findsNothing);
+    // The type is still worth saying — it tells their own rows apart.
+    expect(find.text('แผนทริป'), findsOneWidget);
+  });
+
+  testWidgets("someone else's wall keeps the creator pill", (tester) async {
+    await tester.pumpWidget(_card(feedTrip(creatorName: 'makitravels')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('makitravels'), findsOneWidget);
+  });
 }
+
+void _noop() {}

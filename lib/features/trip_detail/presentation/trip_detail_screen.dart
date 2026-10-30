@@ -137,7 +137,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   /// author, the title and the trip's facts, the plan this post links to, then
   /// Trip Overview and the spots.
   Widget _contentBody(ApiTrip trip) {
-
     // The bar is stacked over the scroll view rather than slivered into it:
     // it has to stay put while the cover and the spots slide under it, and a
     // `SliverAppBar` would squash the Remix pill as it collapsed.
@@ -195,7 +194,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           ),
         ),
         SliverPadding(
-          padding: EdgeInsets.fromLTRB(_gutter(context), 20, _gutter(context), 0),
+          padding:
+              EdgeInsets.fromLTRB(_gutter(context), 20, _gutter(context), 0),
           sliver: SliverToBoxAdapter(
             child: _PostOverview(trip: trip, blurb: blurb),
           ),
@@ -215,7 +215,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
       ],
     );
   }
-
 
   Widget _body(ApiTrip trip) {
     if (trip.type.isPost) return _contentBody(trip);
@@ -386,7 +385,8 @@ class _StickyTopBarState extends State<_StickyTopBar> {
         child: SafeArea(
           bottom: false,
           child: Padding(
-            padding: EdgeInsets.fromLTRB(_edgeInset(context), 10, _edgeInset(context), 0),
+            padding: EdgeInsets.fromLTRB(
+                _edgeInset(context), 10, _edgeInset(context), 0),
             child: SizedBox(
               height: _topBarHeight - 2,
               child: Row(
@@ -965,14 +965,14 @@ class _ViewHero extends StatelessWidget {
                       onBack: onBack,
                       onSave: onSave,
                     ),
-                    // const SizedBox(height: 18),
-                    // _CreatorRow(
-                    //   plan: plan,
-                    //   saved: saved,
-                    //   onFollow: onFollow,
-                    //   onSave: onSave,
-                    //   onShare: onShare,
-                    // ),
+                    const SizedBox(height: 18),
+                    _CreatorRow(
+                      plan: plan,
+                      saved: saved,
+                      onFollow: onFollow,
+                      onSave: onSave,
+                      onShare: onShare,
+                    ),
                     SizedBox(height: _heroPhotoGap(screen)),
                     // The title and facts line up with the content column
                     // below, while the bar above stays at the screen's edge.
@@ -1920,8 +1920,43 @@ class _PlanView {
       likeCount: trip.likeCount,
       creatorName: trip.customer?.name ?? 'ไม่ระบุผู้สร้าง',
       creatorAvatar: trip.customer?.avatarUrl,
-      days: trip.days,
+      days: _daysOf(trip, dayCount, start),
     );
+  }
+
+  /// Every day the trip claims, not only the ones with an itinerary row.
+  ///
+  /// A row is created when the first stop is added to that day, so a reader
+  /// looking at a four-day trip with one filled day would otherwise be told
+  /// it is a one-day trip — while the hero above says "4 วัน". The days with
+  /// nothing in them show their own empty note.
+  static List<ItineraryDay> _daysOf(
+    ApiTrip trip,
+    int dayCount,
+    DateTime? start,
+  ) {
+    // A plan with nothing in it at all keeps its own empty note — a reader is
+    // better served by "ทริปนี้ยังไม่มีแผนการเดินทาง" than by a row of empty
+    // day tabs. Placeholders fill gaps in a plan that has begun, nothing more.
+    if (trip.days.isEmpty) return const <ItineraryDay>[];
+
+    final rows = <int, ItineraryDay>{
+      for (final day in trip.days) day.dayNumber: day,
+    };
+    final highest = rows.keys.fold<int>(0, (a, b) => a > b ? a : b);
+    final total = dayCount > highest ? dayCount : highest;
+
+    return [
+      for (var number = 1; number <= total; number++)
+        rows[number] ??
+            ItineraryDay(
+              id: '',
+              dayNumber: number,
+              date: start?.add(Duration(days: number - 1)),
+              activities: const <Activity>[],
+              travelSegments: const <TravelSegment>[],
+            ),
+    ];
   }
 
   final String title;

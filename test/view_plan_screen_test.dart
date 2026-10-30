@@ -471,6 +471,34 @@ void main() {
     expect(find.text('0 สถานที่'), findsNothing);
   });
 
+  testWidgets('a part-filled plan still shows every day the trip claims',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    // Three days long, but only day 1 has an itinerary row — a row is only
+    // created when a stop is added to that day.
+    await _pumpTrip(
+      tester,
+      trip: _tripJson(days: <Map<String, dynamic>>[
+        {
+          'id': 'd1',
+          'dayNumber': 1,
+          'date': '2026-08-20',
+          'activities': <Map<String, dynamic>>[
+            {'id': 's1', 'title': 'วัดเชียงทอง', 'order': 0},
+          ],
+        },
+      ]),
+    );
+
+    // The hero says three days, so the tab strip must not say one.
+    for (final day in ['วันที่ 1', 'วันที่ 2', 'วันที่ 3']) {
+      expect(find.text(day), findsWidgets, reason: day);
+    }
+  });
+
   testWidgets('a trip that adds up to nothing hides the per-head price',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
