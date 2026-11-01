@@ -283,11 +283,11 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                 if (_open) ...[
                   if (time.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    _InfoRow(icon: Icons.schedule, text: time),
+                    SpotInfoRow(icon: Icons.schedule, text: time),
                   ],
                   if (transport.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _InfoRow(
+                    SpotInfoRow(
                       icon: Icons.directions_bus_filled_outlined,
                       text: transport,
                     ),
@@ -297,7 +297,7 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                   // be collected and never read back.
                   if (contact.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _InfoRow(icon: Icons.call_outlined, text: contact),
+                    SpotInfoRow(icon: Icons.call_outlined, text: contact),
                   ],
                   // Google's own phone and website for this place, on one row of
                   // links — "085 809 0835 · เว็บร้าน". Automatic, and only shown when
@@ -305,7 +305,7 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                   // is what the writer typed.
                   if (_hasText(phone) || _hasText(website)) ...[
                     const SizedBox(height: 8),
-                    _LinkRow(
+                    SpotLinkRow(
                       phone: _hasText(phone) ? phone!.trim() : null,
                       dial: dial,
                       website: _hasText(website) ? website : null,
@@ -313,7 +313,7 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                   ],
                   if (hack.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    _TripHackRow(text: hack),
+                    SpotTripHackRow(text: hack),
                   ],
                 ],
                 // Only offered when there is something behind it — a spot
@@ -322,7 +322,7 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                 if (_hasDetails(time, transport, contact, phone, website,
                     hack)) ...[
                   const SizedBox(height: 12),
-                  _DetailsToggle(
+                  SpotDetailsToggle(
                     open: _open,
                     onTap: () => setState(() => _open = !_open),
                   ),
@@ -420,8 +420,8 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
 }
 
 /// "ดูรายละเอียด" — opens the spot's hours, the way there and its tip.
-class _DetailsToggle extends StatelessWidget {
-  const _DetailsToggle({required this.open, required this.onTap});
+class SpotDetailsToggle extends StatelessWidget {
+  const SpotDetailsToggle({required this.open, required this.onTap});
 
   final bool open;
   final VoidCallback onTap;
@@ -598,8 +598,8 @@ class _MissingPhoto extends StatelessWidget {
 /// Rows rather than the chips an earlier pass used — the values run long
 /// (a whole sentence of directions, a name and a phone number), and a chip
 /// clips what a reader came for.
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.icon, required this.text});
+class SpotInfoRow extends StatelessWidget {
+  const SpotInfoRow({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -634,8 +634,8 @@ class _InfoRow extends StatelessWidget {
 /// A phone opens the dialler and the website opens in the browser. A link
 /// that cannot open stays where it is rather than failing loudly — there is
 /// nothing the reader could do about it.
-class _LinkRow extends StatelessWidget {
-  const _LinkRow({this.phone, this.dial, this.website});
+class SpotLinkRow extends StatelessWidget {
+  const SpotLinkRow({this.phone, this.dial, this.website});
 
   /// As printed.
   final String? phone;
@@ -727,8 +727,8 @@ class _Link extends StatelessWidget {
 
 /// The one tip worth passing on, with its label on the left the way the
 /// design sets it.
-class _TripHackRow extends StatelessWidget {
-  const _TripHackRow({required this.text});
+class SpotTripHackRow extends StatelessWidget {
+  const SpotTripHackRow({required this.text});
 
   final String text;
 

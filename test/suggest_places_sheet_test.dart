@@ -109,13 +109,13 @@ Widget _harness() => ProviderScope(
       ),
     );
 
-/// Opens the sheet from วันที่ 1's "+ สถานที่".
-/// "+ สถานที่" opens the เพิ่มสถานที่ form now; แนะนำสถานที่ is the "สำรวจ"
+/// Opens the sheet from จัดแผน's "+ เพิ่มสถานที่".
+/// It opens the เพิ่มสถานที่ form; แนะนำสถานที่ is the "สำรวจ"
 /// button inside it, which hands over rather than stacking a second sheet.
 Future<void> _openSheet(WidgetTester tester) async {
   await tester.pumpWidget(_harness());
   await tester.pumpAndSettle();
-  await tester.tap(find.text('สถานที่').first);
+  await tester.tap(find.byKey(addPlaceButtonKey));
   await tester.pumpAndSettle();
   await _tapExplore(tester);
 }
@@ -313,7 +313,7 @@ void main() {
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('สถานที่').first);
+    await tester.tap(find.byKey(addPlaceButtonKey));
     await tester.pumpAndSettle();
     // The form opens either way — it is the explorer that needs an anchor.
     await _tapExplore(tester);
@@ -360,7 +360,7 @@ void main() {
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('สถานที่').first);
+    await tester.tap(find.byKey(addPlaceButtonKey));
     await tester.pumpAndSettle();
     await _tapExplore(tester);
 

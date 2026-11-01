@@ -355,11 +355,15 @@ void main() {
 
   // A fresh tree per viewer: re-pumping an unchanged tree shape keeps the
   // state the last pump left behind, so the bar would still read the old one.
-  testWidgets('the owner can edit the post', (tester) async {
+  testWidgets("the owner's hero carries no button at all", (tester) async {
     phone(tester);
     await _pumpPost(tester, viewer: _owner);
 
-    expect(find.text('แก้ไขโพสต์'), findsOneWidget);
+    // Editing moved to the header's ☰; the hero is Remix's, and only for
+    // visitors.
+    expect(find.text('แก้ไขโพสต์'), findsNothing);
+    expect(find.text('Remix Trip'), findsNothing);
+    expect(find.byType(ElevatedButton), findsNothing);
   });
 
   testWidgets('a visitor gets no action bar on a post', (tester) async {
@@ -371,26 +375,13 @@ void main() {
     expect(find.text('Remix Trip'), findsOneWidget);
   });
 
-  testWidgets("the owner's hero offers edit, not Remix, and no bottom bar",
-      (tester) async {
+  testWidgets('แก้ไขทริป in the ☰ opens the post settings', (tester) async {
     phone(tester);
     await _pumpPost(tester, viewer: _owner);
 
-    expect(find.text('แก้ไขโพสต์'), findsOneWidget);
-    expect(find.text('Remix Trip'), findsNothing);
-    // It is the hero's pill now, not a bar pinned to the bottom.
-    expect(find.byKey(const Key('plan-action-bar')), findsNothing);
-    expect(
-      tester.getRect(find.text('แก้ไขโพสต์')).top,
-      lessThan(tester.getRect(find.text('Trip Overview')).top),
-    );
-  });
-
-  testWidgets('edit opens the post settings', (tester) async {
-    phone(tester);
-    await _pumpPost(tester, viewer: _owner);
-
-    await tester.tap(find.text('แก้ไขโพสต์'));
+    await tester.tap(find.byTooltip('เมนู'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('แก้ไขทริป'));
     await tester.pumpAndSettle();
 
     expect(find.text('share settings'), findsOneWidget);
@@ -436,10 +427,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Remix Trip'), findsNothing);
 
-    // …while the bar, the author and share stay exactly where they were.
+    // …while the bar, the author and the menu stay exactly where they were.
     expect(tester.getRect(bar), before);
     expect(find.text('Thitichaya Butsala'), findsOneWidget);
-    expect(find.byTooltip('แชร์'), findsOneWidget);
+    expect(find.byTooltip('เมนู'), findsOneWidget);
   });
 
   testWidgets('a spot keeps its details shut until asked', (tester) async {

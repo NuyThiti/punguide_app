@@ -9,8 +9,6 @@ import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/core/theme/app_colors.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
-import 'package:pluno/features/trips/presentation/providers/trip_providers.dart';
-import 'package:pluno/shared/layout/screen_class.dart';
 
 import 'support/fake_api.dart';
 
@@ -112,9 +110,6 @@ Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
     ProviderScope(
       overrides: [
         plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
-        // The saved flag comes from the local Isar list, which a widget test
-        // has no database for.
-        selectedTripProvider.overrideWith((ref, tripId) async => null),
         currentUserProvider.overrideWith(
           (ref) => viewerPending
               ? Completer<AuthUser?>().future
@@ -140,6 +135,11 @@ Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
               builder: (_, __) => const Scaffold(body: Text('home page')),
             ),
             GoRoute(
+              path: '/create',
+              name: AppRoute.createTrip.name,
+              builder: (_, __) => const Scaffold(body: Text('create page')),
+            ),
+            GoRoute(
               path: '/edit/:tripId',
               name: AppRoute.editTrip.name,
               builder: (_, __) => const Scaffold(body: Text('editor page')),
@@ -155,9 +155,11 @@ Future<void> _pumpTrip(
   int status = 200,
   AuthUser? viewer,
   bool viewerPending = false,
+  Map<String, List<FakeReply>> extra = const {},
 }) async {
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(status, trip ?? _tripJson())],
+    ...extra,
   });
   await tester.pumpWidget(
     _harness(viewer: viewer, viewerPending: viewerPending),
@@ -171,23 +173,54 @@ const _owner = AuthUser(id: 'u1', username: 'makitravels');
 /// Somebody else entirely.
 const _visitor = AuthUser(id: 'u2', username: 'someone');
 
-/// Every control the design draws that has nothing to call yet, against the
-/// message it must own up with.
-final _unwired = <String, Finder Function()>{
-  'แชร์ทริปยังไม่เปิดใช้งาน': () => find.byTooltip('แชร์'),
-  'ติดตามยังไม่เปิดใช้งาน': () => find.text('ติดตาม'),
-  'เพิ่มลงแผนของฉันยังไม่เปิดใช้งาน': () =>
-      find.byTooltip('เพิ่มลงแผนของฉัน').first,
-  'บันทึกสถานที่ยังไม่เปิดใช้งาน': () => find.text('บันทึก').first,
-  'ดูบนแผนที่ยังไม่เปิดใช้งาน': () => find.text('Map').first,
+/// The traveller's own plans, for "เพิ่มลงทริป".
+final _myPlans = <Map<String, dynamic>>[
+  {
+    'id': 'plan-9',
+    'type': 'plan_trip',
+    'title': 'เดินเล่นพระนคร',
+    'destination': 'Bangkok',
+    'status': 'draft',
+    'schedule': {'durationDays': 2},
+    'totalBudget': 0,
+    'tags': <String>[],
+    'placeCount': 3,
+    'isSaved': false,
+    'isLiked': false,
+    'likeCount': 0,
+    'remixCount': 0,
+  },
+];
+
+/// plan-9 in full: two days, so the stop should land on the second.
+final _planNine = <String, dynamic>{
+  'id': 'plan-9',
+  'ownerId': 'u2',
+  'title': 'เดินเล่นพระนคร',
+  'destination': 'Bangkok',
+  'status': 'draft',
+  'schedule': {'durationDays': 2},
+  'totalBudget': 0,
+  'days': [
+    {'id': 'd9', 'dayNumber': 1, 'activities': <Map<String, dynamic>>[]},
+    {'id': 'd10', 'dayNumber': 2, 'activities': <Map<String, dynamic>>[]},
+  ],
 };
+
+Future<void> _openMenu(WidgetTester tester, {int index = 0}) async {
+  final menu = find.byTooltip('ตัวเลือก').at(index);
+  await tester.ensureVisible(menu);
+  await tester.pumpAndSettle();
+  await tester.tap(menu);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   setUp(() {
     adapter = FakeAdapter({});
   });
 
-  testWidgets('the hero prints the trip\'s own facts, not a sample',
+  testWidgets("Trip Overview prints the trip's own facts, not a sample",
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
@@ -197,11 +230,12 @@ void main() {
 
     expect(find.text('ทริปหลวงพระบางสายชิล'), findsOneWidget);
     expect(find.text('Luang Prabang, Laos'), findsOneWidget);
-    expect(find.text('3 วัน 2 คืน'), findsOneWidget);
+    expect(find.text('3 วัน'), findsOneWidget);
     // Three stops across the two days.
     expect(find.text('3 สถานที่'), findsOneWidget);
     // ฿9,000 over a group of three.
-    expect(find.text('฿3,000 /คน'), findsOneWidget);
+    expect(find.text('฿3,000/คน'), findsOneWidget);
+    // The author sits in the pinned bar, as on a post.
     expect(find.text('makitravels'), findsOneWidget);
     expect(find.text('Remix Trip'), findsOneWidget);
   });
@@ -222,13 +256,13 @@ void main() {
       'Arrival & First Look',
       'Golden hour walk',
       '2 people',
-      '1.2k',
     ]) {
       expect(find.text(invented), findsNothing, reason: invented);
     }
   });
 
-  testWidgets('Trip Overview carries the real counts, grouped', (tester) async {
+  testWidgets('Trip Overview carries the real counts, compacted',
+      (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -236,11 +270,32 @@ void main() {
     await _pumpTrip(tester);
 
     expect(find.text('Trip Overview'), findsOneWidget);
-    expect(find.text('1,111'), findsOneWidget);
-    expect(find.text('1,721'), findsOneWidget);
+    expect(find.text('1.1K'), findsOneWidget);
+    expect(find.text('1.7K'), findsOneWidget);
+    // With no description of its own, the plan's styles stand in.
+    expect(find.text('วัฒนธรรม · อาหาร'), findsOneWidget);
   });
 
-  testWidgets('a stop shows its time, name, leg and note', (tester) async {
+  testWidgets('the stops sit under ตารางแผน on white, not cream',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester);
+
+    expect(find.text('ตารางแผน'), findsOneWidget);
+    final band = find.ancestor(
+      of: find.text('ตารางแผน'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is ColoredBox && widget.color == AppColors.screen,
+      ),
+    );
+    expect(band, findsOneWidget);
+    expect(tester.getRect(band).width, 393);
+  });
+
+  testWidgets('a stop shows its time, name, mode and note', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -250,13 +305,17 @@ void main() {
     expect(find.text('12:30 PM'), findsOneWidget);
     expect(find.text('Le Banneton Café'), findsOneWidget);
     expect(find.text('ร้านเบเกอรี่เก่าแก่ของหลวงพระบาง'), findsOneWidget);
-    // Second stop: the traveller's own leg.
-    expect(find.text('จักรยาน • 8 นาที'), findsOneWidget);
+    // Second stop: the chip names the mode; the minutes wait in the details.
+    expect(find.text('จักรยาน'), findsOneWidget);
+    expect(find.text('จักรยาน • 8 นาที'), findsNothing);
     // First stop has nothing to travel from, so it falls back to its category.
     expect(find.text('ร้านอาหาร'), findsOneWidget);
+    // The position badge.
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
   });
 
-  testWidgets('a place name that repeats the stop title is not shown twice',
+  testWidgets('ดูรายละเอียด opens the way there and closes again',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
     tester.view.devicePixelRatio = 3;
@@ -264,9 +323,66 @@ void main() {
 
     await _pumpTrip(tester);
 
-    // s1's location.name equals its title; s2's differs and does show.
-    expect(find.text('Le Banneton Café'), findsOneWidget);
-    expect(find.text('ถนน Sisavangvong'), findsOneWidget);
+    // Only the bicycle stop has anything behind the toggle.
+    expect(find.text('ดูรายละเอียด'), findsOneWidget);
+    expect(find.text('จักรยาน · 8 นาที'), findsNothing);
+
+    await tester.tap(find.text('ดูรายละเอียด'));
+    await tester.pumpAndSettle();
+    expect(find.text('จักรยาน · 8 นาที'), findsOneWidget);
+    expect(find.text('ย่อรายละเอียด'), findsOneWidget);
+
+    await tester.tap(find.text('ย่อรายละเอียด'));
+    await tester.pumpAndSettle();
+    expect(find.text('จักรยาน · 8 นาที'), findsNothing);
+  });
+
+  testWidgets("Google's hours, phone and website fill a linked stop's details",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    const placeId = '7f1c2a9e-4b3d-4e8a-9c21-5d6e7f8a9b0c';
+    final days = _twoDays();
+    final first = (days.first['activities'] as List).first as Map;
+    first['location'] = {'name': 'Le Banneton Café', 'placeId': placeId};
+
+    await _pumpTrip(
+      tester,
+      trip: _tripJson(days: days),
+      extra: {
+        'GET /places/$placeId': [
+          FakeReply(200, <String, dynamic>{
+            'id': placeId,
+            'name': 'Le Banneton Café',
+            'nationalPhoneNumber': '085 809 0835',
+            'websiteUri': 'https://lebanneton.example',
+            'regularOpeningHours': {
+              'weekdayDescriptions': [
+                for (final day in [
+                  'วันจันทร์',
+                  'วันอังคาร',
+                  'วันพุธ',
+                  'วันพฤหัสบดี',
+                  'วันศุกร์',
+                  'วันเสาร์',
+                  'วันอาทิตย์',
+                ])
+                  '$day: 06:00–14:30',
+              ],
+            },
+          }),
+        ],
+      },
+    );
+
+    await tester.tap(find.text('ดูรายละเอียด').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('จ - อา : 06.00 - 14.30 น.'), findsOneWidget);
+    expect(find.text('085 809 0835'), findsOneWidget);
+    expect(find.text('เว็บร้าน'), findsOneWidget);
   });
 
   testWidgets('the day tabs swap which stops are listed', (tester) async {
@@ -283,6 +399,7 @@ void main() {
     expect(find.text('Le Banneton Café'), findsOneWidget);
     expect(find.text('น้ำตกกวางสี'), findsNothing);
 
+    await tester.ensureVisible(find.text('วันที่ 2'));
     await tester.tap(find.text('วันที่ 2'));
     await tester.pumpAndSettle();
 
@@ -290,35 +407,312 @@ void main() {
     expect(find.text('Le Banneton Café'), findsNothing);
   });
 
-  // One test per control, not one loop: `ScaffoldMessenger` keeps its state
-  // across `pumpWidget` when the tree shape is unchanged, so a loop would
-  // still be showing the previous control's SnackBar.
-  _unwired.forEach((message, locate) {
-    testWidgets('$message reports that it is not wired', (tester) async {
-      tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
+  testWidgets('a one-day plan draws no day tabs', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
 
-      await _pumpTrip(tester);
+    await _pumpTrip(
+      tester,
+      trip: _tripJson(
+        days: [_twoDays().first],
+        schedule: {'durationDays': 1},
+      ),
+    );
 
-      final target = locate();
-      expect(target, findsOneWidget);
-      // Some of these sit inside a scroll view, off the edge at this width.
-      await tester.ensureVisible(target);
-      await tester.pumpAndSettle();
-      await tester.tap(target);
-      await tester.pump();
-
-      expect(find.text(message), findsOneWidget);
-    });
+    expect(find.text('วันที่ 1'), findsNothing);
+    expect(find.text('Le Banneton Café'), findsOneWidget);
   });
 
-  testWidgets('Remix Trip leaves for the remix route', (tester) async {
+  testWidgets('the ⋮ menu offers map, save and add-to-trip', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester);
+    await _openMenu(tester);
+
+    expect(find.text('นำทางบน Map'), findsOneWidget);
+    expect(find.text('บันทึก'), findsOneWidget);
+    expect(find.text('เพิ่มลงทริป'), findsOneWidget);
+    // On a bottom sheet headed by the stop it acts on, not a popup.
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(PopupMenuItem<Object>), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Le Banneton Café'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('บันทึก reports that it is not wired', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester);
+    await _openMenu(tester);
+    await tester.tap(find.text('บันทึก'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('บันทึกสถานที่ยังไม่เปิดใช้งาน'), findsOneWidget);
+  });
+
+  Future<void> openTripMenu(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('เมนู'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('the header has a ☰ menu instead of a share button',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _visitor);
+
+    expect(find.byTooltip('แชร์'), findsNothing);
+    expect(find.byIcon(Icons.menu), findsOneWidget);
+  });
+
+  testWidgets("somebody else's trip menu offers only แชร์", (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _visitor);
+    await openTripMenu(tester);
+
+    expect(find.text('แชร์'), findsOneWidget);
+    expect(find.text('แก้ไขทริป'), findsNothing);
+    expect(find.text('ลบทริป'), findsNothing);
+  });
+
+  testWidgets('the menu offers only แชร์ until it is known who is looking',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewerPending: true);
+    await openTripMenu(tester);
+
+    expect(find.text('แชร์'), findsOneWidget);
+    expect(find.text('ลบทริป'), findsNothing);
+  });
+
+  testWidgets('the owner gets แก้ไขทริป, ลบทริป and แชร์', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _owner);
+    await openTripMenu(tester);
+
+    expect(find.text('แก้ไขทริป'), findsOneWidget);
+    expect(find.text('ลบทริป'), findsOneWidget);
+    expect(find.text('แชร์'), findsOneWidget);
+    expect(find.byType(BottomSheet), findsOneWidget);
+  });
+
+  testWidgets('แชร์ reports that it is not wired', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
     await _pumpTrip(tester);
+    await openTripMenu(tester);
+    await tester.tap(find.text('แชร์'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('แชร์ทริปยังไม่เปิดใช้งาน'), findsOneWidget);
+  });
+
+  testWidgets('แก้ไขทริป opens the plan editor', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _owner);
+    await openTripMenu(tester);
+    await tester.tap(find.text('แก้ไขทริป'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('editor page'), findsOneWidget);
+  });
+
+  testWidgets('ลบทริป asks first, deletes, then leaves the page',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _owner,
+      extra: {
+        'DELETE /trips/trip-1': [const FakeReply(204, null)],
+      },
+    );
+    await openTripMenu(tester);
+    await tester.tap(find.text('ลบทริป'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ลบทริปนี้'), findsOneWidget);
+    expect(adapter.paths, isNot(contains('DELETE /trips/trip-1')));
+
+    await tester.tap(find.text('ลบ'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.paths, contains('DELETE /trips/trip-1'));
+    expect(find.text('home page'), findsOneWidget);
+    expect(find.text('ลบทริปแล้ว'), findsOneWidget);
+  });
+
+  testWidgets('cancelling ลบทริป deletes nothing', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _owner);
+    await openTripMenu(tester);
+    await tester.tap(find.text('ลบทริป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.paths, isNot(contains('DELETE /trips/trip-1')));
+    expect(find.text('ทริปหลวงพระบางสายชิล'), findsOneWidget);
+  });
+
+  testWidgets('a failed delete stays on the page and says so', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _owner,
+      extra: {
+        'DELETE /trips/trip-1': [const FakeReply(500, null)],
+      },
+    );
+    await openTripMenu(tester);
+    await tester.tap(find.text('ลบทริป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ลบ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home page'), findsNothing);
+    expect(find.text('ทริปหลวงพระบางสายชิล'), findsOneWidget);
+  });
+
+  testWidgets('เพิ่มลงทริป copies the stop onto the last day of the picked plan',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        'GET /trips/plan-9': [FakeReply(200, _planNine)],
+        'POST /days/d10/items': [
+          FakeReply(201, <String, dynamic>{
+            'place': {'id': 'copied', 'title': 'Le Banneton Café', 'order': 0},
+          }),
+        ],
+      },
+    );
+    await _openMenu(tester);
+    await tester.tap(find.text('เพิ่มลงทริป'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เพิ่มลงทริปใหม่'), findsOneWidget);
+    expect(find.text('เดินเล่นพระนคร'), findsOneWidget);
+
+    // ตกลง waits for a pick.
+    final ok = find.widgetWithText(FilledButton, 'ตกลง');
+    expect(tester.widget<FilledButton>(ok).onPressed, isNull);
+
+    await tester.tap(find.text('เดินเล่นพระนคร'));
+    await tester.pumpAndSettle();
+    await tester.tap(ok);
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('POST /days/d10/items');
+    expect(body, isNotNull);
+    // Le Banneton Café was typed by hand, so it goes up by name.
+    expect(body!['customName'], 'Le Banneton Café');
+    expect(body['category'], 'food');
+    expect(body['notes'], 'ร้านเบเกอรี่เก่าแก่ของหลวงพระบาง');
+    expect(find.text('เพิ่ม Le Banneton Café ลง เดินเล่นพระนคร แล้ว'),
+        findsOneWidget);
+  });
+
+  testWidgets('a failed add keeps the sheet open and says so',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        'GET /trips/plan-9': [FakeReply(200, _planNine)],
+        'POST /days/d10/items': [const FakeReply(500, null)],
+      },
+    );
+    await _openMenu(tester);
+    await tester.tap(find.text('เพิ่มลงทริป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เดินเล่นพระนคร'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เพิ่มลงทริปไม่สำเร็จ ลองอีกครั้ง'), findsOneWidget);
+    expect(find.text('เพิ่มลงทริปใหม่'), findsOneWidget);
+  });
+
+  testWidgets('เพิ่มลงทริปใหม่ opens the plan wizard', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+      },
+    );
+    await _openMenu(tester);
+    await tester.tap(find.text('เพิ่มลงทริป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เพิ่มลงทริปใหม่'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('create page'), findsOneWidget);
+  });
+
+  testWidgets('Remix Trip sits in the hero and leaves for the remix route',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester);
+
+    // Above Trip Overview, not pinned to the foot of the screen.
+    expect(
+      tester.getRect(find.text('Remix Trip')).bottom,
+      lessThan(tester.getRect(find.text('Trip Overview')).top),
+    );
 
     await tester.tap(find.text('Remix Trip'));
     await tester.pumpAndSettle();
@@ -326,7 +720,7 @@ void main() {
     expect(find.text('remix page'), findsOneWidget);
   });
 
-  testWidgets('the action bar is pinned, not carried by the hero',
+  testWidgets('the top bar stays pinned while the page scrolls',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 700 * 3);
     tester.view.devicePixelRatio = 3;
@@ -334,89 +728,35 @@ void main() {
 
     await _pumpTrip(tester);
 
-    final bar = find.byKey(const Key('plan-action-bar'));
-    expect(bar, findsOneWidget);
-    final barBefore = tester.getRect(bar);
+    final back = tester.getRect(find.byTooltip('ย้อนกลับ'));
     final overviewBefore = tester.getTopLeft(find.text('Trip Overview'));
 
     await tester.drag(find.text('Trip Overview'), const Offset(0, -300));
     await tester.pumpAndSettle();
 
-    // The page scrolled under it; the bar did not move.
     expect(
       tester.getTopLeft(find.text('Trip Overview')).dy,
       lessThan(overviewBefore.dy),
     );
-    expect(tester.getRect(bar), barBefore);
+    expect(tester.getRect(find.byTooltip('ย้อนกลับ')), back);
   });
 
-  testWidgets('the action bar paints to the bottom edge under a notch',
-      (tester) async {
-    const inset = 34.0;
-    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
-    tester.view.devicePixelRatio = 3;
-    tester.view.padding = const FakeViewPadding(bottom: inset * 3);
-    tester.view.viewPadding = const FakeViewPadding(bottom: inset * 3);
-    addTearDown(tester.view.reset);
-
-    await _pumpTrip(tester);
-
-    final screenBottom = tester.getRect(find.byType(MaterialApp).first).bottom;
-
-    // The painted panel, not the button: a SafeArea around the bar leaves the
-    // button in exactly the same place and only the panel short of the edge,
-    // so asserting on the label would prove nothing.
-    expect(
-      tester.getRect(find.byKey(const Key('plan-action-bar'))).bottom,
-      screenBottom,
-    );
-    // …while the label still clears the home indicator.
-    expect(
-      tester.getRect(find.text('Remix Trip')).bottom,
-      lessThan(screenBottom - inset),
-    );
-  });
-
-  testWidgets('a trip that failed to load gets no action bar', (tester) async {
-    await _pumpTrip(tester, trip: <String, dynamic>{}, status: 404);
-
-    expect(find.text('ไม่พบทริปนี้'), findsOneWidget);
-    expect(find.byKey(const Key('plan-action-bar')), findsNothing);
-  });
-
-  testWidgets("the owner gets an orange แก้ไข instead of Remix",
-      (tester) async {
+  testWidgets("the owner's hero carries no button at all", (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 700 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
     await _pumpTrip(tester, viewer: _owner);
 
-    expect(find.text('แก้ไข'), findsOneWidget);
+    // Editing lives in the header's ☰ — see แก้ไขทริป above.
+    expect(find.text('แก้ไข'), findsNothing);
     expect(find.text('Remix Trip'), findsNothing);
-
-    final button = tester.widget<ElevatedButton>(
-      find.descendant(
-        of: find.byKey(const Key('plan-action-bar')),
-        matching: find.byType(ElevatedButton),
-      ),
-    );
+    expect(find.byType(ElevatedButton), findsNothing);
+    // With no pill to stretch the hero, the title must still centre.
     expect(
-      button.style?.backgroundColor?.resolve(<WidgetState>{}),
-      AppColors.brandOrange,
+      tester.getCenter(find.text('ทริปหลวงพระบางสายชิล')).dx,
+      closeTo(393 / 2, 0.5),
     );
-  });
-
-  testWidgets('แก้ไข opens the plan editor', (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 700 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    await _pumpTrip(tester, viewer: _owner);
-    await tester.tap(find.text('แก้ไข'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('editor page'), findsOneWidget);
   });
 
   testWidgets("somebody else's plan still offers Remix", (tester) async {
@@ -430,18 +770,8 @@ void main() {
     expect(find.text('แก้ไข'), findsNothing);
   });
 
-  testWidgets('a signed-out visitor gets Remix, not แก้ไข', (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 700 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    await _pumpTrip(tester);
-
-    expect(find.text('Remix Trip'), findsOneWidget);
-    expect(find.text('แก้ไข'), findsNothing);
-  });
-
-  testWidgets('no bar at all until it is known who is looking', (tester) async {
+  testWidgets('no action at all until it is known who is looking',
+      (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 700 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -451,7 +781,6 @@ void main() {
     await _pumpTrip(tester, viewerPending: true);
 
     expect(find.text('ทริปหลวงพระบางสายชิล'), findsOneWidget);
-    expect(find.byKey(const Key('plan-action-bar')), findsNothing);
     expect(find.text('Remix Trip'), findsNothing);
     expect(find.text('แก้ไข'), findsNothing);
   });
@@ -493,7 +822,7 @@ void main() {
       ]),
     );
 
-    // The hero says three days, so the tab strip must not say one.
+    // Trip Overview says three days, so the tab strip must not say one.
     for (final day in ['วันที่ 1', 'วันที่ 2', 'วันที่ 3']) {
       expect(find.text(day), findsWidgets, reason: day);
     }
@@ -515,71 +844,23 @@ void main() {
 
     expect(find.text('ไม่พบทริปนี้'), findsOneWidget);
     expect(find.text('ลองอีกครั้ง'), findsNothing);
+    expect(find.text('Remix Trip'), findsNothing);
   });
 
-  testWidgets('a tablet centres the content column instead of stretching it',
+  testWidgets('a tablet centres the content column; the cover stays full-bleed',
       (tester) async {
-    // iPad landscape.
     tester.view.physicalSize = const Size(1194 * 3, 834 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
     await _pumpTrip(tester);
 
-    final panel = tester.getRect(find.byKey(const Key('plan-action-bar')));
-    final pill = tester.getRect(find.byType(ElevatedButton));
-
-    // The panel reads as the screen's edge…
-    expect(panel.width, 1194);
-    // …while the pill inside it stays at the column's width and centres.
-    expect(pill.width, lessThanOrEqualTo(720));
-    expect(pill.center.dx, closeTo(panel.center.dx, 0.5));
-  });
-
-  testWidgets('the cover photo stays full-bleed on a tablet', (tester) async {
-    tester.view.physicalSize = const Size(1194 * 3, 834 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    await _pumpTrip(tester);
-
-    // The photo spans the screen even though the text inside it does not.
     final cover = tester.getRect(find.byType(ClipRRect).first);
     expect(cover.left, 0);
     expect(cover.width, 1194);
-    // The title follows the content column…
-    expect(tester.getRect(find.text('ทริปหลวงพระบางสายชิล')).left, 237);
     expect(tester.getRect(find.text('Trip Overview')).left, 237);
-    // …but the app bar belongs to the screen's edge, not the column.
+    // The bar belongs to the screen's edge, not the column.
     expect(tester.getRect(find.byTooltip('ย้อนกลับ')).left, 32);
-  });
-
-  testWidgets('the cover photo opens up as the screen class widens',
-      (tester) async {
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    // How far down the title sits is exactly the photo gap, since everything
-    // above it is a fixed-height bar. The hero's *total* height is not a safe
-    // thing to assert: it is content-driven, so a wider screen that fits the
-    // title on one line can come out shorter than a narrower one that wraps.
-    final titleTop = <ScreenClass, double>{};
-    for (final size in <Size>[
-      Size(393, 852), // compact
-      Size(700, 1000), // medium
-      Size(900, 1200), // expanded
-    ]) {
-      tester.view.physicalSize = size * 3;
-      await _pumpTrip(tester);
-      titleTop[ScreenClass.fromWidth(size.width)] =
-          tester.getRect(find.text('ทริปหลวงพระบางสายชิล')).top;
-    }
-
-    expect(titleTop.keys, hasLength(3));
-    expect(titleTop[ScreenClass.medium],
-        greaterThan(titleTop[ScreenClass.compact]!));
-    expect(titleTop[ScreenClass.expanded],
-        greaterThan(titleTop[ScreenClass.medium]!));
   });
 
   testWidgets('the page lays out from a small phone to a tablet',
@@ -601,19 +882,5 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '$size after scrolling');
     }
-  });
-
-  testWidgets('the page lays out on a phone viewport without overflow',
-      (tester) async {
-    tester.view.physicalSize = const Size(360 * 3, 640 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    await _pumpTrip(tester);
-
-    expect(tester.takeException(), isNull);
-    await tester.drag(find.text('Trip Overview'), const Offset(0, -500));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
   });
 }

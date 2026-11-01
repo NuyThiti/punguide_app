@@ -57,7 +57,9 @@ IconData travelModeIcon(TravelMode mode) => switch (mode) {
 IconData legIcon(Activity stop, TravelSegment? segment) {
   final planned = stop.travelFromPrevious?.type;
   if (planned != null) return travelTypeIcon(planned);
-  if (segment != null) return travelModeIcon(segment.travelMode);
+  if (segment != null && !segment.hasFailed) {
+    return travelModeIcon(segment.travelMode);
+  }
   return Icons.trending_flat;
 }
 
@@ -75,7 +77,9 @@ List<String> legParts(
       leg.customType!
     else if (leg?.type != null)
       travelTypeLabels[leg!.type!]!
-    else if (segment != null)
+    // A failed route carries no numbers, so its mode alone ("ขับรถ") would
+    // read as if the leg had been worked out.
+    else if (segment != null && !segment.hasFailed)
       travelModeLabels[segment.travelMode]!,
     if (leg?.durationMin != null)
       '${leg!.durationMin} นาที'

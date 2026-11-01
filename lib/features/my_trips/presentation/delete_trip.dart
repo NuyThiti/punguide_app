@@ -26,6 +26,36 @@ Future<void> confirmDeleteTrip(
   TripListItem trip,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
+  final confirmed = await askToDeleteTrip(context, trip.title);
+  if (!confirmed) return;
+
+  try {
+    await ref.read(myTripsProvider.notifier).delete(trip.id);
+    // The album shelf is its own read of the same trips, so it would keep
+    // showing a row that no longer exists until something re-read it.
+    ref.invalidate(myAlbumsProvider);
+    messenger.showSnackBar(const SnackBar(content: Text('ลบทริปแล้ว')));
+  } on ApiException catch (error) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          error.statusCode == 401 ? 'เข้าสู่ระบบก่อน จึงจะลบได้' : error.message,
+        ),
+      ),
+    );
+  } catch (_) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('ลบไม่สำเร็จ ลองอีกครั้ง')),
+    );
+  }
+}
+
+
+/// The "ลบทริปนี้" confirmation on its own — true only on ลบ.
+///
+/// The walls delete through [confirmDeleteTrip]; the trip's own page deletes
+/// by id and leaves, but asks in exactly these words.
+Future<bool> askToDeleteTrip(BuildContext context, String title) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -40,7 +70,7 @@ Future<void> confirmDeleteTrip(
         ),
       ),
       content: Text(
-        '"${trip.title}" จะถูกลบถาวร พร้อมวัน สถานที่ รูป และค่าใช้จ่ายในทริป',
+        '"$title" จะถูกลบถาวร พร้อมวัน สถานที่ รูป และค่าใช้จ่ายในทริป',
         style: const TextStyle(
           color: AppColors.muted,
           fontSize: 13,
@@ -75,26 +105,5 @@ Future<void> confirmDeleteTrip(
       ],
     ),
   );
-
-  if (confirmed != true) return;
-
-  try {
-    await ref.read(myTripsProvider.notifier).delete(trip.id);
-    // The album shelf is its own read of the same trips, so it would keep
-    // showing a row that no longer exists until something re-read it.
-    ref.invalidate(myAlbumsProvider);
-    messenger.showSnackBar(const SnackBar(content: Text('ลบทริปแล้ว')));
-  } on ApiException catch (error) {
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          error.statusCode == 401 ? 'เข้าสู่ระบบก่อน จึงจะลบได้' : error.message,
-        ),
-      ),
-    );
-  } catch (_) {
-    messenger.showSnackBar(
-      const SnackBar(content: Text('ลบไม่สำเร็จ ลองอีกครั้ง')),
-    );
-  }
+  return confirmed == true;
 }

@@ -102,9 +102,8 @@ class PlacesApi {
   /// Free-text search, as if typing into Maps. Results are cached as our own
   /// places, so their ids can be used to add stops.
   ///
-  /// Pass `resolvePhotos: false` when the results won't render an image (a
-  /// name-only list or picker) — it drops the per-image Google Photo lookup
-  /// and leaves every other field, and the response shape, unchanged.
+  /// [resolvePhotos] is still accepted but no longer does anything: photos
+  /// resolve when an `imageUrl` is loaded, not during the search.
   Future<List<Place>> search(
     String query, {
     int? limit,

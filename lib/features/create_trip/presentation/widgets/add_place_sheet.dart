@@ -7,8 +7,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../shared/widgets/cover_image.dart';
 import '../../../trips/presentation/itinerary_display.dart';
+import '../providers/edit_plan_providers.dart';
 import 'location_picker_sheet.dart';
+import 'photo_choice_sheet.dart';
 
 /// One day the new stop can be filed under.
 class AddPlaceDay {
@@ -101,6 +104,10 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   ActivityCategory? _category;
   String _currency = 'THB';
   final List<XFile> _photos = <XFile>[];
+
+  /// One of the place's Google photos, picked to show on the stop. Belongs to
+  /// [_placeId], so it goes when the place does.
+  String? _googlePhoto;
   bool _saving = false;
 
   /// Where the stop happens — one of our `places`, kept apart from the
@@ -183,6 +190,7 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
       return;
     }
     setState(() {
+      if (picked.id != _placeId) _googlePhoto = null;
       _placeId = picked.id;
       _placeName = picked.name;
     });
@@ -191,6 +199,7 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   void _clearLocation() => setState(() {
         _placeId = null;
         _placeName = null;
+        _googlePhoto = null;
       });
 
   double? get _cost {
@@ -214,10 +223,41 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
     if (picked != null) setState(() => _time = picked);
   }
 
-  Future<void> _addPhotos() async {
-    final picked = await _picker.pickMultiImage();
-    if (picked.isEmpty) return;
-    setState(() => _photos.addAll(picked));
+  /// What the stop being edited shows today: its newest upload, else its
+  /// place's photo. Null for a new stop.
+  String? get _currentPhoto {
+    final stop = widget.editing;
+    if (stop == null) return null;
+    final uploaded =
+        ref.read(stopPhotosProvider(widget.tripId)).valueOrNull?[stop.id];
+    return uploaded ?? stop.location?.imageUrl;
+  }
+
+  /// "เปลี่ยนรูปภาพ": the traveller's own photos or the place's Google ones.
+  /// Whatever is chosen becomes the cover, which is the photo the card shows.
+  Future<void> _choosePhoto() async {
+    final choice = await showPhotoChoiceSheet(
+      context,
+      pending: List.of(_photos),
+      currentUrl: _currentPhoto,
+      placeId: _placeId,
+      selectedGoogleUrl: _googlePhoto,
+    );
+    if (choice == null || !mounted) return;
+    setState(() {
+      switch (choice) {
+        case DevicePhotos(:final files):
+          _photos.insertAll(0, files);
+          _googlePhoto = null;
+        case PendingPhoto(:final index):
+          _photos.insert(0, _photos.removeAt(index));
+          _googlePhoto = null;
+        case CurrentPhoto():
+          _googlePhoto = null;
+        case GooglePhoto(:final url):
+          _googlePhoto = url;
+      }
+    });
   }
 
   /// Replaces one image in place, which is what a pencil on a thumbnail means.
@@ -278,13 +318,26 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
   /// message when they did not make it, or null when there was nothing to
   /// send or it all went up.
   Future<String?> _uploadPhotos(String activityId) async {
-    if (_photos.isEmpty) return null;
+    final google = _placeId == null ? null : _googlePhoto;
+    if (_photos.isEmpty && google == null) return null;
     try {
       final api = await ref.read(plunoApiProvider.future);
-      for (final photo in _photos) {
+      // The card shows the newest photo, so the cover goes up last: the
+      // device photos back to front, then a Google pick above them all.
+      for (final photo in _photos.reversed) {
         await api.media.upload(
           widget.tripId,
           filePath: photo.path,
+          activityId: activityId,
+        );
+      }
+      if (google != null) {
+        // from-place only takes the place, so this adds its main photo
+        // whichever one was picked; it will send the pick once the server
+        // accepts one (unknown fields are a 400 today).
+        await api.media.addFromPlace(
+          widget.tripId,
+          placeId: _placeId!,
           activityId: activityId,
         );
       }
@@ -413,7 +466,11 @@ class _AddPlaceSheetState extends ConsumerState<AddPlaceSheet> {
                   ],
                   _PhotoPicker(
                     photos: _photos,
-                    onAdd: _addPhotos,
+                    // A Google pick is the cover; otherwise the stop keeps
+                    // its own photo until something new is picked.
+                    coverUrl: _googlePhoto ??
+                        (_photos.isEmpty ? _currentPhoto : null),
+                    onChoose: _choosePhoto,
                     onReplace: _replacePhoto,
                   ),
                   const SizedBox(height: 18),
@@ -891,35 +948,60 @@ class _ExploreBanner extends StatelessWidget {
   }
 }
 
+/// The empty photo well, which opens "เปลี่ยนรูปภาพ".
+const photoWellKey = Key('stop-photo-well');
+
+/// The cover photo; its pencil opens "เปลี่ยนรูปภาพ".
+const photoCoverKey = Key('stop-photo-cover');
+
 /// The cover image and its thumbnails. On a phone this sits above the fields
 /// rather than beside them, which is the one place the layout departs from the
 /// desktop frame.
 class _PhotoPicker extends StatelessWidget {
   const _PhotoPicker({
     required this.photos,
-    required this.onAdd,
+    required this.coverUrl,
+    required this.onChoose,
     required this.onReplace,
   });
 
   final List<XFile> photos;
-  final VoidCallback onAdd;
+
+  /// A remote cover in front of [photos]: a Google pick, or the photo the
+  /// stop already has.
+  final String? coverUrl;
+
+  /// Opens "เปลี่ยนรูปภาพ".
+  final VoidCallback onChoose;
   final ValueChanged<int> onReplace;
 
   @override
   Widget build(BuildContext context) {
-    if (photos.isEmpty) return _empty();
+    final coverUrl = this.coverUrl;
+    if (photos.isEmpty && coverUrl == null) return _empty();
 
+    // With a remote cover every device photo is a thumbnail; otherwise the
+    // first one is the cover.
+    final offset = coverUrl == null ? 1 : 0;
+    final rest = photos.skip(offset).toList();
     // Three tiles at most: the cover and two thumbnails, with the overflow
     // counted on the last one.
-    final thumbs = photos.length > 3 ? photos.sublist(1, 3) : photos.skip(1);
-    final hidden = photos.length > 3 ? photos.length - 3 : 0;
+    final thumbs = rest.take(2).toList();
+    final hidden = rest.length > 2 ? rest.length - 2 : 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AspectRatio(
           aspectRatio: 1.18,
-          child: _tile(photos.first, onTap: () => onReplace(0), radius: 16),
+          child: _tile(
+            coverUrl == null
+                ? Image.file(File(photos.first.path), fit: BoxFit.cover)
+                : CoverImage(source: coverUrl),
+            onTap: onChoose,
+            radius: 16,
+            key: photoCoverKey,
+          ),
         ),
         const SizedBox(height: 10),
         Row(
@@ -929,8 +1011,8 @@ class _PhotoPicker extends StatelessWidget {
                 width: 84,
                 height: 84,
                 child: _tile(
-                  photo,
-                  onTap: () => onReplace(index + 1),
+                  Image.file(File(photo.path), fit: BoxFit.cover),
+                  onTap: () => onReplace(index + offset),
                   radius: 12,
                   badge: hidden > 0 && index == thumbs.length - 1
                       ? '+$hidden'
@@ -940,7 +1022,7 @@ class _PhotoPicker extends StatelessWidget {
               const SizedBox(width: 10),
             ],
             GestureDetector(
-              onTap: onAdd,
+              onTap: onChoose,
               child: Container(
                 width: 84,
                 height: 84,
@@ -959,17 +1041,19 @@ class _PhotoPicker extends StatelessWidget {
   }
 
   Widget _tile(
-    XFile photo, {
+    Widget image, {
     required VoidCallback onTap,
     required double radius,
     String? badge,
+    Key? key,
   }) {
     return ClipRRect(
+      key: key,
       borderRadius: BorderRadius.circular(radius),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.file(File(photo.path), fit: BoxFit.cover),
+          image,
           if (badge != null)
             Container(
               color: Colors.black.withValues(alpha: 0.45),
@@ -1009,7 +1093,8 @@ class _PhotoPicker extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
-          onTap: onAdd,
+          key: photoWellKey,
+          onTap: onChoose,
           child: CustomPaint(
             painter: _DashedBox(),
             child: SizedBox(

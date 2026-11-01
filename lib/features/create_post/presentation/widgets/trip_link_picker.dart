@@ -90,7 +90,7 @@ class _TripLinkPickerState extends ConsumerState<_TripLinkPicker> {
                   padding: EdgeInsets.zero,
                   itemCount: rows.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) => _PlanRow(
+                  itemBuilder: (context, index) => PlanPickerRow(
                     trip: rows[index],
                     selected: rows[index].id == _selected,
                     // Tapping the row that is already chosen clears it, which
@@ -168,8 +168,8 @@ class _TripLinkPickerState extends ConsumerState<_TripLinkPicker> {
 }
 
 /// One plan: its cover, who is on it, its name, and how long it runs.
-class _PlanRow extends StatelessWidget {
-  const _PlanRow({
+class PlanPickerRow extends StatelessWidget {
+  const PlanPickerRow({
     required this.trip,
     required this.selected,
     required this.onTap,

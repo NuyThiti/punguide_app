@@ -5,17 +5,20 @@ import 'package:pluno/features/location_access/presentation/providers/location_p
 import 'package:pluno/features/location_access/domain/location_service.dart';
 import 'package:pluno/features/location_access/data/location_permission_store.dart';
 import 'package:pluno/shared/widgets/cover_image.dart';
+import 'package:pluno/features/create_post/presentation/widgets/post_audience_chip.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/location_picker_sheet.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/travel_leg_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/api/pluno_api.dart';
+import 'package:pluno/core/constants/app_constants.dart';
 import 'package:pluno/features/create_trip/domain/plan_labels.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/budget_sheets.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_trip/presentation/edit_trip_screen.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/add_place_sheet.dart';
+import 'package:pluno/features/create_trip/presentation/widgets/photo_choice_sheet.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/plan_budget_tab.dart';
 
 import 'support/fake_api.dart';
@@ -98,6 +101,48 @@ List<Map<String, dynamic>> _filledDay() => [
             'travelMode': 'DRIVE',
             'routeStatus': 'CALCULATED',
             'durationMinutes': 12,
+          },
+        ],
+      },
+    ];
+
+/// วันที่ 1 with two stops whose leg the server could not route. [located]
+/// gives both stops coordinates; without them routing can never succeed.
+List<Map<String, dynamic>> _failedLegDay({bool located = true}) => [
+      <String, dynamic>{
+        'id': 'd1',
+        'dayNumber': 1,
+        'date': '2026-08-20',
+        'activities': <Map<String, dynamic>>[
+          {
+            'id': 's1',
+            'title': 'วัดเชียงทอง',
+            'category': 'sightseeing',
+            'order': 0,
+            'time': '08:30',
+            'cost': 0,
+            if (located)
+              'location': {'name': 'วัดเชียงทอง', 'lat': 19.89, 'lng': 102.14},
+          },
+          {
+            'id': 's2',
+            'title': 'ตลาดมืด',
+            'category': 'food',
+            'order': 1,
+            'time': '18:00',
+            'cost': 0,
+            'location': {'name': 'ตลาดมืด', 'lat': 19.88, 'lng': 102.13},
+          },
+        ],
+        'travelSegments': <Map<String, dynamic>>[
+          {
+            'id': 'seg1',
+            'dayId': 'd1',
+            'fromPlaceId': 's1',
+            'toPlaceId': 's2',
+            'order': 0,
+            'travelMode': 'DRIVE',
+            'routeStatus': 'FAILED',
           },
         ],
       },
@@ -385,13 +430,19 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
+    // A chip per day, and the first day's card.
     expect(find.text('วันที่ 1'), findsOneWidget);
-    expect(find.text('Thu, 20 Aug'), findsOneWidget);
     expect(find.text('วันที่ 2'), findsOneWidget);
     expect(find.text('วันที่ 3'), findsOneWidget);
+    expect(find.text('Thu, 20 Aug'), findsOneWidget);
+    expect(find.text('Sat, 22 Aug'), findsNothing);
+
+    await tester.tap(find.text('วันที่ 3'));
+    await tester.pumpAndSettle();
     expect(find.text('Sat, 22 Aug'), findsOneWidget);
-    // One add button, in the ตารางแผน heading — not one per day.
-    expect(find.text('สถานที่'), findsOneWidget);
+    expect(find.text('Thu, 20 Aug'), findsNothing);
+    // One add button, beside the visibility chip — not one per day.
+    expect(find.byKey(addPlaceButtonKey), findsOneWidget);
   });
 
   testWidgets('ตารางแผน collapses and ที่พักของคุณ opens', (tester) async {
@@ -440,6 +491,10 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
+    // Remix moved into the schedule's ⋮ menu.
+    expect(find.text('Remix Trip'), findsNothing);
+    await tester.tap(find.byTooltip('ตัวเลือกเพิ่มเติม'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Remix Trip'));
     await tester.pumpAndSettle();
 
@@ -466,7 +521,7 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    expect(find.text('จัดแผนของคุณ'), findsOneWidget);
+    expect(find.byKey(addPlaceButtonKey), findsOneWidget);
     expect(find.text('ตารางแผน'), findsOneWidget);
   });
 
@@ -596,7 +651,7 @@ void main() {
     expect(find.text('วัดเชียงทอง'), findsOneWidget);
   });
 
-  testWidgets('ทริปของฉัน swaps in its own heading, map and day picker',
+  testWidgets('ทริปของฉัน drops the hero and heading for the map and days',
       (tester) async {
     // A short viewport leaves the sliver below the fold unbuilt, so nothing
     // under the map would be findable.
@@ -613,11 +668,10 @@ void main() {
     await tester.tap(find.text('ทริปของฉัน'));
     await tester.pumpAndSettle();
 
-    // The จัดแผน heading and its purple action are gone.
-    expect(find.text('จัดแผนของคุณ'), findsNothing);
-    expect(find.text('Remix Trip'), findsNothing);
-
-    expect(find.text('แก้ไขทริป'), findsOneWidget);
+    // No hero and no heading row: the tab opens straight onto the map.
+    expect(find.text('ร้านอาหาร'), findsNothing);
+    expect(find.text('แก้ไขทริป'), findsNothing);
+    expect(find.byKey(addPlaceButtonKey), findsNothing);
     // Tests run with no --dart-define=MAPS_API_KEY, so the card must fall
     // back rather than build a GoogleMap the SDK would throw on.
     expect(find.text('แผนที่ยังไม่ได้ตั้งค่า'), findsOneWidget);
@@ -718,19 +772,26 @@ void main() {
     expect(time.style?.color, const Color(0xFFF4703A));
   });
 
-  testWidgets('แก้ไขทริป opens the brief wizard', (tester) async {
+  testWidgets('only จัดแผน shows the hero', (tester) async {
     adapter.replies['GET /trips/trip-1'] = [
       FakeReply(200, _tripJson(days: _twoDays()))
     ];
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
+    expect(find.text('ร้านอาหาร'), findsOneWidget);
+
     await tester.tap(find.text('ทริปของฉัน'));
     await tester.pumpAndSettle();
+    expect(find.text('ร้านอาหาร'), findsNothing);
 
-    await tester.tap(find.text('แก้ไขทริป'));
+    await tester.tap(find.text('สรุปงบ'));
     await tester.pumpAndSettle();
-    expect(find.text('brief page'), findsOneWidget);
+    expect(find.text('งบ/วัน'), findsNothing);
+
+    await tester.tap(find.text('จัดแผน'));
+    await tester.pumpAndSettle();
+    expect(find.text('ร้านอาหาร'), findsOneWidget);
   });
 
   testWidgets('dragging a stop sends the whole day in its new order',
@@ -830,7 +891,7 @@ void main() {
     await tester.tap(find.text('ทริปของฉัน'));
     await tester.pumpAndSettle();
 
-    expect(find.text('แก้ไขทริป'), findsOneWidget);
+    expect(find.text('แผนที่ยังไม่ได้ตั้งค่า'), findsOneWidget);
   });
 
   testWidgets('a photo added to a stop shows on its card, over the place photo',
@@ -889,6 +950,369 @@ void main() {
     expect(find.byWidgetPredicate(showsUpload), findsOneWidget);
   });
 
+  group('เปลี่ยนรูปภาพ', () {
+    const placePhoto = 'https://api.example.com/places/p1/photo';
+    const google1 = 'https://api.example.com/places/google/g/photos/1';
+    const google2 = 'https://api.example.com/places/google/g/photos/2';
+
+    /// วันที่ 1 with its first stop linked to place p1.
+    List<Map<String, dynamic>> placedDay() {
+      final days = _filledDay();
+      final stops = days.first['activities'] as List<Map<String, dynamic>>;
+      stops.first['location'] = <String, dynamic>{
+        'placeId': 'p1',
+        'name': 'วัดเชียงทอง',
+        'lat': 19.89,
+        'lng': 102.14,
+        'imageUrl': placePhoto,
+      };
+      return days;
+    }
+
+    Finder inPhotoSheet(String text) => find.descendant(
+          of: find.byKey(photoChoiceSheetKey),
+          matching: find.text(text),
+        );
+
+    bool shows(Widget w, String url) => w is CoverImage && w.source == url;
+
+    testWidgets('a stop keeps its photo, and a Google pick replaces it',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: placedDay()))
+      ];
+      adapter.replies['GET /places/p1'] = [
+        FakeReply(200, <String, dynamic>{
+          'id': 'p1',
+          'name': 'วัดเชียงทอง',
+          'photos': [google1, google2],
+        })
+      ];
+      adapter.replies['PATCH /items/s1'] = [
+        FakeReply(200, <String, dynamic>{
+          'id': 's1',
+          'title': 'วัดเชียงทอง',
+          'category': 'sightseeing',
+          'order': 0,
+          'cost': 300,
+        })
+      ];
+      adapter.replies['POST /trips/trip-1/media/from-place'] = [
+        FakeReply(201, <String, dynamic>{
+          'mediaId': 'm1',
+          'urls': {'large': google2, 'thumbnail': google2},
+        })
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await openStopAction(tester, 'แก้ไข');
+
+      // The edit form opens on the photo the stop already has.
+      final cover = find.byKey(photoCoverKey);
+      expect(
+        find.descendant(
+            of: cover,
+            matching: find.byWidgetPredicate((w) => shows(w, placePhoto))),
+        findsOneWidget,
+      );
+
+      await tester
+          .tap(find.descendant(of: cover, matching: find.byIcon(Icons.edit)));
+      await tester.pumpAndSettle();
+
+      expect(inPhotoSheet('เปลี่ยนรูปภาพ'), findsOneWidget);
+      expect(inPhotoSheet('รูปภาพของคุณ'), findsOneWidget);
+      expect(inPhotoSheet('เลือกรูปภาพ'), findsOneWidget);
+      // No web search until there is an API behind it.
+      expect(inPhotoSheet('ค้นหาบนเว็บ'), findsNothing);
+      expect(inPhotoSheet('อัปโหลดรูป'), findsOneWidget);
+
+      await tester.tap(inPhotoSheet('เลือกรูปภาพ'));
+      await tester.pumpAndSettle();
+      expect(adapter.paths, contains('GET /places/p1'));
+
+      // Tapping highlights; the tile's เลือก confirms.
+      expect(inPhotoSheet('เลือก'), findsNothing);
+      await tester.tap(find.byWidgetPredicate((w) => shows(w, google2)));
+      await tester.pumpAndSettle();
+      await tester.tap(inPhotoSheet('เลือก'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(photoChoiceSheetKey), findsNothing);
+      expect(
+        find.descendant(
+            of: find.byKey(photoCoverKey),
+            matching: find.byWidgetPredicate((w) => shows(w, google2))),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('บันทึก'));
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('POST /trips/trip-1/media/from-place')!;
+      expect(body['placeId'], 'p1');
+      expect(body['activityId'], 's1');
+    });
+
+    testWidgets('a stop with no place says Google needs one', (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _filledDay()))
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      final add = find.byKey(addPlaceButtonKey);
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      final well = find.byKey(photoWellKey);
+      await tester.ensureVisible(well);
+      await tester.pumpAndSettle();
+      await tester.tap(well);
+      await tester.pumpAndSettle();
+      await tester.tap(inPhotoSheet('เลือกรูปภาพ'));
+      await tester.pumpAndSettle();
+
+      expect(inPhotoSheet('เลือกสถานที่ก่อน เพื่อดูรูปจาก Google'),
+          findsOneWidget);
+      expect(adapter.paths.any((p) => p.startsWith('GET /places/')), isFalse);
+    });
+  });
+
+  group('รูปปก', () {
+    const placePhoto = 'https://api.example.com/places/p1/photo';
+    const uploadLarge = 'https://cdn.example.com/media/s2-large.jpg';
+
+    /// วันที่ 1 with its first stop linked to place p1 and no upload.
+    List<Map<String, dynamic>> placedDay() {
+      final days = _filledDay();
+      final stops = days.first['activities'] as List<Map<String, dynamic>>;
+      stops.first['location'] = <String, dynamic>{
+        'placeId': 'p1',
+        'name': 'วัดเชียงทอง',
+        'imageUrl': placePhoto,
+      };
+      return days;
+    }
+
+    Finder inCoverSheet(String text) => find.descendant(
+          of: find.byKey(coverChoiceSheetKey),
+          matching: find.text(text),
+        );
+
+    bool shows(Widget w, String url) => w is CoverImage && w.source == url;
+
+    void stubSetCover() {
+      adapter.replies['PUT /trips/trip-1/cover'] = [
+        FakeReply(200, _tripJson(days: placedDay()))
+      ];
+    }
+
+    void tallView(WidgetTester tester) {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('a trip with no cover shows its first stop photo',
+        (tester) async {
+      tallView(tester);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: placedDay()))
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+
+      // The hero and the stop's own thumbnail.
+      expect(find.byWidgetPredicate((w) => shows(w, placePhoto)),
+          findsNWidgets(2));
+      expect(
+        find.byWidgetPredicate((w) => shows(w, AppConstants.defaultCoverImage)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a place photo is pulled into the gallery, then set as cover',
+        (tester) async {
+      tallView(tester);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: placedDay()))
+      ];
+      adapter.replies['POST /trips/trip-1/media/from-place'] = [
+        FakeReply(201, <String, dynamic>{
+          'mediaId': 'm-place',
+          'urls': {'large': placePhoto, 'thumbnail': placePhoto},
+        })
+      ];
+      stubSetCover();
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(changeCoverButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(inCoverSheet('เปลี่ยนรูปปก'), findsOneWidget);
+      expect(inCoverSheet('อัปโหลดรูป'), findsOneWidget);
+      // The stand-in cover opens selected, captioned with its stop.
+      expect(inCoverSheet('วัดเชียงทอง'), findsOneWidget);
+      await tester.tap(inCoverSheet('เลือก'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(coverChoiceSheetKey), findsNothing);
+      final body = adapter.bodyOf('POST /trips/trip-1/media/from-place')!;
+      expect(body['placeId'], 'p1');
+      // Not tied to the stop, so the stop's own photo is left alone.
+      expect(body.containsKey('activityId'), isFalse);
+      expect(adapter.bodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-place'});
+    });
+
+    testWidgets('a stop upload is set as cover as it is', (tester) async {
+      tallView(tester);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: placedDay()))
+      ];
+      final stops =
+          _filledDay().first['activities'] as List<Map<String, dynamic>>;
+      final secondId = stops[1]['id'] as String;
+      final secondTitle = stops[1]['title'] as String;
+      adapter.replies['GET /trips/trip-1/media'] = [
+        FakeReply(200, {
+          'tripId': 'trip-1',
+          'total': 1,
+          'page': 1,
+          'limit': 200,
+          'items': [
+            {
+              'id': 'm-up',
+              'source': 'activity',
+              'sourceActivityId': secondId,
+              'urls': {'large': uploadLarge, 'thumbnail': uploadLarge},
+            },
+          ],
+        })
+      ];
+      stubSetCover();
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(changeCoverButtonKey));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.descendant(
+        of: find.byKey(coverChoiceSheetKey),
+        matching: find.byWidgetPredicate((w) => shows(w, uploadLarge)),
+      ));
+      await tester.pumpAndSettle();
+      expect(inCoverSheet(secondTitle), findsOneWidget);
+      await tester.tap(inCoverSheet('เลือก'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.paths,
+          isNot(contains('POST /trips/trip-1/media/from-place')));
+      expect(adapter.bodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-up'});
+    });
+  });
+
+  group('failed legs', () {
+    Future<void> open(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('say so and retry, reloading the plan', (tester) async {
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _failedLegDay())),
+        FakeReply(200, _tripJson(days: _filledDay())),
+      ];
+      adapter.replies['POST /trips/trip-1/travel-segments/retry'] = [
+        FakeReply(201, [
+          {
+            'id': 'seg1',
+            'dayId': 'd1',
+            'fromPlaceId': 's1',
+            'toPlaceId': 's2',
+            'order': 0,
+            'travelMode': 'DRIVE',
+            'routeStatus': 'CALCULATED',
+            'durationMinutes': 12,
+          },
+        ]),
+      ];
+      await open(tester);
+
+      expect(find.text('คำนวณระยะทางไม่สำเร็จ'), findsOneWidget);
+      // A failed route has no numbers, so its mode alone must not show.
+      expect(find.text('ขับรถ'), findsNothing);
+
+      final retry = find.byKey(retryLegButtonKey);
+      await tester.ensureVisible(retry);
+      await tester.pumpAndSettle();
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+
+      // The reload goes out once the retry's response has landed.
+      await tester.pumpAndSettle();
+      expect(
+          adapter.paths, contains('POST /trips/trip-1/travel-segments/retry'));
+      expect(find.text('คำนวณระยะทางไม่สำเร็จ'), findsNothing);
+      expect(find.textContaining('15 นาที'), findsWidgets);
+    });
+
+    testWidgets('a retry that still fails says so', (tester) async {
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _failedLegDay())),
+      ];
+      adapter.replies['POST /trips/trip-1/travel-segments/retry'] = [
+        FakeReply(201, [
+          {
+            'id': 'seg1',
+            'dayId': 'd1',
+            'fromPlaceId': 's1',
+            'toPlaceId': 's2',
+            'order': 0,
+            'travelMode': 'DRIVE',
+            'routeStatus': 'FAILED',
+          },
+        ]),
+      ];
+      await open(tester);
+
+      final retry = find.byKey(retryLegButtonKey);
+      await tester.ensureVisible(retry);
+      await tester.pumpAndSettle();
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('ยังคำนวณระยะทางบางช่วงไม่ได้ ลองใหม่อีกครั้งภายหลัง'),
+          findsOneWidget);
+      expect(find.text('คำนวณระยะทางไม่สำเร็จ'), findsOneWidget);
+    });
+
+    testWidgets('a stop with no location asks for one, not a retry',
+        (tester) async {
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _failedLegDay(located: false))),
+      ];
+      await open(tester);
+
+      expect(find.text('เพิ่มตำแหน่งเพื่อคำนวณระยะทาง'), findsOneWidget);
+      expect(find.byKey(retryLegButtonKey), findsNothing);
+    });
+  });
+
   testWidgets('a stop card has one ⋯ button whose sheet offers แก้ไข and ลบ',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
@@ -925,26 +1349,29 @@ void main() {
     expect(find.text('แก้ไขสถานที่'), findsOneWidget);
   });
 
-  testWidgets('+ สถานที่ sits in the ตารางแผน heading and adds to day 1',
+  testWidgets(
+      '+ เพิ่มสถานที่ sits beside who-can-see and adds to the day shown',
       (tester) async {
     tester.view.physicalSize = const Size(320 * 3, 1800 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     adapter.replies['GET /trips/trip-1'] = [
-      FakeReply(200, _tripJson(days: _filledDay()))
+      FakeReply(200, _tripJson(days: _twoDays()))
     ];
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Same row as the heading, even on the narrowest phone.
-    final add = find.text('สถานที่');
-    expect(add, findsOneWidget);
+    // One row with the visibility chip, even on the narrowest phone.
+    final add = find.byKey(addPlaceButtonKey);
     expect(
         tester.getCenter(add).dy,
-        moreOrLessEquals(tester.getCenter(find.text('ตารางแผน')).dy,
+        moreOrLessEquals(tester.getCenter(find.byType(PostAudienceChip)).dy,
             epsilon: 2));
 
+    // The day picker decides where the stop goes.
+    await tester.tap(find.text('วันที่ 2'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(add);
     await tester.pumpAndSettle();
     await tester.tap(add);
@@ -953,7 +1380,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(AddPlaceSheet),
-        matching: find.text('Thu, 20 Aug'),
+        matching: find.text('Fri, 21 Aug'),
       ),
       findsWidgets,
     );
@@ -1040,7 +1467,7 @@ void main() {
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
       // The day cards sit well below the hero on a phone.
-      final add = find.text('สถานที่').first;
+      final add = find.byKey(addPlaceButtonKey);
       await tester.ensureVisible(add);
       await tester.pumpAndSettle();
       await tester.tap(add);
@@ -1149,7 +1576,7 @@ void main() {
       });
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
-      final add = find.text('สถานที่').first;
+      final add = find.byKey(addPlaceButtonKey);
       await tester.ensureVisible(add);
       await tester.pumpAndSettle();
       await tester.tap(add);
@@ -1209,7 +1636,7 @@ void main() {
       });
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
-      final add = find.text('สถานที่').first;
+      final add = find.byKey(addPlaceButtonKey);
       await tester.ensureVisible(add);
       await tester.pumpAndSettle();
       await tester.tap(add);
@@ -1367,7 +1794,7 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    final add = find.text('สถานที่').first;
+    final add = find.byKey(addPlaceButtonKey);
     await tester.ensureVisible(add);
     await tester.pumpAndSettle();
     await tester.tap(add);
@@ -2096,11 +2523,11 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // s1 is first on day 1; drop it on the upper half of day 2's only stop.
+    // s1 is first on day 1; day 2 is off screen, so drop it on its chip.
     await dragStopTo(
       tester,
       find.byIcon(Icons.drag_handle).first,
-      tester.getTopLeft(find.text('น้ำตกกวางสี').first) + const Offset(20, 4),
+      tester.getCenter(find.text('วันที่ 2')),
     );
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 50));
@@ -2110,9 +2537,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // A move, not a reorder: neither day's order endpoint is touched.
+    // A chip appends: day 2 already has one stop.
     expect(adapter.bodyOf('PATCH /items/s1/assign'), {
       'tripDayId': 'd2',
-      'orderIndex': 0,
+      'orderIndex': 1,
     });
     expect(adapter.paths.any((p) => p.contains('/items/order')), isFalse);
   });
@@ -2339,7 +2767,7 @@ void main() {
       ];
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
-      final add = find.text('สถานที่').first;
+      final add = find.byKey(addPlaceButtonKey);
       await tester.ensureVisible(add);
       await tester.pumpAndSettle();
       await tester.tap(add);
@@ -2538,7 +2966,7 @@ void main() {
     }
 
     Future<void> tapAddAndLocation(WidgetTester tester) async {
-      final add = find.text('สถานที่').first;
+      final add = find.byKey(addPlaceButtonKey);
       await tester.ensureVisible(add);
       await tester.pumpAndSettle();
       await tester.tap(add);

@@ -34,16 +34,26 @@ final planAccommodationsProvider =
 /// card. The gallery is newest first, so the latest upload wins.
 ///
 /// It reloads whenever the trip does, which is when a stop was just saved.
-final stopPhotosProvider =
-    FutureProvider.family<Map<String, String>, String>((ref, tripId) async {
+final stopMediaProvider =
+    FutureProvider.family<Map<String, GalleryImage>, String>(
+        (ref, tripId) async {
   await ref.watch(apiTripProvider(tripId).future);
   final api = await ref.watch(plunoApiProvider.future);
   final gallery = await api.media.gallery(tripId, limit: 200);
-  final photos = <String, String>{};
+  final media = <String, GalleryImage>{};
   for (final image in gallery.items) {
     final activityId = image.sourceActivityId;
     if (activityId == null) continue;
-    photos.putIfAbsent(activityId, () => image.urls.thumbnail);
+    media.putIfAbsent(activityId, () => image);
   }
-  return photos;
+  return media;
+});
+
+/// [stopMediaProvider] as the thumbnail each stop card shows.
+final stopPhotosProvider =
+    FutureProvider.family<Map<String, String>, String>((ref, tripId) async {
+  final media = await ref.watch(stopMediaProvider(tripId).future);
+  return {
+    for (final entry in media.entries) entry.key: entry.value.urls.thumbnail,
+  };
 });

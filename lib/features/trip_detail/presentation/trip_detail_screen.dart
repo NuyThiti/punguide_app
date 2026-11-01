@@ -1,8 +1,8 @@
-import 'widgets/trip_content_sections.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_providers.dart';
 import '../../../core/api/pluno_api.dart';
@@ -13,25 +13,20 @@ import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/formatting/compact_count.dart';
 import '../../../shared/layout/screen_class.dart';
 import '../../../shared/widgets/cover_image.dart';
+import '../../../shared/widgets/action_sheet.dart';
 import '../../../shared/widgets/full_image_viewer.dart';
-import '../../auth/presentation/providers/auth_providers.dart';
 import '../../create_trip/domain/plan_labels.dart';
-import '../../saved_trips/presentation/saved_trips_notifier.dart';
-import '../../trips/presentation/itinerary_display.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
+import '../../create_post/presentation/widgets/trip_link_picker.dart';
+import '../../my_trips/presentation/delete_trip.dart';
+import '../../my_trips/presentation/providers/my_trips_providers.dart';
+import '../../profile/presentation/providers/profile_providers.dart';
+import 'widgets/add_to_trip_sheet.dart';
+import 'widgets/plan_stop_card.dart';
+import 'widgets/trip_content_sections.dart';
 
 /// The deep green behind a day number, shared with the plan editor's design.
 const _planGreen = Color(0xFF2E6B4C);
-const _planBlack = Color.fromARGB(255, 0, 0, 0);
-
-/// How much cover photo shows above the trip title.
-///
-/// This is the hero's height knob — everything else in it is sized by its own
-/// text, so the photo is only as tall as this gap makes it. The design hangs
-/// the title off the bottom of the cover with the picture above it. A tablet
-/// gets a taller cover so the photo keeps its share of a bigger screen.
-double _heroPhotoGap(ScreenClass screen) =>
-    screen.pick(compact: 108.0, medium: 150.0, expanded: 190.0);
 
 /// Side padding for the page's one content column.
 ///
@@ -77,13 +72,13 @@ const _topBarHeight = 44.0;
 class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   int _selectedDay = 0;
 
-  /// Shared with the post's sticky bar so it can fade its background in as the
-  /// cover scrolls out from under it.
-  final _postScroll = ScrollController();
+  /// Shared with the sticky bar so it can fade its background in as the
+  /// cover scrolls out from under it. Both faces use it; only one is ever up.
+  final _scroll = ScrollController();
 
   @override
   void dispose() {
-    _postScroll.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -93,7 +88,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.screen,
-      bottomNavigationBar: _actionBar(trip),
       body: trip.when(
         data: _body,
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -105,92 +99,67 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     );
   }
 
-  /// Your own plan offers `แก้ไข`; anyone else's offers `Remix Trip`.
-  ///
-  /// Nothing else in the app watches [currentUserProvider], so `/auth/me`
-  /// starts fresh here — waiting for it to settle keeps a purple Remix button
-  /// from flashing on your own trip before it flips to the orange edit one. A
-  /// viewer who is signed out, or whose session read failed, is not the owner
-  /// and gets Remix.
-  Widget? _actionBar(AsyncValue<ApiTrip> trip) {
-    final viewer = ref.watch(currentUserProvider);
-    if (!trip.hasValue || viewer.isLoading) return null;
-
-    final owned = viewer.valueOrNull?.id == trip.requireValue.ownerId;
-
-    // A post carries its one action in the hero instead — Remix for a
-    // visitor, edit for the owner — so it gets no bottom bar at all.
-    if (trip.requireValue.type.isPost) return null;
-    return _PlanActionBar(
-      label: owned ? 'แก้ไข' : 'Remix Trip',
-      color: owned ? AppColors.brandOrange : AppColors.brandPurple,
-      onTap: () => context.goNamed(
-        owned ? AppRoute.editTrip.name : AppRoute.remixTrip.name,
-        params: {'tripId': widget.tripId},
-      ),
-    );
-  }
-
-  /// A post, in the order the composer collects it: who wrote it, what it is
-  /// called, where, what kind of trip, the blurb, then the spots.
-  /// A post, in the order Figma 2183-21784 sets it: a dark cover hero with the
-  /// author, the title and the trip's facts, the plan this post links to, then
-  /// Trip Overview and the spots.
-  Widget _contentBody(ApiTrip trip) {
+  Widget _body(ApiTrip trip) {
+    final post = trip.type.isPost;
     // The bar is stacked over the scroll view rather than slivered into it:
-    // it has to stay put while the cover and the spots slide under it, and a
+    // it has to stay put while the cover and the stops slide under it, and a
     // `SliverAppBar` would squash the Remix pill as it collapsed.
     return Stack(
       children: [
-        _contentScroll(trip),
+        post ? _contentScroll(trip) : _planScroll(trip),
         Positioned(
           top: 0,
           left: 0,
           right: 0,
           child: _StickyTopBar(
-            scroll: _postScroll,
+            scroll: _scroll,
             trip: trip,
+            owned: _owns(trip),
             onBack: _leave,
-            onShare: () => _todo('แชร์โพสต์ยังไม่เปิดใช้งาน'),
-            onFollow: () => _todo('ติดตามยังไม่เปิดใช้งาน'),
+            onMenu: (action) => switch (action) {
+              _TripMenuAction.edit => _edit(trip),
+              _TripMenuAction.delete => _delete(trip),
+              _TripMenuAction.share => _snack(
+                  post
+                      ? 'แชร์โพสต์ยังไม่เปิดใช้งาน'
+                      : 'แชร์ทริปยังไม่เปิดใช้งาน',
+                ),
+            },
+            onFollow: () => _snack('ติดตามยังไม่เปิดใช้งาน'),
           ),
         ),
       ],
     );
   }
 
-  /// Whether the viewer wrote this post, or null while `/auth/me` is still
+  /// Whether the viewer owns this trip, or null while `/auth/me` is still
   /// answering — guessing "visitor" there would flash Remix on the owner's
-  /// own post before it flips to edit. Signed out, or a failed session read,
+  /// own trip before it flips to edit. Signed out, or a failed session read,
   /// is not the owner.
-  bool? _ownsPost(ApiTrip trip) {
+  bool? _owns(ApiTrip trip) {
     final viewer = ref.watch(currentUserProvider);
     if (viewer.isLoading) return null;
     return viewer.valueOrNull?.id == trip.ownerId;
   }
 
+  void _remix() => context.goNamed(
+        AppRoute.remixTrip.name,
+        params: {'tripId': widget.tripId},
+      );
+
+  /// A post: the cover hero, Trip Overview, then the spots.
   Widget _contentScroll(ApiTrip trip) {
     final blurb = trip.description?.trim() ?? '';
 
     return CustomScrollView(
-      controller: _postScroll,
+      controller: _scroll,
       physics: const BouncingScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: _PostHero(
             trip: trip,
-            owned: _ownsPost(trip),
-            onRemix: () => context.goNamed(
-              AppRoute.remixTrip.name,
-              params: {'tripId': widget.tripId},
-            ),
-            onEdit: () async {
-              await context.pushNamed(
-                AppRoute.shareSettings.name,
-                params: {'tripId': widget.tripId},
-              );
-              if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
-            },
+            owned: _owns(trip),
+            onRemix: _remix,
           ),
         ),
         SliverPadding(
@@ -216,8 +185,9 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     );
   }
 
-  Widget _body(ApiTrip trip) {
-    if (trip.type.isPost) return _contentBody(trip);
+  /// A plan, the same way up as a post: the cover hero with its one action,
+  /// Trip Overview, then ตารางแผน — the stops day by day on white.
+  Widget _planScroll(ApiTrip trip) {
     final plan = _PlanView.of(trip);
     // A trip whose days were deleted must not leave the tab strip pointing
     // past the end of the list.
@@ -225,67 +195,187 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
         plan.days.isEmpty ? 0 : _selectedDay.clamp(0, plan.days.length - 1);
     final day = plan.days.isEmpty ? null : plan.days[dayIndex];
     final stops = day?.activities ?? const <Activity>[];
-    // The bookmark writes to the local saved list, so the icon has to read
-    // from there too — `ApiTrip.isSaved` is the server's answer and would not
-    // change when you tap. It stands in until the local read lands.
-    final saved =
-        ref.watch(selectedTripProvider(widget.tripId)).valueOrNull?.isSaved ??
-            trip.isSaved;
+    final description = trip.description?.trim() ?? '';
+    final gutter = _gutter(context);
 
     return CustomScrollView(
+      controller: _scroll,
       physics: const BouncingScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
-          child: _ViewHero(
-            plan: plan,
-            saved: saved,
-            avatarImage: ref.watch(authSessionProvider)?.avatarImage,
-            onBack: _leave,
-            onSave: () => _toggleSaved(trip),
-            onShare: () => _todo('แชร์ทริปยังไม่เปิดใช้งาน'),
-            onFollow: () => _todo('ติดตามยังไม่เปิดใช้งาน'),
+          child: _PostHero(
+            trip: trip,
+            owned: _owns(trip),
+            onRemix: _remix,
           ),
         ),
         SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            _gutter(context),
-            22,
-            _gutter(context),
-            28,
+          padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 22),
+          sliver: SliverToBoxAdapter(
+            child: _PostOverview(
+              trip: trip,
+              blurb: description.isNotEmpty ? description : plan.blurb,
+              placeCount: plan.stopCount,
+            ),
           ),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              TripContentSections(sections: trip.contents, gutter: 0),
-              _OverviewSection(plan: plan),
-              const SizedBox(height: 20),
-              _DayTabs(
-                days: plan.days,
-                selectedIndex: dayIndex,
-                onSelect: (index) => setState(() => _selectedDay = index),
+        ),
+        if (trip.contents.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 22),
+              child: TripContentSections(
+                sections: trip.contents,
+                gutter: gutter,
               ),
-              const SizedBox(height: 16),
-              if (plan.days.isEmpty)
-                const _EmptyNote(text: 'ทริปนี้ยังไม่มีแผนการเดินทาง')
-              else if (stops.isEmpty)
-                const _EmptyNote(text: 'วันนี้ยังไม่มีสถานที่')
-              else
-                for (var i = 0; i < stops.length; i++) ...[
-                  _StopCard(
-                    stop: stops[i],
-                    position: i + 1,
-                    segment: day!.segmentInto(stops[i]),
-                    onAdd: () => _todo('เพิ่มลงแผนของฉันยังไม่เปิดใช้งาน'),
-                    onSave: () => _todo('บันทึกสถานที่ยังไม่เปิดใช้งาน'),
-                    onMap: () => _todo('ดูบนแผนที่ยังไม่เปิดใช้งาน'),
+            ),
+          ),
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: ColoredBox(
+            color: AppColors.screen,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                gutter,
+                24,
+                gutter,
+                28 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'ตารางแผน',
+                    style: TextStyle(
+                      color: AppColors.foreground,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                  if (i < stops.length - 1) const SizedBox(height: 16),
+                  const SizedBox(height: 16),
+                  // One day needs no tabs to choose between.
+                  if (plan.days.length > 1) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _DayTabs(
+                        days: plan.days,
+                        selectedIndex: dayIndex,
+                        onSelect: (index) =>
+                            setState(() => _selectedDay = index),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (plan.days.isEmpty)
+                    const _EmptyNote(text: 'ทริปนี้ยังไม่มีแผนการเดินทาง')
+                  else if (stops.isEmpty)
+                    const _EmptyNote(text: 'วันนี้ยังไม่มีสถานที่')
+                  else
+                    for (var i = 0; i < stops.length; i++) ...[
+                      PlanStopCard(
+                        key: ValueKey(stops[i].id),
+                        stop: stops[i],
+                        position: i + 1,
+                        segment: day!.segmentInto(stops[i]),
+                        onAction: (action) => _onStopAction(stops[i], action),
+                      ),
+                      if (i < stops.length - 1) const SizedBox(height: 14),
+                    ],
                 ],
-            ]),
+              ),
+            ),
           ),
         ),
       ],
     );
   }
+
+  /// A post is edited on its share settings and re-read on the way back; a
+  /// plan opens its editor.
+  Future<void> _edit(ApiTrip trip) async {
+    if (!trip.type.isPost) {
+      context.goNamed(
+        AppRoute.editTrip.name,
+        params: {'tripId': widget.tripId},
+      );
+      return;
+    }
+    await context.pushNamed(
+      AppRoute.shareSettings.name,
+      params: {'tripId': widget.tripId},
+    );
+    if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
+  }
+
+  /// Asks in the same words as the walls, deletes, then leaves — there is
+  /// nothing left on this page to show.
+  Future<void> _delete(ApiTrip trip) async {
+    if (!await askToDeleteTrip(context, trip.title)) return;
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.trips.delete(trip.id);
+    } on ApiException catch (error) {
+      _snack(
+        error.statusCode == 401 ? 'เข้าสู่ระบบก่อน จึงจะลบได้' : error.message,
+      );
+      return;
+    } catch (_) {
+      _snack('ลบไม่สำเร็จ ลองอีกครั้ง');
+      return;
+    }
+    // Every wall of the traveller's own trips would otherwise keep the row.
+    ref
+      ..invalidate(myTripsProvider)
+      ..invalidate(myAlbumsProvider)
+      ..invalidate(myPlansProvider);
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    _leave();
+    messenger.showSnackBar(const SnackBar(content: Text('ลบทริปแล้ว')));
+  }
+
+  Future<void> _onStopAction(Activity stop, PlanStopAction action) async {
+    switch (action) {
+      case PlanStopAction.map:
+        await _openMap(stop);
+      case PlanStopAction.save:
+        _snack('บันทึกสถานที่ยังไม่เปิดใช้งาน');
+      case PlanStopAction.addToTrip:
+        final result = await showAddToTripSheet(context, stop: stop);
+        if (!mounted) return;
+        switch (result) {
+          case AddedToTrip(:final tripTitle):
+            _snack('เพิ่ม ${stop.title} ลง $tripTitle แล้ว');
+          case AddToNewTrip():
+            context.pushNamed(AppRoute.createTrip.name);
+          case null:
+            break;
+        }
+    }
+  }
+
+  /// "นำทางบน Map" — Google Maps at the stop's pin, or a search for its name
+  /// when the stop was typed by hand and has no coordinates.
+  Future<void> _openMap(Activity stop) async {
+    final location = stop.location;
+    final query = location != null && location.hasCoordinates
+        ? '${location.latitude},${location.longitude}'
+        : [location?.name ?? stop.title, _destination]
+            .where((part) => part.isNotEmpty)
+            .join(' ');
+    final uri = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': query,
+    });
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) _snack('เปิดแผนที่ไม่สำเร็จ');
+    } catch (_) {
+      _snack('เปิดแผนที่ไม่สำเร็จ');
+    }
+  }
+
+  String get _destination =>
+      ref.read(apiTripProvider(widget.tripId)).valueOrNull?.destination ?? '';
 
   /// Home is the safe fallback: the page is reachable from four places, and
   /// from a cold deep link there is nothing to pop back to.
@@ -297,32 +387,14 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     }
   }
 
-  /// Saving still goes through the local list the Saved tab reads, so the
-  /// bookmark keeps working the way it does everywhere else in the app.
-  /// `api.trips.save` / `unsave` exist and are still unused by any screen.
-  Future<void> _toggleSaved(ApiTrip trip) async {
-    final notifier = ref.read(savedTripsNotifierProvider.notifier);
-    final local = await ref.read(selectedTripProvider(trip.id).future);
-    if (local == null) return;
-
-    if (local.isSaved) {
-      await notifier.unsaveTrip(local.id);
-    } else {
-      await notifier.saveTrip(local);
-    }
-  }
-
-  void _todo(String message) {
+  void _snack(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
-/// Who wrote the post.
-///
-/// The trip's owner, not the signed-in viewer — `customer` is the account the
-/// trip belongs to.
 /// The post's top bar, pinned over the scrolling page.
 ///
 /// Transparent while it sits on the cover photo, fading to a dark bar as the
@@ -332,15 +404,20 @@ class _StickyTopBar extends StatefulWidget {
   const _StickyTopBar({
     required this.scroll,
     required this.trip,
+    required this.owned,
     required this.onBack,
-    required this.onShare,
+    required this.onMenu,
     required this.onFollow,
   });
 
   final ScrollController scroll;
   final ApiTrip trip;
+
+  /// Null while it is not yet known who is looking — the menu offers only
+  /// แชร์ until it is.
+  final bool? owned;
   final VoidCallback onBack;
-  final VoidCallback onShare;
+  final ValueChanged<_TripMenuAction> onMenu;
   final VoidCallback onFollow;
 
   @override
@@ -402,12 +479,7 @@ class _StickyTopBarState extends State<_StickyTopBar> {
                       onFollow: widget.onFollow,
                     ),
                   ),
-                  _RoundGlassButton(
-                    icon: Icons.share_outlined,
-                    tooltip: 'แชร์',
-                    onTap: widget.onShare,
-                    iconColor: AppColors.postPurple,
-                  ),
+                  _TripMenu(owned: widget.owned, onSelected: widget.onMenu),
                 ],
               ),
             ),
@@ -418,14 +490,14 @@ class _StickyTopBarState extends State<_StickyTopBar> {
   }
 }
 
-/// The cover hero: who wrote the post, what it is called, the trip's facts,
-/// and the plan it links to.
+/// The cover hero: the trip's title over its cover, and Remix for a visitor.
+/// The owner gets no button here — editing lives in the header's ☰ menu. Shared by both faces; the author
+/// row is the pinned bar's, drawn over the top of it.
 class _PostHero extends StatelessWidget {
   const _PostHero({
     required this.trip,
     required this.owned,
     required this.onRemix,
-    required this.onEdit,
   });
 
   final ApiTrip trip;
@@ -433,7 +505,6 @@ class _PostHero extends StatelessWidget {
   /// Null while it is not yet known who is looking.
   final bool? owned;
   final VoidCallback onRemix;
-  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -479,39 +550,41 @@ class _PostHero extends StatelessWidget {
                     // The row itself lives in the pinned bar above; this is
                     // the space it occupies over the cover.
                     const SizedBox(height: _topBarHeight + 14),
-                    Text(
-                      trip.title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        height: 1.4,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // The slot holds its height while the viewer is unknown,
-                    // so the hero does not jump when the right button lands.
+                    // Full width so the title centres on its own: the owner's
+                    // hero has no Remix pill to stretch the column for it.
                     SizedBox(
                       width: double.infinity,
-                      height: 48,
-                      child: switch (owned) {
-                        null => null,
-                        true => _HeroAction(
-                            label: 'แก้ไขโพสต์',
-                            icon: Icons.edit_outlined,
-                            color: AppColors.createTop,
-                            onTap: onEdit,
-                          ),
-                        false => _HeroAction(
-                            label: 'Remix Trip',
-                            icon: Icons.shuffle,
-                            color: AppColors.brandPurple,
-                            foreground: AppColors.handleChipRing,
-                            onTap: onRemix,
-                          ),
-                      },
+                      child: Text(
+                        trip.title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
+                    // Remix is the visitor's; the owner edits from the ☰
+                    // menu instead, so their hero carries no button at all.
+                    // The slot holds its height while the viewer is unknown,
+                    // so a visitor's hero does not jump when Remix lands.
+                    if (owned != true) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: owned == false
+                            ? _HeroAction(
+                                label: 'Remix Trip',
+                                icon: Icons.shuffle,
+                                color: AppColors.brandPurple,
+                                foreground: AppColors.handleChipRing,
+                                onTap: onRemix,
+                              )
+                            : null,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -634,9 +707,12 @@ class _PostAuthor extends StatelessWidget {
 /// one (a post has no schedule of its own) and fall back to the post's own
 /// figures otherwise.
 class _PostFacts extends StatelessWidget {
-  const _PostFacts({required this.trip});
+  const _PostFacts({required this.trip, this.placeCount});
 
   final ApiTrip trip;
+
+  /// A plan's own stop count; a post counts its linked plan's places.
+  final int? placeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -649,7 +725,7 @@ class _PostFacts extends StatelessWidget {
     final days = schedule.durationDays ??
         (start != null && end != null ? end.difference(start).inDays + 1 : 0);
 
-    final places = linked?.placeCount ?? trip.contents.length;
+    final places = placeCount ?? linked?.placeCount ?? trip.contents.length;
     final heads = trip.customer?.groupSize ?? 1;
     final perHead = trip.totalBudget > 0 && heads > 0
         ? '${(trip.totalBudget / heads).asBaht}/คน'
@@ -755,18 +831,75 @@ class _FactText extends StatelessWidget {
   }
 }
 
+/// What the header's ☰ offers.
+enum _TripMenuAction { edit, delete, share }
+
+/// ☰ in the pinned bar: แก้ไขทริป, ลบทริป and แชร์ for the owner, only แชร์
+/// for anyone else — offered on a bottom sheet.
+class _TripMenu extends StatelessWidget {
+  const _TripMenu({required this.owned, required this.onSelected});
+
+  final bool? owned;
+  final ValueChanged<_TripMenuAction> onSelected;
+
+  Future<void> _open(BuildContext context) async {
+    final action = await showActionSheet<_TripMenuAction>(
+      context,
+      items: [
+        if (owned == true) ...const [
+          ActionSheetItem(
+            value: _TripMenuAction.edit,
+            icon: Icons.edit_outlined,
+            label: 'แก้ไขทริป',
+          ),
+          ActionSheetItem(
+            value: _TripMenuAction.delete,
+            icon: Icons.delete_outline,
+            label: 'ลบทริป',
+            destructive: true,
+          ),
+        ],
+        const ActionSheetItem(
+          value: _TripMenuAction.share,
+          icon: Icons.share_outlined,
+          label: 'แชร์',
+        ),
+      ],
+    );
+    if (action != null) onSelected(action);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'เมนู',
+      child: GestureDetector(
+        onTap: () => _open(context),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.9),
+          ),
+          child: const Icon(Icons.menu, size: 18, color: AppColors.postPurple),
+        ),
+      ),
+    );
+  }
+}
+
 class _RoundGlassButton extends StatelessWidget {
   const _RoundGlassButton({
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.iconColor = AppColors.foreground,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
-  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -782,7 +915,7 @@ class _RoundGlassButton extends StatelessWidget {
             shape: BoxShape.circle,
             color: Colors.white.withValues(alpha: 0.9),
           ),
-          child: Icon(icon, size: 16, color: iconColor),
+          child: Icon(icon, size: 16, color: AppColors.foreground),
         ),
       ),
     );
@@ -791,10 +924,15 @@ class _RoundGlassButton extends StatelessWidget {
 
 /// "Trip Overview": the counts, the bookmark, and the post's own blurb.
 class _PostOverview extends StatelessWidget {
-  const _PostOverview({required this.trip, required this.blurb});
+  const _PostOverview({
+    required this.trip,
+    required this.blurb,
+    this.placeCount,
+  });
 
   final ApiTrip trip;
   final String blurb;
+  final int? placeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -819,7 +957,6 @@ class _PostOverview extends StatelessWidget {
             _CountChip(
               icon: Icons.shuffle,
               value: trip.remixCount,
-              compact: true,
             ),
             const SizedBox(width: 6),
             // The design's glyph is a bookmark, but the only count the API
@@ -827,12 +964,11 @@ class _PostOverview extends StatelessWidget {
             _CountChip(
               icon: Icons.bookmark_border,
               value: trip.likeCount,
-              compact: true,
             ),
           ],
         ),
         const SizedBox(height: 10),
-        _PostFacts(trip: trip),
+        _PostFacts(trip: trip, placeCount: placeCount),
         if (blurb.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
@@ -895,472 +1031,8 @@ class _ErrorBody extends StatelessWidget {
   }
 }
 
-/// The cover block: app bar, creator, title, the four facts, and Remix Trip.
-class _ViewHero extends StatelessWidget {
-  const _ViewHero({
-    required this.plan,
-    required this.saved,
-    required this.avatarImage,
-    required this.onBack,
-    required this.onSave,
-    required this.onShare,
-    required this.onFollow,
-  });
-
-  final _PlanView plan;
-  final bool saved;
-
-  /// The signed-in user's own photo, for the app bar — not the creator's.
-  final String? avatarImage;
-  final VoidCallback onBack;
-  final VoidCallback onSave;
-  final VoidCallback onShare;
-  final VoidCallback onFollow;
-
-  @override
-  Widget build(BuildContext context) {
-    final screen = ScreenClass.of(context);
-
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CoverImage(source: plan.coverImage, fit: BoxFit.cover),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0, 0.34, 1],
-                    colors: [
-                      Colors.black.withValues(alpha: 0.66),
-                      Colors.black.withValues(alpha: 0.34),
-                      Colors.black.withValues(alpha: 0.86),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  _edgeInset(context),
-                  8,
-                  _edgeInset(context),
-                  18,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _TopBar(
-                      avatarImage: avatarImage,
-                      saved: saved,
-                      onBack: onBack,
-                      onSave: onSave,
-                    ),
-                    const SizedBox(height: 18),
-                    _CreatorRow(
-                      plan: plan,
-                      saved: saved,
-                      onFollow: onFollow,
-                      onSave: onSave,
-                      onShare: onShare,
-                    ),
-                    SizedBox(height: _heroPhotoGap(screen)),
-                    // The title and facts line up with the content column
-                    // below, while the bar above stays at the screen's edge.
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: _gutter(context) - _edgeInset(context),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            plan.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: screen.pick(
-                                compact: 25.0,
-                                medium: 30.0,
-                                expanded: 34.0,
-                              ),
-                              height: 1.2,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _HeroFacts(plan: plan),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The app bar the design puts over the cover.
-///
-/// The design's leading control is a hamburger, but the app has no drawer to
-/// open and this page is always arrived at from somewhere else — so the slot
-/// carries the back button instead.
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.avatarImage,
-    required this.saved,
-    required this.onBack,
-    required this.onSave,
-  });
-
-  final String? avatarImage;
-  final bool saved;
-  final VoidCallback onBack;
-  final VoidCallback onSave;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _GlassCircleButton(
-          icon: Icons.arrow_back_ios_new,
-          tooltip: 'ย้อนกลับ',
-          onTap: onBack,
-        ),
-      ],
-    );
-  }
-}
-
-/// Whose trip this is, with follow on the left and save/share on the right.
-class _CreatorRow extends StatelessWidget {
-  const _CreatorRow({
-    required this.plan,
-    required this.saved,
-    required this.onFollow,
-    required this.onSave,
-    required this.onShare,
-  });
-
-  final _PlanView plan;
-  final bool saved;
-  final VoidCallback onFollow;
-  final VoidCallback onSave;
-  final VoidCallback onShare;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 30,
-          height: 30,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.85),
-              width: 1.5,
-            ),
-          ),
-          child: plan.creatorAvatar == null
-              ? const Icon(Icons.person, size: 16, color: Colors.white)
-              : CoverImage(source: plan.creatorAvatar!, fit: BoxFit.cover),
-        ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            plan.creatorName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: onFollow,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
-            ),
-            child: const Text(
-              'ติดตาม',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-        const Spacer(),
-        _GlassCircleButton(
-          icon: saved ? Icons.bookmark : Icons.bookmark_border,
-          tooltip: saved ? 'เลิกบันทึก' : 'บันทึกทริป',
-          onTap: onSave,
-          size: 34,
-        ),
-        const SizedBox(width: 8),
-        _GlassCircleButton(
-          icon: Icons.ios_share,
-          tooltip: 'แชร์',
-          onTap: onShare,
-          size: 34,
-        ),
-      ],
-    );
-  }
-}
-
-/// Destination, duration, stop count and the per-head budget, on one wrapping
-/// row so a long place name cannot push the price off screen.
-class _HeroFacts extends StatelessWidget {
-  const _HeroFacts({required this.plan});
-
-  final _PlanView plan;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 14,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        _Fact(icon: Icons.place_outlined, label: plan.destination),
-        if (plan.durationLabel.isNotEmpty)
-          _Fact(icon: Icons.schedule, label: plan.durationLabel),
-        if (plan.stopCount > 0)
-          _Fact(
-            icon: Icons.pin_drop_outlined,
-            label: '${plan.stopCount} สถานที่',
-          ),
-        if (plan.perHeadLabel != null)
-          Text(
-            plan.perHeadLabel!,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _Fact extends StatelessWidget {
-  const _Fact({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.9)),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.92),
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// The pinned action bar: one pill, the width of the screen — purple
-/// `Remix Trip` on someone else's plan, orange `แก้ไข` on your own.
-///
-/// It paints its own background, so the bottom inset goes in its padding —
-/// wrapping this in a `SafeArea` leaves the button where it is and only the
-/// painted panel short of the edge.
-class _PlanActionBar extends StatelessWidget {
-  const _PlanActionBar({
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      // The panel itself is what has to reach the bottom edge, so a test needs
-      // to be able to measure it rather than the button inside it.
-      key: const Key('plan-action-bar'),
-      // The panel spans the screen so it reads as an edge; the pill inside it
-      // lines up with the content column rather than stretching across a
-      // tablet.
-      padding: EdgeInsets.fromLTRB(
-        _gutter(context),
-        10,
-        _gutter(context),
-        10 + MediaQuery.paddingOf(context).bottom,
-      ),
-      decoration: const BoxDecoration(
-        color: AppColors.screen,
-        border: Border(top: BorderSide(color: AppColors.line)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 50,
-        child: ElevatedButton(
-          onPressed: onTap,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: color,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassCircleButton extends StatelessWidget {
-  const _GlassCircleButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    this.size = 38,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withValues(alpha: 0.34),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
-          ),
-          child: Icon(icon, size: size * 0.45, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-
-/// "Trip Overview": the heading, the two counts, and the trip's own blurb.
-class _OverviewSection extends StatelessWidget {
-  const _OverviewSection({required this.plan});
-
-  final _PlanView plan;
-
-  @override
-  Widget build(BuildContext context) {
-    final screen = ScreenClass.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Trip Overview',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppColors.foreground,
-                  fontSize: screen.pick(
-                    compact: 19.0,
-                    medium: 22.0,
-                    expanded: 24.0,
-                  ),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            _CountChip(
-              icon: Icons.shuffle,
-              value: plan.remixCount,
-            ),
-            const SizedBox(width: 8),
-            // The design's glyph is a bookmark, but the only count the API
-            // returns is likes — there is no saveCount on a trip.
-            _CountChip(
-              icon: Icons.bookmark_border,
-              value: plan.likeCount,
-            ),
-          ],
-        ),
-        if (plan.blurb.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          Text(
-            plan.blurb,
-            style: TextStyle(
-              color: const Color(0xFF5F6864),
-              fontSize:
-                  screen.pick(compact: 14.5, medium: 15.5, expanded: 16.0),
-              height: 1.55,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 class _CountChip extends StatelessWidget {
-  const _CountChip({
-    required this.icon,
-    required this.value,
-    this.compact = false,
-  });
-
-  /// The post reads "1.1K"; the plan face's own design groups to "1,111".
-  final bool compact;
+  const _CountChip({required this.icon, required this.value});
 
   final IconData icon;
   final int value;
@@ -1370,7 +1042,7 @@ class _CountChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: compact ? AppColors.postPurpleWell : AppColors.line,
+        color: AppColors.postPurpleWell,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -1379,7 +1051,7 @@ class _CountChip extends StatelessWidget {
           Icon(icon, size: 13, color: AppColors.muted),
           const SizedBox(width: 4),
           Text(
-            compact ? compactCount(value) : _grouped(value),
+            compactCount(value),
             style: const TextStyle(
               color: AppColors.foreground,
               fontSize: 12,
@@ -1478,361 +1150,6 @@ class _DayPill extends StatelessWidget {
   }
 }
 
-/// One stop: thumbnail and position, the time it starts, how you get there,
-/// and whatever the planner wrote about it.
-///
-/// The design also shows opening hours and a "Trip hack" note. Neither exists
-/// on [Activity] — nor does a street address — so those rows are left out
-/// rather than filled with invented copy. See the class doc on
-/// [TripDetailScreen].
-class _StopCard extends StatelessWidget {
-  const _StopCard({
-    required this.stop,
-    required this.position,
-    required this.segment,
-    required this.onAdd,
-    required this.onSave,
-    required this.onMap,
-  });
-
-  final Activity stop;
-  final int position;
-  final TravelSegment? segment;
-  final VoidCallback onAdd;
-  final VoidCallback onSave;
-  final VoidCallback onMap;
-
-  @override
-  Widget build(BuildContext context) {
-    final place = stop.location?.name;
-    // A stop linked to a place repeats its name in [Activity.title], and the
-    // design has no room to say the same thing twice.
-    final showPlace = place != null && place.isNotEmpty && place != stop.title;
-    final notes = stop.notes;
-    final screen = ScreenClass.of(context);
-
-    return Container(
-      padding: EdgeInsets.all(screen.pick(compact: 12.0, medium: 16.0)),
-      decoration: BoxDecoration(
-        color: AppColors.screen,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.chipBorder),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _StopThumbnail(stop: stop, position: position),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (stop.time != null)
-                          Text(
-                            clockLabel(stop.time!),
-                            style: const TextStyle(
-                              color: AppColors.brandOrange,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        const Spacer(),
-                        _AddButton(onTap: onAdd),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      stop.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.foreground,
-                        fontSize: screen.pick(
-                          compact: 14.0,
-                          medium: 16.0,
-                          expanded: 17.0,
-                        ),
-                        height: 1.2,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _LegChip(stop: stop, segment: segment),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (showPlace) ...[
-            const SizedBox(height: 12),
-            _StopInfoRow(icon: Icons.place_outlined, text: place),
-          ],
-          if (notes != null && notes.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              notes,
-              style: const TextStyle(
-                color: Color(0xFF5F6864),
-                fontSize: 12,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _StopAction(
-                  icon: Icons.bookmark_border,
-                  label: 'บันทึก',
-                  onTap: onSave,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _StopAction(
-                  icon: Icons.place_outlined,
-                  label: 'Map',
-                  onTap: onMap,
-                  filled: true,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The stop's photo with its position in the day pinned to the corner.
-class _StopThumbnail extends StatelessWidget {
-  const _StopThumbnail({required this.stop, required this.position});
-
-  final Activity stop;
-  final int position;
-
-  @override
-  Widget build(BuildContext context) {
-    final image = stop.location?.imageUrl;
-    final scale =
-        ScreenClass.of(context).pick(compact: 1.0, medium: 1.2, expanded: 1.32);
-
-    return SizedBox(
-      width: 105 * scale,
-      height: 84 * scale,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: image != null && image.isNotEmpty
-                  ? CoverImage(source: image, fit: BoxFit.cover)
-                  : ColoredBox(
-                      color: AppColors.createBg,
-                      child: Center(
-                        child: Icon(
-                          categoryIcon(stop.category),
-                          size: 26,
-                          color: _planBlack,
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-          Positioned(
-            top: -1,
-            left: -1,
-            child: Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _planBlack,
-                border: Border.all(color: AppColors.screen, width: 2),
-              ),
-              child: Text(
-                '$position',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// How you reach this stop from the one before it.
-///
-/// The first stop of a day has nothing to travel from, so it shows the stop's
-/// own category instead of an empty leg.
-class _LegChip extends StatelessWidget {
-  const _LegChip({required this.stop, required this.segment});
-
-  final Activity stop;
-  final TravelSegment? segment;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasLeg = stop.travelFromPrevious != null || segment != null;
-    final icon = hasLeg ? legIcon(stop, segment) : categoryIcon(stop.category);
-    final label =
-        hasLeg ? legShortLabel(stop, segment) : categoryLabel(stop.category);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: AppColors.createBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.handleChipRing),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: _planGreen),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _planGreen,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StopInfoRow extends StatelessWidget {
-  const _StopInfoRow({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 14, color: AppColors.muted),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: AppColors.muted,
-              fontSize: 12.5,
-              height: 1.4,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AddButton extends StatelessWidget {
-  const _AddButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'เพิ่มลงแผนของฉัน',
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 26,
-          height: 26,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.brandPurple,
-          ),
-          child: const Icon(Icons.add, size: 16, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-
-/// The pair at the foot of a stop card: an outlined save, a filled map.
-class _StopAction extends StatelessWidget {
-  const _StopAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.filled = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = filled ? Colors.white : AppColors.brandPurple;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 38,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: filled ? AppColors.searchButton : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          border: filled
-              ? null
-              : Border.all(color: AppColors.brandPurple, width: 1.4),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: foreground),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _EmptyNote extends StatelessWidget {
   const _EmptyNote({required this.text});
 
@@ -1866,20 +1183,11 @@ class _EmptyNote extends StatelessWidget {
   }
 }
 
-/// Everything the page renders, derived once from the API trip.
+/// The parts of a plan the page derives rather than reads straight off it.
 class _PlanView {
   const _PlanView({
-    required this.title,
-    required this.coverImage,
-    required this.destination,
-    required this.durationLabel,
     required this.stopCount,
-    required this.perHeadLabel,
     required this.blurb,
-    required this.remixCount,
-    required this.likeCount,
-    required this.creatorName,
-    required this.creatorAvatar,
     required this.days,
   });
 
@@ -1893,33 +1201,15 @@ class _PlanView {
     // the plan editor's hero.
     final dayCount = schedule.durationDays ??
         (start != null && end != null ? end.difference(start).inDays + 1 : 0);
-    final nightCount =
-        schedule.durationNights ?? (dayCount > 0 ? dayCount - 1 : 0);
 
     var stops = 0;
     for (final day in trip.days) {
       stops += day.activities.length;
     }
 
-    // The wizard multiplies a per-person-per-day figure up into the stored
-    // whole-trip total, so the design's `/คน` divides one of those back out.
-    final heads = trip.customer?.groupSize ?? 1;
-    final perHead = trip.totalBudget > 0 && heads > 0
-        ? '${(trip.totalBudget / heads).asBaht} /คน'
-        : null;
-
     return _PlanView(
-      title: trip.title,
-      coverImage: trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
-      destination: trip.destination,
-      durationLabel: dayCount > 0 ? '$dayCount วัน $nightCount คืน' : '',
       stopCount: stops,
-      perHeadLabel: perHead,
       blurb: _blurb(trip.brief),
-      remixCount: trip.remixCount,
-      likeCount: trip.likeCount,
-      creatorName: trip.customer?.name ?? 'ไม่ระบุผู้สร้าง',
-      creatorAvatar: trip.customer?.avatarUrl,
       days: _daysOf(trip, dayCount, start),
     );
   }
@@ -1959,28 +1249,12 @@ class _PlanView {
     ];
   }
 
-  final String title;
-  final String coverImage;
-  final String destination;
-
-  /// "3 วัน 2 คืน", or empty on a trip with neither dates nor a duration.
-  final String durationLabel;
   final int stopCount;
 
-  /// "฿3,000 /คน", or null on a trip that adds up to nothing yet.
-  final String? perHeadLabel;
-
-  /// The trip's own blurb for Trip Overview.
-  ///
-  /// `GET /trips/:id` returns no prose: `ApiTrip` has no `description`, and
-  /// `specialNotes` is write-only — `createDraft` and `update` send it and
-  /// nothing parses it back. Until one of those is readable this is the
-  /// brief's styles, which is what the page showed before.
+  /// What Trip Overview prints when the plan has no description of its own:
+  /// the brief's styles, which is what the page showed before
+  /// `ApiTrip.description` was readable.
   final String blurb;
-  final int remixCount;
-  final int likeCount;
-  final String creatorName;
-  final String? creatorAvatar;
 
   /// Ordered by day number; empty before an itinerary exists.
   final List<ItineraryDay> days;
@@ -1992,16 +1266,4 @@ class _PlanView {
       ...brief.customStyles,
     ].join(' · ');
   }
-}
-
-/// "1721" as the design's "1,721".
-String _grouped(int value) {
-  final digits = value.abs().toString();
-  final buffer = StringBuffer(value < 0 ? '-' : '');
-  for (var i = 0; i < digits.length; i++) {
-    final remaining = digits.length - i;
-    buffer.write(digits[i]);
-    if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
-  }
-  return buffer.toString();
 }

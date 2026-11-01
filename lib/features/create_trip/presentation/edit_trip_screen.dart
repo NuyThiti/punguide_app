@@ -22,6 +22,7 @@ import '../domain/plan_labels.dart';
 import 'providers/edit_plan_providers.dart';
 import 'widgets/add_place_sheet.dart';
 import 'widgets/budget_sheets.dart';
+import 'widgets/photo_choice_sheet.dart';
 import 'widgets/plan_budget_tab.dart';
 import 'widgets/suggest_places_sheet.dart';
 import 'widgets/travel_leg_sheet.dart';
@@ -34,6 +35,15 @@ const stopMenuSheetKey = Key('stop-menu-sheet');
 /// ทริปของฉัน's add-an-activity button for the day being shown.
 const addActivityButtonKey = Key('add-activity-button');
 
+/// จัดแผน's "+ เพิ่มสถานที่", beside the visibility chip.
+const addPlaceButtonKey = Key('add-place-button');
+
+/// "ลองใหม่" on a leg the server could not route.
+const retryLegButtonKey = Key('retry-leg-button');
+
+/// A leg the server could not route.
+const _legFailed = Color(0xFFD9534F);
+
 /// The deep green the design uses for the active tab and the day numbers. It
 /// is darker than [AppColors.primary], which is the button green.
 const primaryColor = AppColors.brandPurple;
@@ -43,9 +53,9 @@ const _panel = Color(0xFFF3F6F3);
 
 /// The จัดแผน reference is warm: a cream band heads each section, a paler
 /// cream holds its body, and cards sit on it with a tan edge.
-const _sectionHead = Color(0xFFF4EDE1);
-const _sectionBody = Color(0xFFFAF7F2);
-const _cardEdge = Color(0xFFEADFCB);
+const _sectionHead = Color.fromARGB(255, 254, 254, 254);
+const _sectionBody = Color.fromARGB(255, 254, 254, 254);
+const _cardEdge = Color.fromARGB(255, 253, 253, 253);
 
 /// Editing a plan: the trip's facts on a cover hero, then the itinerary the
 /// traveller fills in day by day.
@@ -79,7 +89,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     final trip = ref.watch(apiTripProvider(widget.tripId));
 
     return Scaffold(
-      backgroundColor: AppColors.softScreen,
+      backgroundColor: Colors.white,
       // The map shortcut belongs to ทริปของฉัน, and only once the trip loaded.
       floatingActionButton: _tab == 1 && trip.hasValue
           ? FloatingActionButton(
@@ -137,6 +147,12 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     final stopPhotos =
         ref.watch(stopPhotosProvider(widget.tripId)).valueOrNull ??
             const <String, String>{};
+    final stopMedia = ref.watch(stopMediaProvider(widget.tripId)).valueOrNull ??
+        const <String, GalleryImage>{};
+    final covers = _coverCandidates(plan, stopMedia);
+    // No cover set: the plan's first photo stands in, before the default.
+    final heroCover = plan.coverImage ??
+        (covers.isEmpty ? AppConstants.defaultCoverImage : covers.first.url);
 
     final topInset = MediaQuery.paddingOf(context).top;
 
@@ -156,7 +172,8 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                 builder: (context) => ValueListenableBuilder<double>(
                   valueListenable: _navT,
                   builder: (context, t, _) => _StickyNavBar(
-                    t: t,
+                    // Only จัดแผน has a hero; elsewhere the bar is never over one.
+                    t: _tab == 0 ? t : 1,
                     topInset: topInset,
                     avatarImage: ref.watch(authSessionProvider)?.avatarImage,
                     onBack: _back,
@@ -164,13 +181,18 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                 ),
               ),
             ),
-            SliverToBoxAdapter(
-              child: _PlanHero(
-                key: _heroKey,
-                plan: plan,
-                lodgingCount: lodging.length,
+            // ทริปของฉัน and สรุปงบ open straight onto their own content.
+            if (_tab == 0)
+              SliverToBoxAdapter(
+                child: _PlanHero(
+                  key: _heroKey,
+                  plan: plan,
+                  coverImage: heroCover,
+                  lodgingCount: lodging.length,
+                  savingCover: _savingCover,
+                  onChangeCover: () => _changeCover(covers, heroCover),
+                ),
               ),
-            ),
             SliverPersistentHeader(
               pinned: true,
               delegate: _StickyBar(
@@ -213,6 +235,13 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     );
   }
 
+  /// The day both tabs' pickers show, clamped to the days there are.
+  int _dayIndex(_PlanView plan) =>
+      plan.days.isEmpty ? 0 : _selectedDay.clamp(0, plan.days.length - 1);
+
+  _PlanDay? _dayAt(_PlanView plan) =>
+      plan.days.isEmpty ? null : plan.days[_dayIndex(plan)];
+
   /// The ทริปของฉัน tab: the plan on a map, a day picker, then that day's
   /// stops in the fuller card the design uses here.
   List<Widget> _myTripTab(_PlanView plan) {
@@ -221,22 +250,6 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     final day = days.isEmpty ? null : days[index];
 
     return [
-      _SectionHeading(
-        title: 'ทริปของฉัน',
-        onShare: () => _todo('แชร์แผนยังไม่เปิดใช้งาน'),
-        action: _PillButton(
-          label: 'แก้ไขทริป',
-          icon: Icons.edit_outlined,
-          color: AppColors.brandOrange,
-          onTap: () => context.goNamed(
-            AppRoute.editTripBrief.name,
-            params: {'tripId': widget.tripId},
-          ),
-        ),
-      ),
-      const SizedBox(height: 16),
-      const Divider(height: 1, color: AppColors.line),
-      const SizedBox(height: 16),
       if (_mapOpen) ...[
         _TripMapCard(
           key: _mapKey,
@@ -256,13 +269,15 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         const _EmptyNote('ยังไม่มีสถานที่ในวันนี้')
       else
         for (var i = 0; i < day.stops.length; i++) ...[
+          // The leg sits between the cards it joins, as on the reference.
+          if (i > 0)
+            _MyTripLeg(
+                stop: day.stops[i], segment: day.segmentInto(day.stops[i])),
           _MyTripStopCard(
             stop: day.stops[i],
             position: i + 1,
-            segment: day.segmentInto(day.stops[i]),
             onNavigate: () => _todo('นำทางยังไม่เปิดใช้งาน'),
           ),
-          if (i != day.stops.length - 1) const SizedBox(height: 12),
         ],
       const SizedBox(height: 14),
       // Adds to the day the picker shows, so each day has its own way in.
@@ -282,33 +297,23 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
   ) {
     final audience = PostAudience.fromVisibility(_visibility ?? visibility);
     return [
+      // Who can see the plan, sharing it, and adding to it: one row, as the
+      // reference sets them. Remix lives in the ตารางแผน ⋮ menu.
       _SectionHeading(
-        title: 'จัดแผนของคุณ',
-        onShare: () => _todo('แชร์แผนยังไม่เปิดใช้งาน'),
-        action: _PillButton(
-          label: 'Remix Trip',
-          icon: Icons.shuffle,
-          color: AppColors.brandPurple,
-          // The reference sets Remix Trip in pale lime on the purple.
-          foreground: const Color(0xFFEFF7C9),
-          onTap: () => context.goNamed(
-            AppRoute.remixTrip.name,
-            params: {'tripId': widget.tripId},
-          ),
-        ),
-      ),
-      const SizedBox(height: 12),
-      // Who can see the plan — the same chip and sheet as the post composer.
-      Align(
-        alignment: Alignment.centerLeft,
-        child: PostAudienceChip(
+        leading: PostAudienceChip(
           audience: audience,
           onTap: () => _pickVisibility(audience),
         ),
+        onShare: () => _todo('แชร์แผนยังไม่เปิดใช้งาน'),
+        action: _PillButton(
+          key: addPlaceButtonKey,
+          label: 'เพิ่มสถานที่',
+          icon: Icons.add,
+          color: AppColors.brandOrange,
+          onTap: () => _addPlaceManually(plan, _dayAt(plan)),
+        ),
       ),
-      const SizedBox(height: 16),
-      const Divider(height: 1, color: AppColors.line),
-      const SizedBox(height: 16),
+      const SizedBox(height: 18),
       // Only when there is something to show: an empty panel that opens onto
       // "no accommodation yet" is a tap that leads nowhere. It appears once
       // the budget read (where accommodations come from) has some.
@@ -326,7 +331,6 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         expanded: _scheduleOpen,
         onToggle: () => setState(() => _scheduleOpen = !_scheduleOpen),
         actions: [
-          _AddPlaceButton(onTap: () => _addPlaceManually(plan, null)),
           // _MiniIconButton(
           //   icon: Icons.tune,
           //   tooltip: 'จัดเรียงวัน',
@@ -340,6 +344,9 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         ],
         child: _ScheduleList(
           days: plan.days,
+          selectedIndex: _dayIndex(plan),
+          onSelectDay: (i) => setState(() => _selectedDay = i),
+          onAddDay: () => _todo('เพิ่มวันยังไม่เปิดใช้งาน'),
           callbacks: _ScheduleCallbacks(
             onExplore: () => _explore(plan),
             onEditLeg: _editLeg,
@@ -347,6 +354,8 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
             onDeleteStop: _deleteStop,
             onMoveStop: _moveStop,
             onDragAt: _onDragAt,
+            onRetryLegs: _retryLegs,
+            retryingLegs: _retryingLegs,
           ),
         ),
       ),
@@ -464,6 +473,20 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.shuffle, color: primaryColor),
+              title: const Text(
+                'Remix Trip',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.goNamed(
+                  AppRoute.remixTrip.name,
+                  params: {'tripId': widget.tripId},
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.edit_outlined, color: primaryColor),
               title: const Text(
@@ -967,6 +990,106 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     }
   }
 
+  bool _savingCover = false;
+
+  /// Every stop photo, in plan order, once each: a stop's own upload if it
+  /// has one, else its place's photo.
+  List<CoverCandidate> _coverCandidates(
+    _PlanView plan,
+    Map<String, GalleryImage> stopMedia,
+  ) {
+    final seen = <String>{};
+    final candidates = <CoverCandidate>[];
+    for (final day in plan.days) {
+      for (final stop in day.stops) {
+        final upload = stopMedia[stop.id];
+        final placePhoto = stop.location?.imageUrl;
+        final candidate = upload != null
+            ? CoverCandidate(
+                url: upload.urls.large,
+                title: stop.title,
+                mediaId: upload.id,
+              )
+            : placePhoto != null && stop.location?.placeId != null
+                ? CoverCandidate(
+                    url: placePhoto,
+                    title: stop.title,
+                    placeId: stop.location!.placeId,
+                  )
+                : null;
+        if (candidate != null && seen.add(candidate.url)) {
+          candidates.add(candidate);
+        }
+      }
+    }
+    return candidates;
+  }
+
+  Future<void> _changeCover(
+    List<CoverCandidate> candidates,
+    String currentUrl,
+  ) async {
+    if (_savingCover) return;
+    final choice = await showCoverChoiceSheet(
+      context,
+      candidates: candidates,
+      currentUrl: currentUrl,
+    );
+    if (choice == null || !mounted) return;
+    setState(() => _savingCover = true);
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final media = api.media;
+      // The cover has to be a gallery item, so a new photo is uploaded and a
+      // place's photo is pulled in first.
+      final mediaId = switch (choice) {
+        CoverUpload(:final file) =>
+          (await media.upload(widget.tripId, filePath: file.path)).mediaId,
+        CoverFromStop(:final candidate) => candidate.mediaId ??
+            (await media.addFromPlace(
+              widget.tripId,
+              placeId: candidate.placeId!,
+            ))
+                .mediaId,
+      };
+      await media.setCover(widget.tripId, mediaId);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('เปลี่ยนรูปปกไม่สำเร็จ ลองใหม่อีกครั้ง')),
+        );
+      }
+    }
+    if (!mounted) return;
+    setState(() => _savingCover = false);
+    ref.invalidate(apiTripProvider(widget.tripId));
+  }
+
+  bool _retryingLegs = false;
+
+  /// Routes the trip's failed legs again. The server only touches the failed
+  /// ones, so this is cheap to offer on every failed row.
+  Future<void> _retryLegs() async {
+    if (_retryingLegs) return;
+    setState(() => _retryingLegs = true);
+    String? problem;
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      final legs = await api.itinerary.retryTravelSegments(widget.tripId);
+      if (legs.any((leg) => leg.hasFailed)) {
+        problem = 'ยังคำนวณระยะทางบางช่วงไม่ได้ ลองใหม่อีกครั้งภายหลัง';
+      }
+    } catch (error) {
+      debugPrint('Travel segment retry failed: $error');
+      problem = 'คำนวณระยะทางไม่สำเร็จ ลองใหม่อีกครั้ง';
+    }
+    if (!mounted) return;
+    setState(() => _retryingLegs = false);
+    ref.invalidate(apiTripProvider(widget.tripId));
+    if (problem != null) _todo(problem);
+  }
+
   void _todo(String message) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -1010,11 +1133,19 @@ class _PlanHero extends StatelessWidget {
   const _PlanHero({
     super.key,
     required this.plan,
+    required this.coverImage,
     required this.lodgingCount,
+    required this.onChangeCover,
+    this.savingCover = false,
   });
 
   final _PlanView plan;
+
+  /// The trip's cover, or the photo standing in for it.
+  final String coverImage;
   final int lodgingCount;
+  final VoidCallback onChangeCover;
+  final bool savingCover;
 
   @override
   Widget build(BuildContext context) {
@@ -1023,7 +1154,7 @@ class _PlanHero extends StatelessWidget {
       child: Stack(
         children: [
           Positioned.fill(
-            child: CoverImage(source: plan.coverImage, fit: BoxFit.cover),
+            child: CoverImage(source: coverImage, fit: BoxFit.cover),
           ),
           Positioned.fill(
             child: DecoratedBox(
@@ -1042,25 +1173,39 @@ class _PlanHero extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            // Spacing and type are trimmed so the hero is a fifth shorter than
+            // it was, with the same pieces in the same order.
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  plan.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    height: 1.15,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        plan.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          height: 1.12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _ChangeCoverButton(
+                      saving: savingCover,
+                      onTap: onChangeCover,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 _HeroDateRow(plan: plan),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 if (plan.chips.isNotEmpty) ...[
                   Wrap(
                     spacing: 8,
@@ -1069,13 +1214,66 @@ class _PlanHero extends StatelessWidget {
                       for (final chip in plan.chips) _HeroChip(label: chip),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
                 ],
                 _HeroStats(plan: plan, lodgingCount: lodgingCount),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+const changeCoverButtonKey = Key('change-cover-button');
+
+/// The glass pill on the hero that opens the cover picker.
+class _ChangeCoverButton extends StatelessWidget {
+  const _ChangeCoverButton({required this.saving, required this.onTap});
+
+  final bool saving;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      key: changeCoverButtonKey,
+      color: Colors.white.withValues(alpha: 0.2),
+      shape: StadiumBorder(
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+      ),
+      child: InkWell(
+        onTap: saving ? null : onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (saving)
+                const SizedBox.square(
+                  dimension: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                const Icon(Icons.photo_camera_outlined,
+                    size: 15, color: Colors.white),
+              const SizedBox(width: 5),
+              const Text(
+                'เปลี่ยนปก',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1257,7 +1455,7 @@ class _HeroChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.42),
         borderRadius: BorderRadius.circular(99),
@@ -1308,7 +1506,7 @@ class _StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(16),
@@ -1321,7 +1519,7 @@ class _StatTile extends StatelessWidget {
               value,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -1439,12 +1637,12 @@ class _PlanTabs extends StatelessWidget {
 /// "Remix Trip" on จัดแผน, "แก้ไขทริป" on ทริปของฉัน.
 class _SectionHeading extends StatelessWidget {
   const _SectionHeading({
-    required this.title,
+    required this.leading,
     required this.onShare,
     required this.action,
   });
 
-  final String title;
+  final Widget leading;
   final VoidCallback onShare;
   final Widget action;
 
@@ -1453,13 +1651,11 @@ class _SectionHeading extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.foreground,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
+          // On the narrowest phones the leading chip gives way rather than
+          // pushing the buttons off the edge.
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(fit: BoxFit.scaleDown, child: leading),
           ),
         ),
         Tooltip(
@@ -1482,7 +1678,7 @@ class _SectionHeading extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        action,
+        Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: action)),
       ],
     );
   }
@@ -1490,17 +1686,16 @@ class _SectionHeading extends StatelessWidget {
 
 class _PillButton extends StatelessWidget {
   const _PillButton({
+    super.key,
     required this.label,
     required this.icon,
     required this.color,
     required this.onTap,
-    this.foreground = Colors.white,
   });
 
   final String label;
   final IconData icon;
   final Color color;
-  final Color foreground;
   final VoidCallback onTap;
 
   @override
@@ -1517,12 +1712,12 @@ class _PillButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 17, color: foreground),
+            Icon(icon, size: 17, color: Colors.white),
             const SizedBox(width: 7),
             Text(
               label,
               style: TextStyle(
-                color: foreground,
+                color: Colors.white,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
               ),
@@ -1610,50 +1805,6 @@ class _CollapsibleSection extends StatelessWidget {
               child: child,
             ),
         ],
-      ),
-    );
-  }
-}
-
-/// The schedule's add-a-stop button, in the section heading. It adds to the
-/// first day; the sheet's day picker moves the stop anywhere else.
-class _AddPlaceButton extends StatelessWidget {
-  const _AddPlaceButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: CustomPaint(
-        painter: _DashedBorderPainter(
-          color: AppColors.brandOrange.withValues(alpha: 0.7),
-          radius: 17,
-        ),
-        child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF5EC),
-            borderRadius: BorderRadius.circular(17),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add, size: 15, color: AppColors.brandOrange),
-              SizedBox(width: 4),
-              Text(
-                'สถานที่',
-                style: TextStyle(
-                  color: AppColors.brandOrange,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1748,7 +1899,13 @@ class _ScheduleCallbacks {
     required this.onDeleteStop,
     required this.onMoveStop,
     required this.onDragAt,
+    required this.onRetryLegs,
+    required this.retryingLegs,
   });
+
+  /// Asks the server to route the legs that failed, then reloads the plan.
+  final VoidCallback onRetryLegs;
+  final bool retryingLegs;
 
   final VoidCallback onExplore;
 
@@ -1781,24 +1938,47 @@ class _StopDrag {
 }
 
 class _ScheduleList extends StatelessWidget {
-  const _ScheduleList({required this.days, required this.callbacks});
+  const _ScheduleList({
+    required this.days,
+    required this.selectedIndex,
+    required this.onSelectDay,
+    required this.onAddDay,
+    required this.callbacks,
+  });
 
   final List<_PlanDay> days;
+  final int selectedIndex;
+  final ValueChanged<int> onSelectDay;
+  final VoidCallback onAddDay;
   final _ScheduleCallbacks callbacks;
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // One day at a time. A stop dragged onto another day's chip goes to
+        // the end of that day — the chips are the only way to reach a day
+        // that is not showing.
+        _DaySelector(
+          days: days,
+          selectedIndex: selectedIndex,
+          onSelect: onSelectDay,
+          onAddDay: onAddDay,
+          wrapChip: (i, chip) => _DayDropZone(
+            day: days[i],
+            insertAt: days[i].stops.length,
+            onMoveStop: callbacks.onMoveStop,
+            child: chip,
+          ),
+        ),
+        const SizedBox(height: 12),
         _ExploreBanner(onTap: callbacks.onExplore),
         const SizedBox(height: 12),
         if (days.isEmpty)
           const _EmptyNote('ยังไม่มีวันในแผนนี้')
         else
-          for (final day in days) ...[
-            _DayCard(day: day, callbacks: callbacks),
-            if (day != days.last) const SizedBox(height: 10),
-          ],
+          _DayCard(day: days[selectedIndex], callbacks: callbacks),
       ],
     );
   }
@@ -1902,19 +2082,41 @@ class _DayCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // The header takes a drop too: it is the only target an empty day
-          // has, and on a long day it saves dragging to the bottom.
-          _DayDropZone(
-            day: day,
-            insertAt: day.stops.length,
-            onMoveStop: callbacks.onMoveStop,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-              child: _DayHeader(day: day),
+          // The day picker above names the day, so the card only adds its
+          // date. The header takes a drop too: on a long day it saves
+          // dragging to the bottom.
+          if (day.dateLabel.isNotEmpty)
+            _DayDropZone(
+              day: day,
+              insertAt: day.stops.length,
+              onMoveStop: callbacks.onMoveStop,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+                child: _DayHeader(day: day),
+              ),
             ),
-          ),
+          // An empty day still needs somewhere to drop a stop.
+          if (day.stops.isEmpty)
+            _DayDropZone(
+              day: day,
+              insertAt: 0,
+              onMoveStop: callbacks.onMoveStop,
+              child: const Padding(
+                padding: EdgeInsets.all(14),
+                child: Text(
+                  'ยังไม่มีสถานที่ในวันนี้',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           if (day.stops.isNotEmpty) ...[
-            const Divider(height: 1, color: _cardEdge),
+            if (day.dateLabel.isNotEmpty)
+              const Divider(height: 1, color: _cardEdge),
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
               child: Column(
@@ -1942,9 +2144,12 @@ class _DayCard extends StatelessWidget {
                               )
                             else
                               _LegRow(
+                                from: day.stops[i - 1],
                                 stop: day.stops[i],
                                 segment: day.segmentInto(day.stops[i]),
                                 onTap: () => callbacks.onEditLeg(day, i),
+                                onRetry: callbacks.onRetryLegs,
+                                retrying: callbacks.retryingLegs,
                               ),
                           _StopCard(
                             stop: day.stops[i],
@@ -2103,29 +2308,21 @@ class _DayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(
-          'วันที่ ${day.number}',
-          style: const TextStyle(
-            color: primaryColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        if (day.dateLabel.isNotEmpty) ...[
-          const SizedBox(width: 9),
-          Flexible(
-            child: Text(
-              day.dateLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+        const Icon(Icons.calendar_today_outlined,
+            size: 14, color: primaryColor),
+        const SizedBox(width: 7),
+        Flexible(
+          child: Text(
+            day.dateLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: primaryColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
             ),
           ),
-        ],
+        ),
       ],
     );
   }
@@ -2548,19 +2745,54 @@ bool _isBlankLeg(Activity stop, TravelSegment? segment) =>
 
 class _LegRow extends StatelessWidget {
   const _LegRow({
+    required this.from,
     required this.stop,
     required this.segment,
     required this.onTap,
+    required this.onRetry,
+    required this.retrying,
   });
 
+  /// The stop the leg leaves from — needed to tell why routing failed.
+  final Activity from;
   final Activity stop;
   final VoidCallback onTap;
+  final VoidCallback onRetry;
+  final bool retrying;
 
-  /// The server's measurement of the same leg, or null when routing failed.
+  /// The server's measurement of the same leg, or null when there is none.
   final TravelSegment? segment;
 
   @override
   Widget build(BuildContext context) {
+    final leg = stop.travelFromPrevious;
+    // Numbers the traveller typed stand in for the route, so a failure under
+    // them is nothing to report.
+    final typedOwn = leg?.durationMin != null || leg?.distanceKm != null;
+    final failed = (segment?.hasFailed ?? false) && !typedOwn;
+    // A stop without coordinates can never be routed — retrying would only
+    // fail again, so point at the fix instead.
+    final unroutable = failed &&
+        !((from.location?.hasCoordinates ?? false) &&
+            (stop.location?.hasCoordinates ?? false));
+
+    final String label;
+    final IconData icon;
+    final Color tone;
+    if (unroutable) {
+      label = 'เพิ่มตำแหน่งเพื่อคำนวณระยะทาง';
+      icon = Icons.wrong_location_outlined;
+      tone = AppColors.muted;
+    } else if (failed) {
+      label = 'คำนวณระยะทางไม่สำเร็จ';
+      icon = Icons.sync_problem;
+      tone = _legFailed;
+    } else {
+      label = legLabel(stop, segment);
+      icon = legIcon(stop, segment);
+      tone = primaryColor;
+    }
+
     return _RailRow(
       child: GestureDetector(
         onTap: onTap,
@@ -2570,7 +2802,11 @@ class _LegRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _cardEdge),
+            border: Border.all(
+              color: failed && !unroutable
+                  ? _legFailed.withValues(alpha: 0.35)
+                  : _cardEdge,
+            ),
           ),
           child: Row(
             children: [
@@ -2581,24 +2817,77 @@ class _LegRow extends StatelessWidget {
                   color: const Color(0xFFF2F1EE),
                   borderRadius: BorderRadius.circular(7),
                 ),
-                child:
-                    Icon(legIcon(stop, segment), size: 15, color: primaryColor),
+                child: Icon(icon, size: 15, color: tone),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  legLabel(stop, segment),
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
+                  style: TextStyle(
+                    color: failed ? tone : AppColors.foreground,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
+              if (failed && !unroutable) ...[
+                const SizedBox(width: 8),
+                _RetryLegButton(retrying: retrying, onTap: onRetry),
+              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "ลองใหม่" on a failed leg; a spinner while the retry is out.
+class _RetryLegButton extends StatelessWidget {
+  const _RetryLegButton({required this.retrying, required this.onTap});
+
+  final bool retrying;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: retryLegButtonKey,
+      onTap: retrying ? null : onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 26,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: _legFailed.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (retrying)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: _legFailed,
+                ),
+              )
+            else
+              const Icon(Icons.refresh, size: 14, color: _legFailed),
+            const SizedBox(width: 4),
+            const Text(
+              'ลองใหม่',
+              style: TextStyle(
+                color: _legFailed,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2964,7 +3253,7 @@ class _PlanView {
     return _PlanView(
       title: trip.title.trim().isEmpty ? trip.destination : trip.title,
       destination: trip.destination,
-      coverImage: trip.coverImage?.urls.large ?? AppConstants.defaultCoverImage,
+      coverImage: trip.coverImage?.urls.large,
       dateLine: start == null || end == null
           ? 'ยังไม่ระบุวันที่'
           : '${slashDate(start)} - ${slashDate(end)}',
@@ -2983,7 +3272,10 @@ class _PlanView {
   /// The free text the trip was created with — what the anchor is resolved
   /// from when the trip has no place attached.
   final String destination;
-  final String coverImage;
+
+  /// The cover the trip has set. Null when it has none, and the hero falls
+  /// back to a stop's photo — see [_coverCandidates].
+  final String? coverImage;
   final String dateLine;
   final String durationLine;
   final List<String> chips;
@@ -3342,12 +3634,16 @@ class _DaySelector extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelect,
     required this.onAddDay,
+    this.wrapChip,
   });
 
   final List<_PlanDay> days;
   final int selectedIndex;
   final ValueChanged<int> onSelect;
   final VoidCallback onAddDay;
+
+  /// Lets จัดแผน make each day's chip a drop target.
+  final Widget Function(int index, Widget chip)? wrapChip;
 
   @override
   Widget build(BuildContext context) {
@@ -3362,10 +3658,13 @@ class _DaySelector extends StatelessWidget {
         child: Row(
           children: [
             for (var i = 0; i < days.length; i++) ...[
-              _DayChip(
-                label: 'วันที่ ${days[i].number}',
-                selected: i == selectedIndex,
-                onTap: () => onSelect(i),
+              _wrap(
+                i,
+                _DayChip(
+                  label: 'วันที่ ${days[i].number}',
+                  selected: i == selectedIndex,
+                  onTap: () => onSelect(i),
+                ),
               ),
               const SizedBox(width: 4),
             ],
@@ -3381,6 +3680,11 @@ class _DaySelector extends StatelessWidget {
       ),
     );
   }
+}
+
+extension on _DaySelector {
+  Widget _wrap(int index, Widget chip) =>
+      wrapChip == null ? chip : wrapChip!(index, chip);
 }
 
 class _DayChip extends StatelessWidget {
@@ -3497,13 +3801,11 @@ class _MyTripStopCard extends StatefulWidget {
   const _MyTripStopCard({
     required this.stop,
     required this.position,
-    required this.segment,
     required this.onNavigate,
   });
 
   final Activity stop;
   final int position;
-  final TravelSegment? segment;
 
   /// "นำทาง", which only shows once the card is open.
   final VoidCallback onNavigate;
@@ -3521,7 +3823,6 @@ class _MyTripStopCardState extends State<_MyTripStopCard> {
   Widget build(BuildContext context) {
     final stop = widget.stop;
     final position = widget.position;
-    final segment = widget.segment;
     final note = stop.notes ?? '';
     return Container(
       padding: const EdgeInsets.all(12),
@@ -3570,19 +3871,9 @@ class _MyTripStopCardState extends State<_MyTripStopCard> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _InfoChip(
-                          icon: legIcon(stop, segment),
-                          label: legShortLabel(stop, segment),
-                        ),
-                        _InfoChip(
-                          icon: Icons.monetization_on_outlined,
-                          label: stop.cost.asBaht,
-                        ),
-                      ],
+                    _InfoChip(
+                      icon: Icons.monetization_on_outlined,
+                      label: stop.cost.asBaht,
                     ),
                   ],
                 ),
@@ -3618,6 +3909,54 @@ class _MyTripStopCardState extends State<_MyTripStopCard> {
       ),
     );
   }
+}
+
+/// The leg into a stop on ทริปของฉัน: a chip on a dashed rail between two
+/// cards, or just the gap when nothing is known about it.
+class _MyTripLeg extends StatelessWidget {
+  const _MyTripLeg({required this.stop, required this.segment});
+
+  final Activity stop;
+  final TravelSegment? segment;
+
+  @override
+  Widget build(BuildContext context) {
+    final known = legParts(stop, segment, withDistance: false, withCost: false)
+        .isNotEmpty;
+    if (!known) return const SizedBox(height: 12);
+    return Padding(
+      padding: const EdgeInsets.only(left: 52),
+      child: Row(
+        children: [
+          CustomPaint(
+            size: const Size(2, 44),
+            painter: _DottedRailPainter(),
+          ),
+          const SizedBox(width: 60),
+          _InfoChip(
+            icon: legIcon(stop, segment),
+            label: legShortLabel(stop, segment),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DottedRailPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.chipBorder
+      ..strokeWidth = 2;
+    for (var y = 0.0; y < size.height; y += 7) {
+      canvas.drawLine(
+          Offset(1, y), Offset(1, math.min(y + 3.5, size.height)), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// "นำทาง" — the one action the open card offers.

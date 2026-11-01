@@ -45,8 +45,9 @@ class Place {
   /// Absent unless the server has Google's ratings field enabled.
   final double? rating;
 
-  /// A googleusercontent link with no key in it. These expire — do not cache
-  /// them on disk.
+  /// `GET /places/:id/photo` on our API, which redirects to a fresh Google
+  /// link. Keep this URL as given; never store where it redirects, which
+  /// expires. A 404 means the place has no photo.
   final String? imageUrl;
 }
 
