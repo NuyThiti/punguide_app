@@ -15,6 +15,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/widgets/cover_image.dart';
+import '../../../shared/widgets/full_image_viewer.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../trips/presentation/itinerary_display.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
@@ -148,8 +149,9 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         ref.watch(stopPhotosProvider(widget.tripId)).valueOrNull ??
             const <String, String>{};
     final stopMedia = ref.watch(stopMediaProvider(widget.tripId)).valueOrNull ??
-        const <String, GalleryImage>{};
+        const <String, List<GalleryImage>>{};
     final covers = _coverCandidates(plan, stopMedia);
+    _autoCover(trip, covers);
     // No cover set: the plan's first photo stands in, before the default.
     final heroCover = plan.coverImage ??
         (covers.isEmpty ? AppConstants.defaultCoverImage : covers.first.url);
@@ -158,6 +160,10 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
     return _StopPhotos(
       photos: stopPhotos,
+      galleries: {
+        for (final entry in stopMedia.entries)
+          entry.key: [for (final image in entry.value) image.urls.large],
+      },
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScroll,
         child: CustomScrollView(
@@ -996,13 +1002,13 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
   /// has one, else its place's photo.
   List<CoverCandidate> _coverCandidates(
     _PlanView plan,
-    Map<String, GalleryImage> stopMedia,
+    Map<String, List<GalleryImage>> stopMedia,
   ) {
     final seen = <String>{};
     final candidates = <CoverCandidate>[];
     for (final day in plan.days) {
       for (final stop in day.stops) {
-        final upload = stopMedia[stop.id];
+        final upload = stopMedia[stop.id]?.first;
         final placePhoto = stop.location?.imageUrl;
         final candidate = upload != null
             ? CoverCandidate(
@@ -1036,15 +1042,27 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
       currentUrl: currentUrl,
     );
     if (choice == null || !mounted) return;
+    await _saveCover(choice);
+  }
+
+  /// Makes [choice] the trip's cover. [quiet] is for the automatic one,
+  /// which nobody asked for and so has nothing to say when it fails.
+  Future<void> _saveCover(CoverChoice choice, {bool quiet = false}) async {
+    if (_savingCover) return;
     setState(() => _savingCover = true);
+    var saved = false;
     try {
       final api = await ref.read(plunoApiProvider.future);
       final media = api.media;
       // The cover has to be a gallery item, so a new photo is uploaded and a
       // place's photo is pulled in first.
       final mediaId = switch (choice) {
-        CoverUpload(:final file) =>
-          (await media.upload(widget.tripId, filePath: file.path)).mediaId,
+        CoverUpload(:final file) => (await media.upload(
+            widget.tripId,
+            bytes: await file.readAsBytes(),
+            filename: file.name,
+          ))
+              .mediaId,
         CoverFromStop(:final candidate) => candidate.mediaId ??
             (await media.addFromPlace(
               widget.tripId,
@@ -1053,8 +1071,10 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                 .mediaId,
       };
       await media.setCover(widget.tripId, mediaId);
-    } catch (_) {
-      if (mounted) {
+      saved = true;
+    } catch (error) {
+      debugPrint('Cover not saved: $error');
+      if (mounted && !quiet) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('เปลี่ยนรูปปกไม่สำเร็จ ลองใหม่อีกครั้ง')),
@@ -1064,6 +1084,27 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     if (!mounted) return;
     setState(() => _savingCover = false);
     ref.invalidate(apiTripProvider(widget.tripId));
+    // The cards on the traveller's own walls carry the cover too, and they
+    // are cached — without this they keep the old one until a restart.
+    if (saved) refreshOwnTripLists(ref);
+  }
+
+  /// Set once the automatic cover has been tried on this visit, so a failure
+  /// is not retried on every rebuild.
+  bool _autoCoverTried = false;
+
+  /// A trip with no cover takes its first stop photo — saved, not just shown
+  /// here, so its cards and plan page stop showing the stock image. Waits
+  /// for the gallery, so a stop's own upload wins over its place's photo, as
+  /// it does on the hero.
+  void _autoCover(ApiTrip trip, List<CoverCandidate> covers) {
+    if (_autoCoverTried || trip.coverImage != null || covers.isEmpty) return;
+    if (ref.read(stopMediaProvider(widget.tripId)).isLoading) return;
+    _autoCoverTried = true;
+    final first = covers.first;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _saveCover(CoverFromStop(first), quiet: true);
+    });
   }
 
   bool _retryingLegs = false;
@@ -2584,16 +2625,30 @@ class _DragGhost extends StatelessWidget {
 
 /// The stops' own uploaded photos, by activity id, for every thumbnail below.
 class _StopPhotos extends InheritedWidget {
-  const _StopPhotos({required this.photos, required super.child});
+  const _StopPhotos({
+    required this.photos,
+    required this.galleries,
+    required super.child,
+  });
 
   final Map<String, String> photos;
 
+  /// Every photo each stop has at full size, newest first — what its
+  /// thumbnail opens, and how many the count on it says.
+  final Map<String, List<String>> galleries;
+
+  static _StopPhotos? _of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_StopPhotos>();
+
   static Map<String, String> of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<_StopPhotos>()?.photos ??
-      const <String, String>{};
+      _of(context)?.photos ?? const <String, String>{};
+
+  static List<String> galleryOf(BuildContext context, String stopId) =>
+      _of(context)?.galleries[stopId] ?? const <String>[];
 
   @override
-  bool updateShouldNotify(_StopPhotos oldWidget) => photos != oldWidget.photos;
+  bool updateShouldNotify(_StopPhotos oldWidget) =>
+      photos != oldWidget.photos || galleries != oldWidget.galleries;
 }
 
 class _StopThumbnail extends StatelessWidget {
@@ -2613,50 +2668,94 @@ class _StopThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     // A photo the traveller added to the stop beats the place's stock one.
     final image = _StopPhotos.of(context)[stop.id] ?? stop.location?.imageUrl;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: image == null || image.isEmpty
-                  ? ColoredBox(
-                      color: _panel,
-                      child: Icon(
-                        categoryIcon(stop.category),
-                        size: 22,
-                        color: AppColors.muted,
-                      ),
-                    )
-                  : CoverImage(source: image, fit: BoxFit.cover),
-            ),
-          ),
-          Positioned(
-            top: -4,
-            left: -4,
-            child: Container(
-              width: 21,
-              height: 21,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: badgeColor,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
+    final gallery = _StopPhotos.galleryOf(context, stop.id);
+    final count = gallery.length;
+    // Full screen shows every photo the stop has; with none of its own, the
+    // place's photo on its own.
+    final fullSize = gallery.isNotEmpty
+        ? gallery
+        : [if (image != null && image.isNotEmpty) image];
+    return GestureDetector(
+      key: ValueKey('stop-thumbnail-${stop.id}'),
+      onTap: fullSize.isEmpty
+          ? null
+          : () => showFullImages(context, urls: fullSize),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: image == null || image.isEmpty
+                    ? ColoredBox(
+                        color: _panel,
+                        child: Icon(
+                          categoryIcon(stop.category),
+                          size: 22,
+                          color: AppColors.muted,
+                        ),
+                      )
+                    : CoverImage(source: image, fit: BoxFit.cover),
               ),
-              child: Text(
-                '$position',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
+            ),
+            // More than one photo: say how many, so the rest are not a secret.
+            if (count > 1)
+              Positioned(
+                right: 3,
+                bottom: 3,
+                child: Container(
+                  key: ValueKey('stop-photo-count-${stop.id}'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.photo_library_outlined,
+                          size: 9, color: Colors.white),
+                      const SizedBox(width: 2),
+                      Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Positioned(
+              top: -4,
+              left: -4,
+              child: Container(
+                width: 21,
+                height: 21,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Text(
+                  '$position',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

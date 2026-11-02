@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +12,7 @@ import 'package:pluno/features/create_trip/presentation/widgets/location_picker_
 import 'package:pluno/features/create_trip/presentation/widgets/travel_leg_sheet.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/constants/app_constants.dart';
@@ -341,9 +344,30 @@ Future<void> openStopAction(WidgetTester tester, String label) async {
 }
 
 void main() {
+  /// The body of the latest `METHOD /path` request — the automatic cover
+  /// may have sent the same one first.
+  Map<String, dynamic>? lastBodyOf(String key) {
+    final matches =
+        adapter.requests.where((r) => '${r.method} ${r.path}' == key);
+    return matches.isEmpty
+        ? null
+        : Map<String, dynamic>.from(matches.last.data as Map);
+  }
+
   setUp(() {
     adapter = FakeAdapter({
       'GET /trips/trip-1': [FakeReply(200, _tripJson())],
+      // A trip with stop photos and no cover sets one on open.
+      'POST /trips/trip-1/media/from-place': [
+        FakeReply(201, <String, dynamic>{
+          'mediaId': 'm-auto',
+          'urls': {
+            'large': 'https://cdn.example.com/auto.jpg',
+            'thumbnail': 'x'
+          },
+        })
+      ],
+      'PUT /trips/trip-1/cover': [FakeReply(200, _tripJson())],
       'GET /trips/trip-1/budget': [
         FakeReply(
           200,
@@ -976,7 +1000,7 @@ void main() {
 
     bool shows(Widget w, String url) => w is CoverImage && w.source == url;
 
-    testWidgets('a stop keeps its photo, and a Google pick replaces it',
+    testWidgets('adding picks several Google photos at once, with no pencil',
         (tester) async {
       tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
       tester.view.devicePixelRatio = 3;
@@ -1009,9 +1033,12 @@ void main() {
 
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
       await openStopAction(tester, 'แก้ไข');
 
-      // The edit form opens on the photo the stop already has.
+      // The edit form opens on the photo the stop already has — with no
+      // pencil on it, or on any photo.
       final cover = find.byKey(photoCoverKey);
       expect(
         find.descendant(
@@ -1019,43 +1046,59 @@ void main() {
             matching: find.byWidgetPredicate((w) => shows(w, placePhoto))),
         findsOneWidget,
       );
+      expect(find.byIcon(Icons.edit), findsNothing);
 
-      await tester
-          .tap(find.descendant(of: cover, matching: find.byIcon(Icons.edit)));
+      await tester.ensureVisible(find.byKey(photoAddKey));
+      await tester.tap(find.byKey(photoAddKey));
       await tester.pumpAndSettle();
 
-      expect(inPhotoSheet('เปลี่ยนรูปภาพ'), findsOneWidget);
+      expect(inPhotoSheet('เพิ่มรูปภาพ'), findsOneWidget);
       expect(inPhotoSheet('รูปภาพของคุณ'), findsOneWidget);
-      expect(inPhotoSheet('เลือกรูปภาพ'), findsOneWidget);
+      expect(inPhotoSheet('อัปโหลดรูป'), findsOneWidget);
       // No web search until there is an API behind it.
       expect(inPhotoSheet('ค้นหาบนเว็บ'), findsNothing);
-      expect(inPhotoSheet('อัปโหลดรูป'), findsOneWidget);
+      // Nothing to add yet, so nothing to confirm.
+      expect(find.byKey(photoChoiceConfirmKey), findsNothing);
 
       await tester.tap(inPhotoSheet('เลือกรูปภาพ'));
       await tester.pumpAndSettle();
       expect(adapter.paths, contains('GET /places/p1'));
 
-      // Tapping highlights; the tile's เลือก confirms.
-      expect(inPhotoSheet('เลือก'), findsNothing);
+      // Each tap adds to the picks, numbered in order.
       await tester.tap(find.byWidgetPredicate((w) => shows(w, google2)));
       await tester.pumpAndSettle();
-      await tester.tap(inPhotoSheet('เลือก'));
+      await tester.tap(find.byWidgetPredicate((w) => shows(w, google1)));
+      await tester.pumpAndSettle();
+      expect(inPhotoSheet('1'), findsOneWidget);
+      expect(inPhotoSheet('2'), findsOneWidget);
+      expect(inPhotoSheet('เพิ่ม 2 รูป'), findsOneWidget);
+
+      await tester.tap(find.byKey(photoChoiceConfirmKey));
       await tester.pumpAndSettle();
 
       expect(find.byKey(photoChoiceSheetKey), findsNothing);
+      // Both join the stop, removable; the place's own photo steps aside.
+      expect(find.byKey(photoRemoveKey), findsNWidgets(2));
       expect(
         find.descendant(
             of: find.byKey(photoCoverKey),
             matching: find.byWidgetPredicate((w) => shows(w, google2))),
         findsOneWidget,
       );
+      expect(find.byIcon(Icons.edit), findsNothing);
 
       await tester.tap(find.text('บันทึก'));
       await tester.pumpAndSettle();
 
-      final body = adapter.bodyOf('POST /trips/trip-1/media/from-place')!;
-      expect(body['placeId'], 'p1');
-      expect(body['activityId'], 's1');
+      // One call for the stop: from-place cannot take a particular photo
+      // yet. (The other is the trip's automatic cover, tied to no stop.)
+      final forStop = adapter.requests
+          .where((r) =>
+              'POST ${r.path}' == 'POST /trips/trip-1/media/from-place' &&
+              (r.data as Map)['activityId'] == 's1')
+          .toList();
+      expect(forStop, hasLength(1));
+      expect((forStop.single.data as Map)['placeId'], 'p1');
     });
 
     testWidgets('a stop with no place says Google needs one', (tester) async {
@@ -1085,6 +1128,233 @@ void main() {
       expect(inPhotoSheet('เลือกสถานที่ก่อน เพื่อดูรูปจาก Google'),
           findsOneWidget);
       expect(adapter.paths.any((p) => p.startsWith('GET /places/')), isFalse);
+    });
+  });
+
+  group('หลายรูปต่อสถานที่', () {
+    Map<String, dynamic> galleryOf(List<String> ids) => {
+          'tripId': 'trip-1',
+          'total': ids.length,
+          'page': 1,
+          'limit': 200,
+          'items': [
+            for (final id in ids)
+              {
+                'id': id,
+                'source': 'activity',
+                'sourceActivityId': 's1',
+                'urls': {
+                  'large': 'https://cdn.example.com/$id-l.jpg',
+                  'thumbnail': 'https://cdn.example.com/$id-t.jpg',
+                },
+              },
+          ],
+        };
+
+    testWidgets('the card counts a stop with several photos', (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _filledDay()))
+      ];
+      adapter.replies['GET /trips/trip-1/media'] = [
+        FakeReply(200, galleryOf(['m3', 'm2', 'm1']))
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
+
+      final count = find.byKey(const ValueKey('stop-photo-count-s1'));
+      expect(count, findsOneWidget);
+      expect(
+          find.descendant(of: count, matching: find.text('3')), findsOneWidget);
+      // A stop with one photo or none needs no count.
+      expect(find.byKey(const ValueKey('stop-photo-count-s2')), findsNothing);
+    });
+
+    testWidgets('tapping a stop photo opens all of them full screen',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _filledDay()))
+      ];
+      adapter.replies['GET /trips/trip-1/media'] = [
+        FakeReply(200, galleryOf(['m3', 'm2', 'm1']))
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('stop-thumbnail-s1')));
+      await tester.pumpAndSettle();
+
+      // Full size, newest first, and the rest a swipe away.
+      expect(find.text('1 / 3'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((w) =>
+            w is CoverImage &&
+            w.source == 'https://cdn.example.com/m3-l.jpg' &&
+            w.fit == BoxFit.contain),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('ปิด'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 / 3'), findsNothing);
+    });
+
+    testWidgets('the form shows every photo, adds several, and removes one',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final previous = ImagePickerPlatform.instance;
+      ImagePickerPlatform.instance = _MultiPhotoPicker([
+        XFile.fromData(Uint8List(4), name: 'a.jpg', mimeType: 'image/jpeg'),
+        XFile.fromData(Uint8List(4), name: 'b.jpg', mimeType: 'image/jpeg'),
+      ]);
+      addTearDown(() => ImagePickerPlatform.instance = previous);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _filledDay()))
+      ];
+      adapter.replies['GET /trips/trip-1/media'] = [
+        FakeReply(200, galleryOf(['m3', 'm2', 'm1']))
+      ];
+      adapter.replies['PATCH /items/s1'] = [
+        FakeReply(200, <String, dynamic>{
+          'id': 's1',
+          'title': 'วัดเชียงทอง',
+          'category': 'sightseeing',
+          'order': 0,
+          'cost': 300,
+        })
+      ];
+      adapter.replies['DELETE /trips/trip-1/media/m3'] = [FakeReply(204, null)];
+      final uploaded = <String, dynamic>{
+        'mediaId': 'm-new',
+        'urls': {'large': 'https://cdn.example.com/n.jpg', 'thumbnail': 'x'},
+      };
+      adapter.replies['POST /trips/trip-1/media'] = [
+        FakeReply(201, uploaded),
+        FakeReply(201, uploaded),
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
+      await openStopAction(tester, 'แก้ไข');
+
+      // All three saved photos, newest as the cover — not just the one.
+      final remove = find.byKey(photoRemoveKey);
+      expect(remove, findsNWidgets(3));
+      expect(
+        find.descendant(
+          of: find.byKey(photoCoverKey),
+          matching: find.byWidgetPredicate((w) =>
+              w is CoverImage &&
+              w.source == 'https://cdn.example.com/m3-l.jpg'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(remove.first);
+      await tester.pumpAndSettle();
+      expect(remove, findsNWidgets(2));
+
+      await tester.ensureVisible(find.byKey(photoAddKey));
+      await tester.tap(find.byKey(photoAddKey));
+      await tester.pumpAndSettle();
+      // Several from the device in one go, confirmed together.
+      await tester.tap(find.descendant(
+          of: find.byKey(photoChoiceSheetKey),
+          matching: find.text('อัปโหลดรูป')));
+      await tester.pumpAndSettle();
+      expect(
+          find.descendant(
+              of: find.byKey(photoChoiceSheetKey),
+              matching: find.text('เพิ่ม 2 รูป')),
+          findsOneWidget);
+      await tester.tap(find.byKey(photoChoiceConfirmKey));
+      await tester.pumpAndSettle();
+      expect(remove, findsNWidgets(4));
+
+      await tester.tap(find.text('บันทึก'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.paths, contains('DELETE /trips/trip-1/media/m3'));
+      expect(
+        adapter.paths.where((p) => p == 'POST /trips/trip-1/media').length,
+        2,
+      );
+      expect(adapter.paths, isNot(contains('DELETE /trips/trip-1/media/m2')));
+      // The trip had no cover, so the photo just saved becomes it.
+      expect(lastBodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-new'});
+    });
+
+    testWidgets('a trip that has a cover keeps it when a stop gets photos',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final previous = ImagePickerPlatform.instance;
+      ImagePickerPlatform.instance = _MultiPhotoPicker([
+        XFile.fromData(Uint8List(4), name: 'a.jpg', mimeType: 'image/jpeg'),
+      ]);
+      addTearDown(() => ImagePickerPlatform.instance = previous);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(
+          200,
+          _tripJson(days: _filledDay())
+            ..['coverImage'] = <String, dynamic>{
+              'mediaId': 'm-cover',
+              'urls': {
+                'large': 'https://cdn.example.com/cover-l.jpg',
+                'thumbnail': 'https://cdn.example.com/cover-t.jpg',
+              },
+            },
+        )
+      ];
+      adapter.replies['PATCH /items/s1'] = [
+        FakeReply(200, <String, dynamic>{
+          'id': 's1',
+          'title': 'วัดเชียงทอง',
+          'category': 'sightseeing',
+          'order': 0,
+          'cost': 300,
+        })
+      ];
+      adapter.replies['POST /trips/trip-1/media'] = [
+        FakeReply(201, <String, dynamic>{
+          'mediaId': 'm-new',
+          'urls': {'large': 'https://cdn.example.com/n.jpg', 'thumbnail': 'x'},
+        }),
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await openStopAction(tester, 'แก้ไข');
+      await tester.ensureVisible(find.byKey(photoWellKey));
+      await tester.tap(find.byKey(photoWellKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(
+          of: find.byKey(photoChoiceSheetKey),
+          matching: find.text('อัปโหลดรูป')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(photoChoiceConfirmKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('บันทึก'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.paths, contains('POST /trips/trip-1/media'));
+      expect(adapter.paths, isNot(contains('PUT /trips/trip-1/cover')));
     });
   });
 
@@ -1132,6 +1402,8 @@ void main() {
 
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
 
       // The hero and the stop's own thumbnail.
       expect(find.byWidgetPredicate((w) => shows(w, placePhoto)),
@@ -1140,6 +1412,51 @@ void main() {
         find.byWidgetPredicate((w) => shows(w, AppConstants.defaultCoverImage)),
         findsNothing,
       );
+    });
+
+    testWidgets('a trip with no cover saves its first stop photo as one',
+        (tester) async {
+      tallView(tester);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: placedDay()))
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+
+      // Pulled in from the first stop's place, made the cover — once.
+      expect(adapter.bodyOf('POST /trips/trip-1/media/from-place'),
+          {'placeId': 'p1'});
+      expect(adapter.bodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-auto'});
+      expect(
+        adapter.paths.where((p) => p == 'PUT /trips/trip-1/cover').length,
+        1,
+      );
+    });
+
+    testWidgets('a trip that has a cover is not given another on open',
+        (tester) async {
+      tallView(tester);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(
+          200,
+          _tripJson(days: placedDay())
+            ..['coverImage'] = <String, dynamic>{
+              'mediaId': 'm-cover',
+              'urls': {
+                'large': 'https://cdn.example.com/cover-l.jpg',
+                'thumbnail': 'https://cdn.example.com/cover-t.jpg',
+              },
+            },
+        )
+      ];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+
+      expect(adapter.paths, isNot(contains('PUT /trips/trip-1/cover')));
     });
 
     testWidgets('a place photo is pulled into the gallery, then set as cover',
@@ -1158,6 +1475,8 @@ void main() {
 
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(changeCoverButtonKey));
       await tester.pumpAndSettle();
 
@@ -1173,7 +1492,7 @@ void main() {
       expect(body['placeId'], 'p1');
       // Not tied to the stop, so the stop's own photo is left alone.
       expect(body.containsKey('activityId'), isFalse);
-      expect(adapter.bodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-place'});
+      expect(lastBodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-place'});
     });
 
     testWidgets('a stop upload is set as cover as it is', (tester) async {
@@ -1205,6 +1524,12 @@ void main() {
 
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
+      // The automatic cover goes out once the gallery is in.
+      await tester.pumpAndSettle();
+      int fromPlaceCalls() => adapter.paths
+          .where((p) => p == 'POST /trips/trip-1/media/from-place')
+          .length;
+      final before = fromPlaceCalls();
       await tester.tap(find.byKey(changeCoverButtonKey));
       await tester.pumpAndSettle();
 
@@ -1217,9 +1542,9 @@ void main() {
       await tester.tap(inCoverSheet('เลือก'));
       await tester.pumpAndSettle();
 
-      expect(adapter.paths,
-          isNot(contains('POST /trips/trip-1/media/from-place')));
-      expect(adapter.bodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-up'});
+      // Already in the gallery, so nothing is pulled in for it.
+      expect(fromPlaceCalls(), before);
+      expect(lastBodyOf('PUT /trips/trip-1/cover'), {'mediaId': 'm-up'});
     });
   });
 
@@ -3069,6 +3394,18 @@ void main() {
 }
 
 /// A device that grants permission and reports one fixed position.
+/// Hands back the same photos for every multi-pick.
+class _MultiPhotoPicker extends ImagePickerPlatform {
+  _MultiPhotoPicker(this.photos);
+  final List<XFile> photos;
+
+  @override
+  Future<List<XFile>> getMultiImageWithOptions(
+          {MultiImagePickerOptions options =
+              const MultiImagePickerOptions()}) async =>
+      photos;
+}
+
 class _FixedLocation implements LocationService {
   _FixedLocation(this.latitude, this.longitude);
 

@@ -8,32 +8,16 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
 
-/// What the traveller picked in [showPhotoChoiceSheet].
-sealed class PhotoChoice {
-  const PhotoChoice();
-}
+/// What the traveller added in [showPhotoChoiceSheet]: photos from the
+/// device, and any number of the place's Google photos.
+class PhotoChoice {
+  const PhotoChoice({
+    this.files = const <XFile>[],
+    this.googleUrls = const <String>[],
+  });
 
-/// New photos from the device; the first is the one they want shown.
-class DevicePhotos extends PhotoChoice {
-  const DevicePhotos(this.files);
   final List<XFile> files;
-}
-
-/// One of the photos already picked in this form, by its index there.
-class PendingPhoto extends PhotoChoice {
-  const PendingPhoto(this.index);
-  final int index;
-}
-
-/// The photo the stop shows today — nothing to change.
-class CurrentPhoto extends PhotoChoice {
-  const CurrentPhoto();
-}
-
-/// One of the linked place's Google photos, as `GET /places/:id` lists it.
-class GooglePhoto extends PhotoChoice {
-  const GooglePhoto(this.url);
-  final String url;
+  final List<String> googleUrls;
 }
 
 /// A place's Google photos: the `photos` of `GET /places/:id`. The URLs are
@@ -48,14 +32,16 @@ final placePhotosProvider = FutureProvider.autoDispose
 /// The sheet the tabs and grid live in, for tests to scope to.
 const photoChoiceSheetKey = Key('photo-choice-sheet');
 
-/// "เปลี่ยนรูปภาพ": the traveller's own photos on one tab, the place's Google
-/// photos on the other. Returns null when closed without choosing.
+/// The confirm button under the grid, once something is picked.
+const photoChoiceConfirmKey = Key('photo-choice-confirm');
+
+/// "เพิ่มรูปภาพ": photos from the device on one tab, the place's Google
+/// photos on the other — as many as wanted from each. Returns null when
+/// closed without adding anything.
 Future<PhotoChoice?> showPhotoChoiceSheet(
   BuildContext context, {
-  required List<XFile> pending,
-  String? currentUrl,
   String? placeId,
-  String? selectedGoogleUrl,
+  Set<String> addedGoogleUrls = const <String>{},
 }) {
   return showModalBottomSheet<PhotoChoice>(
     context: context,
@@ -68,10 +54,8 @@ Future<PhotoChoice?> showPhotoChoiceSheet(
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.9,
       child: PhotoChoiceSheet(
-        pending: pending,
-        currentUrl: currentUrl,
         placeId: placeId,
-        selectedGoogleUrl: selectedGoogleUrl,
+        addedGoogleUrls: addedGoogleUrls,
       ),
     ),
   );
@@ -80,20 +64,15 @@ Future<PhotoChoice?> showPhotoChoiceSheet(
 class PhotoChoiceSheet extends StatefulWidget {
   const PhotoChoiceSheet({
     super.key,
-    required this.pending,
-    this.currentUrl,
     this.placeId,
-    this.selectedGoogleUrl,
+    this.addedGoogleUrls = const <String>{},
   });
-
-  final List<XFile> pending;
-
-  /// What the stop shows now: its newest upload, else the place's photo.
-  final String? currentUrl;
 
   /// The linked place, whose Google photos fill the second tab.
   final String? placeId;
-  final String? selectedGoogleUrl;
+
+  /// Google photos the stop already has, shown but not offered again.
+  final Set<String> addedGoogleUrls;
 
   @override
   State<PhotoChoiceSheet> createState() => _PhotoChoiceSheetState();
@@ -105,43 +84,36 @@ const _selectBlue = Color(0xFF4353E8);
 class _PhotoChoiceSheetState extends State<PhotoChoiceSheet> {
   final _picker = ImagePicker();
 
-  /// The highlighted tile; tapping its "เลือก" confirms it.
-  PhotoChoice? _selected;
+  /// Picked so far, in the order tapped — which is the order they are added.
+  final List<XFile> _files = <XFile>[];
+  final List<String> _google = <String>[];
 
-  @override
-  void initState() {
-    super.initState();
-    final google = widget.selectedGoogleUrl;
-    _selected = google != null
-        ? GooglePhoto(google)
-        : widget.pending.isNotEmpty
-            ? const PendingPhoto(0)
-            : widget.currentUrl != null
-                ? const CurrentPhoto()
-                : null;
-  }
+  int get _count => _files.length + _google.length;
 
   Future<void> _upload() async {
     final picked = await _picker.pickMultiImage();
     if (picked.isEmpty || !mounted) return;
-    Navigator.of(context).pop(DevicePhotos(picked));
+    setState(() => _files.addAll(picked));
   }
 
-  bool _isSelected(PhotoChoice choice) => switch ((choice, _selected)) {
-        (PendingPhoto(:final index), PendingPhoto(index: final other)) =>
-          index == other,
-        (CurrentPhoto(), CurrentPhoto()) => true,
-        (GooglePhoto(:final url), GooglePhoto(url: final other)) =>
-          url == other,
-        _ => false,
-      };
+  void _toggleGoogle(String url) => setState(
+      () => _google.contains(url) ? _google.remove(url) : _google.add(url));
+
+  void _confirm() => Navigator.of(context).pop(
+        PhotoChoice(files: List.of(_files), googleUrls: List.of(_google)),
+      );
+
+  /// A tile's place in the picked order, from 1, or null when not picked.
+  int? _orderOf({XFile? file, String? url}) {
+    final index = file != null ? _files.indexOf(file) : _google.indexOf(url!);
+    if (index < 0) return null;
+    return (file != null ? 0 : _files.length) + index + 1;
+  }
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      // A stop with a place most likely wants one of its photos.
       length: 2,
-      initialIndex: widget.selectedGoogleUrl != null ? 1 : 0,
       child: Column(
         key: photoChoiceSheetKey,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -152,7 +124,7 @@ class _PhotoChoiceSheetState extends State<PhotoChoiceSheet> {
               children: [
                 const Expanded(
                   child: Text(
-                    'เปลี่ยนรูปภาพ',
+                    'เพิ่มรูปภาพ',
                     style: TextStyle(
                       color: AppColors.foreground,
                       fontSize: 20,
@@ -191,23 +163,48 @@ class _PhotoChoiceSheetState extends State<PhotoChoiceSheet> {
               children: [_ownTab(), _googleTab()],
             ),
           ),
+          if (_count > 0)
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: FilledButton(
+                  key: photoChoiceConfirmKey,
+                  onPressed: _confirm,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _selectBlue,
+                    minimumSize: const Size.fromHeight(50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    'เพิ่ม $_count รูป',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
   Widget _ownTab() {
-    final current = widget.currentUrl;
-    // Photos picked in this form replace the stop's photo on save, so the
-    // current one is only offered while there are none.
+    // Device photos come back from the system picker already chosen; tapping
+    // one here takes it off again.
     return _PhotoGrid(
       leading: _UploadTile(onTap: _upload),
       tiles: [
-        for (final (index, file) in widget.pending.indexed)
-          _tile(PendingPhoto(index),
-              Image.file(File(file.path), fit: BoxFit.cover)),
-        if (widget.pending.isEmpty && current != null)
-          _tile(const CurrentPhoto(), CoverImage(source: current)),
+        for (final file in _files)
+          _PickTile(
+            order: _orderOf(file: file),
+            image: Image.file(File(file.path), fit: BoxFit.cover),
+            onTap: () => setState(() => _files.remove(file)),
+          ),
       ],
     );
   }
@@ -239,20 +236,103 @@ class _PhotoChoiceSheetState extends State<PhotoChoiceSheet> {
               : _PhotoGrid(
                   tiles: [
                     for (final url in urls)
-                      _tile(GooglePhoto(url), CoverImage(source: url)),
+                      widget.addedGoogleUrls.contains(url)
+                          ? _PickTile(
+                              image: CoverImage(source: url),
+                              added: true,
+                            )
+                          : _PickTile(
+                              order: _orderOf(url: url),
+                              image: CoverImage(source: url),
+                              onTap: () => _toggleGoogle(url),
+                            ),
                   ],
                 ),
         );
       },
     );
   }
+}
 
-  Widget _tile(PhotoChoice choice, Widget image) {
-    return _ChoiceTile(
-      selected: _isSelected(choice),
-      image: image,
-      onTap: () => setState(() => _selected = choice),
-      onConfirm: () => Navigator.of(context).pop(choice),
+/// A photo that can be ticked on and off. [order] is its number in the
+/// picked set, or null when not picked; [added] marks one the stop already
+/// has, which cannot be picked again.
+class _PickTile extends StatelessWidget {
+  const _PickTile({
+    required this.image,
+    this.order,
+    this.onTap,
+    this.added = false,
+  });
+
+  final Widget image;
+  final int? order;
+  final VoidCallback? onTap;
+  final bool added;
+
+  @override
+  Widget build(BuildContext context) {
+    final order = this.order;
+    final selected = order != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: EdgeInsets.all(selected ? 3 : 0),
+        decoration: BoxDecoration(
+          color: selected ? _selectBlue : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(selected ? 11 : 14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              image,
+              if (added)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    'เพิ่มแล้ว',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              else
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? _selectBlue
+                          : Colors.black.withValues(alpha: 0.25),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: selected
+                        ? Text(
+                            '$order',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
