@@ -8,11 +8,16 @@ import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/core/theme/app_colors.dart';
+import 'package:pluno/features/trip_detail/presentation/share_trip.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'support/fake_api.dart';
 
 late FakeAdapter adapter;
+
+/// What reached the share sheet, in order — the real sheet never opens.
+final shared = <ShareParams>[];
 
 /// Three stops over two days, a group of three, and counts big enough to be
 /// worth grouping — enough for every figure the design prints.
@@ -110,6 +115,8 @@ Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
     ProviderScope(
       overrides: [
         plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+        shareSheetProvider
+            .overrideWithValue((params) async => shared.add(params)),
         currentUserProvider.overrideWith(
           (ref) => viewerPending
               ? Completer<AuthUser?>().future
@@ -157,6 +164,7 @@ Future<void> _pumpTrip(
   bool viewerPending = false,
   Map<String, List<FakeReply>> extra = const {},
 }) async {
+  shared.clear();
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(status, trip ?? _tripJson())],
     ...extra,
@@ -517,7 +525,65 @@ void main() {
     expect(find.byType(BottomSheet), findsOneWidget);
   });
 
-  testWidgets('แชร์ reports that it is not wired', (tester) async {
+  testWidgets("the owner's แชร์ shares the server's link with the title",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _owner,
+      extra: {
+        'POST /trips/trip-1/share': [
+          FakeReply(201, <String, dynamic>{
+            'id': 'share-1',
+            'shareUrl': 'https://paigun-punguide.vercel.app/shared-trips/tok',
+            'shareToken': 'tok',
+            'accessLevel': 'view',
+            'isActive': true,
+          }),
+        ],
+      },
+    );
+    await openTripMenu(tester);
+    await tester.tap(find.text('แชร์'));
+    await tester.pumpAndSettle();
+
+    expect(adapter.paths, contains('POST /trips/trip-1/share'));
+    expect(shared, hasLength(1));
+    expect(
+      shared.single.text,
+      'ทริปหลวงพระบางสายชิล\n'
+      'https://paigun-punguide.vercel.app/shared-trips/tok',
+    );
+    expect(shared.single.subject, 'ทริปหลวงพระบางสายชิล');
+  });
+
+  testWidgets("the owner's แชร์ says so when the link cannot be made",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _owner,
+      extra: {
+        'POST /trips/trip-1/share': [
+          FakeReply(500, <String, dynamic>{'message': 'boom'}),
+        ],
+      },
+    );
+    await openTripMenu(tester);
+    await tester.tap(find.text('แชร์'));
+    await tester.pumpAndSettle();
+
+    expect(shared, isEmpty);
+    expect(find.text('สร้างลิงก์แชร์ไม่สำเร็จ ลองอีกครั้ง'), findsOneWidget);
+  });
+
+  testWidgets("a visitor's แชร์ reports that it is not wired", (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);

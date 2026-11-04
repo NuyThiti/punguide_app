@@ -21,6 +21,7 @@ import '../../create_post/presentation/widgets/trip_link_picker.dart';
 import '../../my_trips/presentation/delete_trip.dart';
 import '../../my_trips/presentation/providers/my_trips_providers.dart';
 import '../../profile/presentation/providers/profile_providers.dart';
+import 'share_trip.dart';
 import 'widgets/add_to_trip_sheet.dart';
 import 'widgets/plan_stop_card.dart';
 import 'widgets/remix_sheet.dart';
@@ -120,11 +121,20 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             onMenu: (action) => switch (action) {
               _TripMenuAction.edit => _edit(trip),
               _TripMenuAction.delete => _delete(trip),
-              _TripMenuAction.share => _snack(
-                  post
-                      ? 'แชร์โพสต์ยังไม่เปิดใช้งาน'
-                      : 'แชร์ทริปยังไม่เปิดใช้งาน',
-                ),
+              // Only the owner can mint a link; a visitor's แชร์ waits on a
+              // public URL the web can serve for anyone's trip.
+              _TripMenuAction.share => _owns(trip) == true
+                  ? shareTripLink(
+                      context,
+                      ref,
+                      tripId: trip.id,
+                      title: trip.title,
+                    )
+                  : _snack(
+                      post
+                          ? 'แชร์โพสต์ยังไม่เปิดใช้งาน'
+                          : 'แชร์ทริปยังไม่เปิดใช้งาน',
+                    ),
             },
             onFollow: () => _snack('ติดตามยังไม่เปิดใช้งาน'),
           ),
@@ -178,16 +188,14 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
       stops: stops,
     );
     if (result == null) return;
-    final skipped = result.skipped > 0
-        ? ' · ${result.skipped} สถานที่อยู่ในทริปแล้ว'
-        : '';
+    final skipped =
+        result.skipped > 0 ? ' · ${result.skipped} สถานที่อยู่ในทริปแล้ว' : '';
     _snack(
       result.replayed || result.added == 0
           ? 'Remix ลง ${result.tripTitle} แล้ว$skipped'
           : 'Remix ${result.added} สถานที่ลง ${result.tripTitle} แล้ว$skipped',
     );
   }
-
 
   /// A post: the cover hero, Trip Overview, then the spots.
   Widget _contentScroll(ApiTrip trip) {
