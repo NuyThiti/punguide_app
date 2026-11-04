@@ -169,6 +169,29 @@ class AuthController extends StateNotifier<AuthSession?> {
     }
   }
 
+  /// Deletes the account and drops the session.
+  ///
+  /// Throws so the screen can tell the traveller what went wrong — a wrong
+  /// password must never read as "deleted". The session is dropped only after
+  /// the server confirms, and no `/auth/logout` follows: every session is
+  /// already gone.
+  Future<void> deleteAccount({String? password}) async {
+    final api = await _resolveApi();
+    if (api == null) {
+      // Pretending this worked would sign the traveller out of an account
+      // that still exists.
+      throw StateError('No API configured, so nothing was deleted.');
+    }
+    await api.users.deleteAccount(password: password);
+    try {
+      await _google?.signOut();
+    } on Object catch (error) {
+      debugPrint('Google sign-out after delete failed, continuing: $error');
+    }
+    if (!mounted) return;
+    state = null;
+  }
+
   /// Updates the display name on the server and in the session.
   Future<void> updateDisplayName(String name) async {
     final api = await _resolveApi();

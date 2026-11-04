@@ -19,6 +19,8 @@ import '../../features/paigun/presentation/paigun_filter_screen.dart';
 import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/account_screen.dart';
 import '../../features/profile/presentation/album_detail_screen.dart';
+import '../../features/profile/presentation/delete_account_screen.dart';
+import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
 import '../../features/puntok/presentation/puntok_viewer_screen.dart';
@@ -53,6 +55,8 @@ enum AppRoute {
   createPuntok,
   profile,
   profileAccount,
+  profileEdit,
+  profileDelete,
   albumDetail,
   locationAccess,
   locationPicker,
@@ -281,6 +285,18 @@ final appRouter = GoRouter(
         state,
         AlbumDetailScreen(albumId: state.params['albumId']!),
       ),
+    ),
+    GoRoute(
+      path: '/profile/delete',
+      name: AppRoute.profileDelete.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const DeleteAccountScreen()),
+    ),
+    GoRoute(
+      path: '/profile/edit',
+      name: AppRoute.profileEdit.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const EditProfileScreen()),
     ),
     GoRoute(
       path: '/profile/account',

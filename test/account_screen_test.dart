@@ -45,6 +45,16 @@ Widget _harness(ProviderContainer container) {
             builder: (_, __) => const Scaffold(body: Text('saved-stub')),
           ),
           GoRoute(
+            path: '/profile/edit',
+            name: AppRoute.profileEdit.name,
+            builder: (_, __) => const Scaffold(body: Text('edit-stub')),
+          ),
+          GoRoute(
+            path: '/profile/delete',
+            name: AppRoute.profileDelete.name,
+            builder: (_, __) => const Scaffold(body: Text('delete-stub')),
+          ),
+          GoRoute(
             path: '/profile',
             name: AppRoute.profile.name,
             builder: (_, __) => const Scaffold(body: Text('profile-stub')),
@@ -77,10 +87,12 @@ void main() {
     expect(find.text('จัดการบัญชี'), findsOneWidget);
 
     const labels = [
+      'จัดการโปรไฟล์',
       'Save Draft',
       'ทริปที่บันทึกไว้',
       'บุ๊คมาร์คสถานที่',
       'ตั้งค่าระบบ',
+      'ลบบัญชี',
     ];
     for (final label in labels) {
       expect(find.text(label), findsOneWidget);
@@ -106,6 +118,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('my-trips-stub'), findsOneWidget);
+  });
+
+  testWidgets('ลบบัญชี sits last and opens its own page', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness(_container()));
+    await tester.pumpAndSettle();
+
+    final rows = tester
+        .widgetList<AccountRow>(find.byType(AccountRow))
+        .toList();
+    // The one row that cannot be undone goes at the end, in its own colour.
+    expect(rows.last.label, 'ลบบัญชี');
+    expect(rows.last.tint, isNotNull);
+
+    await tester.tap(find.text('ลบบัญชี'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('delete-stub'), findsOneWidget);
+  });
+
+  testWidgets('จัดการโปรไฟล์ opens the profile editor', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness(_container()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('จัดการโปรไฟล์'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('edit-stub'), findsOneWidget);
   });
 
   testWidgets('ทริปที่บันทึกไว้ opens the bookmarks shelf', (tester) async {
@@ -207,6 +250,6 @@ void main() {
     await tester.pumpWidget(_harness(_container()));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AccountRow), findsNWidgets(4));
+    expect(find.byType(AccountRow), findsNWidgets(6));
   });
 }

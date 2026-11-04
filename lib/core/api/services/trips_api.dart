@@ -507,6 +507,34 @@ class TripsApi {
     return RemixedTrip.fromJson(Json.asMap(body));
   }
 
+  /// Copies the picked stops of [sourceTripId] onto the staging shelf
+  /// ("From Remix Trip") of [targetTripId], one of your own trips — not onto
+  /// any day; the traveller drags them in later.
+  ///
+  /// [itemIds] are `days[].activities[].id` of the source (of a post's linked
+  /// plan, when [sourceTripId] is a post): 1–200, no repeats. They land in the
+  /// source's own order whatever order they are sent in, and a place already on
+  /// the shelf is skipped. Counts as a remix — `remixCount` goes up.
+  ///
+  /// Mint [idempotencyKey] once per ตกลง and reuse it across retries: a replay
+  /// to the same target copies nothing again. 400 on a bad body or source ==
+  /// target, 403 when remix is not allowed, 404 when either trip is out of
+  /// reach, 409 when the key was spent on another target, 422 for a post with
+  /// no linked plan.
+  Future<RemixedItems> remixItemsInto(
+    String sourceTripId,
+    String targetTripId, {
+    required List<String> itemIds,
+    required String idempotencyKey,
+  }) async {
+    final body = await _client.post<Map<String, dynamic>>(
+      '/trips/$sourceTripId/remix/items/into/$targetTripId',
+      body: <String, dynamic>{'itemIds': itemIds},
+      headers: PlunoHeaders.idempotent(idempotencyKey),
+    );
+    return RemixedItems.fromJson(Json.asMap(body));
+  }
+
   /// Bookmarks a trip. Idempotent, and works on other people's trips.
   /// The new count is not returned — re-read the trip for `isSaved`.
   Future<void> save(String tripId) =>

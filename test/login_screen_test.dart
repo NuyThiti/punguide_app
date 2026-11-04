@@ -71,200 +71,32 @@ void _phone(WidgetTester tester, {Size size = const Size(393, 852)}) {
   addTearDown(tester.view.reset);
 }
 
-Future<void> _fillCredentials(
-  WidgetTester tester, {
-  required String username,
-  required String password,
-}) async {
-  await tester.enterText(find.byType(TextFormField).at(0), username);
-  await tester.enterText(find.byType(TextFormField).at(1), password);
-  await tester.pump();
-}
-
-Future<void> _tapSubmit(WidgetTester tester) async {
-  await tester.tap(find.widgetWithText(GestureDetector, 'เข้าสู่ระบบ').first);
-}
-
-/// Flips the screen from signing in to signing up via the bottom link.
-Future<void> _switchToRegister(WidgetTester tester) async {
-  await tester.ensureVisible(find.text('สมัครสมาชิก'));
-  await tester.tap(find.text('สมัครสมาชิก'));
-  await tester.pumpAndSettle();
-}
-
 void main() {
-  testWidgets('login renders the account header, both fields and every action',
-      (tester) async {
+  testWidgets('login offers Google as the only way in', (tester) async {
     _phone(tester);
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
     expect(find.text('บัญชีผู้ใช้'), findsOneWidget);
-    expect(find.text('อีเมลหรือชื่อผู้ใช้'), findsOneWidget);
-    expect(find.text('รหัสผ่าน'), findsOneWidget);
-    expect(find.text('เข้าสู่ระบบ'), findsNWidgets(2));
+    expect(find.text('เข้าสู่ระบบ'), findsOneWidget);
     expect(find.text('เข้าสู่ระบบด้วย Google'), findsOneWidget);
-    expect(find.text('สมัครสมาชิก'), findsOneWidget);
   });
 
-  testWidgets('submitting an empty form reports both fields', (tester) async {
-    _phone(tester);
-    final container = _container(tester);
-    await tester.pumpWidget(_harness(container));
-    await tester.pumpAndSettle();
-
-    await _tapSubmit(tester);
-    await tester.pumpAndSettle();
-
-    expect(find.text('กรอกชื่อผู้ใช้ของคุณ'), findsOneWidget);
-    // The same copy is used for the placeholder and the validation message.
-    expect(find.text('กรอกรหัสผ่าน'), findsNWidgets(2));
-    expect(container.read(authSessionProvider), isNull);
-    expect(find.text('home-stub'), findsNothing);
-  });
-
-  testWidgets('an out-of-charset username and a short password each report',
-      (tester) async {
+  testWidgets('the username and password form is gone', (tester) async {
     _phone(tester);
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
-    // '@' and '-' are outside the API's [a-zA-Z0-9._] set.
-    await _fillCredentials(tester, username: 'som-chai@x', password: '123');
-    await _tapSubmit(tester);
-    await tester.pumpAndSettle();
-
-    expect(find.text('ใช้ได้เฉพาะ a-z 0-9 จุด และขีดล่าง'), findsOneWidget);
-    expect(find.text('รหัสผ่านอย่างน้อย 8 ตัวอักษร'), findsOneWidget);
-  });
-
-  testWidgets('a username shorter than the API allows reports', (tester) async {
-    _phone(tester);
-    await tester.pumpWidget(_harness(_container(tester)));
-    await tester.pumpAndSettle();
-
-    await _fillCredentials(tester, username: 'so', password: 'secret1234');
-    await _tapSubmit(tester);
-    await tester.pumpAndSettle();
-
-    expect(find.text('ชื่อผู้ใช้ต้องยาว 3-30 ตัวอักษร'), findsOneWidget);
-  });
-
-  testWidgets('valid credentials open a session and land on home',
-      (tester) async {
-    _phone(tester);
-    final container = _container(tester);
-    await tester.pumpWidget(_harness(container));
-    await tester.pumpAndSettle();
-
-    await _fillCredentials(
-      tester,
-      username: 'somchai.jai',
-      password: 'secret1234',
-    );
-    await _tapSubmit(tester);
-
-    // The pending state holds while the credential exchange runs.
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-
-    await tester.pumpAndSettle();
-
-    final session = container.read(authSessionProvider);
-    expect(session, isNotNull);
-    expect(session!.handle, '@somchai.jai');
-    expect(session.displayName, 'Somchai Jai');
-    // A username/password account has no email until it signs in with Google.
-    expect(session.email, isEmpty);
-    expect(find.text('home-stub'), findsOneWidget);
-  });
-
-  testWidgets('the bottom link flips the screen into sign-up', (tester) async {
-    _phone(tester);
-    await tester.pumpWidget(_harness(_container(tester)));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ยังไม่มีบัญชี?'), findsOneWidget);
-    await _switchToRegister(tester);
-
-    expect(find.text('มีบัญชีอยู่แล้ว?'), findsOneWidget);
-    expect(find.text('ยังไม่มีบัญชี?'), findsNothing);
-    // Remember-me belongs to signing in; the password rule replaces it here.
-    expect(find.text('จำฉันไว้'), findsNothing);
-    expect(
-      find.text(
-          'ตั้งรหัสผ่าน 8-72 ตัวอักษร และชื่อผู้ใช้จะเปลี่ยนภายหลังไม่ได้'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('signing up opens a session and lands on home', (tester) async {
-    _phone(tester);
-    final container = _container(tester);
-    await tester.pumpWidget(_harness(container));
-    await tester.pumpAndSettle();
-    await _switchToRegister(tester);
-
-    await _fillCredentials(
-      tester,
-      username: 'new.traveller',
-      password: 'secret1234',
-    );
-    // In sign-up mode the label is the primary button, not the bottom link.
-    await tester.tap(find.widgetWithText(GestureDetector, 'สมัครสมาชิก').first);
-    await tester.pumpAndSettle();
-
-    expect(container.read(authSessionProvider)?.handle, '@new.traveller');
-    expect(find.text('home-stub'), findsOneWidget);
-  });
-
-  testWidgets('switching modes keeps what was typed but clears stale errors',
-      (tester) async {
-    _phone(tester);
-    await tester.pumpWidget(_harness(_container(tester)));
-    await tester.pumpAndSettle();
-
-    await _tapSubmit(tester);
-    await tester.pumpAndSettle();
-    expect(find.text('กรอกชื่อผู้ใช้ของคุณ'), findsOneWidget);
-
-    await _fillCredentials(tester, username: 'somchai', password: 'secret1234');
-    await _switchToRegister(tester);
-
-    expect(find.text('กรอกชื่อผู้ใช้ของคุณ'), findsNothing);
-    // Read the field itself: 'somchai' is also the hint, so find.text is
-    // ambiguous here.
-    final username = tester.widget<EditableText>(
-      find.descendant(
-        of: find.byType(TextFormField).at(0),
-        matching: find.byType(EditableText),
-      ),
-    );
-    expect(username.controller.text, 'somchai');
-  });
-
-  testWidgets('the eye toggle reveals and re-hides the password',
-      (tester) async {
-    _phone(tester);
-    await tester.pumpWidget(_harness(_container(tester)));
-    await tester.pumpAndSettle();
-
-    EditableText passwordField() => tester.widget<EditableText>(
-          find.descendant(
-            of: find.byType(TextFormField).at(1),
-            matching: find.byType(EditableText),
-          ),
-        );
-
-    expect(passwordField().obscureText, isTrue);
-
-    await tester.tap(find.byIcon(Icons.visibility_outlined));
-    await tester.pumpAndSettle();
-    expect(passwordField().obscureText, isFalse);
-
-    await tester.tap(find.byIcon(Icons.visibility_off_outlined));
-    await tester.pumpAndSettle();
-    expect(passwordField().obscureText, isTrue);
+    // No text entry at all: nothing is left to type into.
+    expect(find.byType(TextFormField), findsNothing);
+    expect(find.byType(EditableText), findsNothing);
+    expect(find.byType(Form), findsNothing);
+    expect(find.text('อีเมลหรือชื่อผู้ใช้'), findsNothing);
+    expect(find.text('รหัสผ่าน'), findsNothing);
+    // The sign-up link belonged to the password flow; Google creates the
+    // account on first use.
+    expect(find.text('สมัครสมาชิก'), findsNothing);
+    expect(find.byIcon(Icons.visibility_outlined), findsNothing);
   });
 
   testWidgets('secondary actions omitted by the new design stay hidden',
@@ -360,6 +192,6 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pumpAndSettle();
 
-    expect(find.text('ยังไม่มีบัญชี?'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบด้วย Google'), findsOneWidget);
   });
 }

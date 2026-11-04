@@ -155,7 +155,7 @@ class PunGuideCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(3),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -170,7 +170,7 @@ class PunGuideCard extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   _PlaceLine(
                     destination: trip.destination,
                     distanceLabel: distanceLabel,
@@ -179,7 +179,7 @@ class PunGuideCard extends StatelessWidget {
                         ? AppColors.cardTitle
                         : Colors.white,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 6),
                   _StatsLine(
                     trip: trip,
                     saved: saved ?? trip.isSaved,

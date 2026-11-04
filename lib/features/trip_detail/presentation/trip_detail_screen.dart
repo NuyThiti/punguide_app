@@ -23,6 +23,7 @@ import '../../my_trips/presentation/providers/my_trips_providers.dart';
 import '../../profile/presentation/providers/profile_providers.dart';
 import 'widgets/add_to_trip_sheet.dart';
 import 'widgets/plan_stop_card.dart';
+import 'widgets/remix_sheet.dart';
 import 'widgets/trip_content_sections.dart';
 
 /// The deep green behind a day number, shared with the plan editor's design.
@@ -147,6 +148,47 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
         params: {'tripId': widget.tripId},
       );
 
+  /// Remix picks stops and puts them on the staging shelf of one of your
+  /// own plans. A plan's stops are its own; a post's are its linked plan's,
+  /// with the post as the source so the remix counts on it too. With nothing
+  /// to pick — an empty plan, a post with no plan — it keeps the whole-trip
+  /// remix route.
+  Future<void> _remixStops(ApiTrip trip) async {
+    var plan = trip;
+    final linked = trip.linkedTrip;
+    if (trip.type.isPost) {
+      if (linked == null) return _remix();
+      try {
+        plan = await ref.read(apiTripProvider(linked.id).future);
+      } catch (_) {
+        _snack('อ่านแผนของโพสต์นี้ไม่สำเร็จ');
+        return;
+      }
+      if (!mounted) return;
+    }
+
+    final days = [...plan.days]
+      ..sort((a, b) => a.dayNumber.compareTo(b.dayNumber));
+    final stops = [for (final day in days) ...day.activities];
+    if (stops.isEmpty) return _remix();
+
+    final result = await showRemixSheet(
+      context,
+      sourceTripId: trip.id,
+      stops: stops,
+    );
+    if (result == null) return;
+    final skipped = result.skipped > 0
+        ? ' · ${result.skipped} สถานที่อยู่ในทริปแล้ว'
+        : '';
+    _snack(
+      result.replayed || result.added == 0
+          ? 'Remix ลง ${result.tripTitle} แล้ว$skipped'
+          : 'Remix ${result.added} สถานที่ลง ${result.tripTitle} แล้ว$skipped',
+    );
+  }
+
+
   /// A post: the cover hero, Trip Overview, then the spots.
   Widget _contentScroll(ApiTrip trip) {
     final blurb = trip.description?.trim() ?? '';
@@ -159,7 +201,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           child: _PostHero(
             trip: trip,
             owned: _owns(trip),
-            onRemix: _remix,
+            onRemix: () => _remixStops(trip),
           ),
         ),
         SliverPadding(
@@ -206,7 +248,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           child: _PostHero(
             trip: trip,
             owned: _owns(trip),
-            onRemix: _remix,
+            onRemix: () => _remixStops(trip),
           ),
         ),
         SliverPadding(
@@ -569,7 +611,8 @@ class _PostHero extends StatelessWidget {
                     // menu instead, so their hero carries no button at all.
                     // The slot holds its height while the viewer is unknown,
                     // so a visitor's hero does not jump when Remix lands.
-                    if (owned != true) ...[
+                    // Nor does a viewer the server says may not remix it.
+                    if (owned != true && trip.canRemix != false) ...[
                       const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,

@@ -121,6 +121,29 @@ class UsersApi {
     return AuthUser.fromJson(Json.asMap(body));
   }
 
+  /// Deletes the account for good — trips, media, likes, follows, chats and
+  /// every session, all at once. There is no waiting period and no undo.
+  ///
+  /// [password] is required for an account that has one and must be left off
+  /// for a Google-only account, but nothing in the user model says which this
+  /// is, so the server decides: a `400` means "this account has a password,
+  /// send it" and a `403` means the one sent is wrong. **`403`, not `401`** —
+  /// deliberately, so the client does not read a bad password as an expired
+  /// token and try to refresh.
+  ///
+  /// The local session is cleared only once the server has actually deleted
+  /// the account; a refused call leaves the traveller signed in. No
+  /// `/auth/logout` afterwards — the sessions are already gone.
+  Future<void> deleteAccount({String? password}) async {
+    await _client.delete<void>(
+      '/users/me',
+      body: password == null || password.isEmpty
+          ? null
+          : <String, dynamic>{'password': password},
+    );
+    await _client.clearSession();
+  }
+
   /// Where the traveller was last seen, or null when nothing is stored.
   ///
   /// Never a 404: "has not given permission yet" is an ordinary answer, so the

@@ -99,6 +99,12 @@ class AccountScreen extends ConsumerWidget {
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
+                AccountRow(
+                  icon: Icons.person_outline,
+                  label: 'จัดการโปรไฟล์',
+                  onTap: () => context.goNamed(AppRoute.profileEdit.name),
+                ),
+                const _RowDivider(),
                 // Drafts are only ever listed by GET /trips/mine, so this is
                 // the shelf they come from.
                 AccountRow(
@@ -125,6 +131,15 @@ class AccountScreen extends ConsumerWidget {
                   icon: Icons.settings_outlined,
                   label: 'ตั้งค่าระบบ',
                   onTap: () => unavailable('ตั้งค่าระบบยังไม่เปิดใช้งาน'),
+                ),
+                const _RowDivider(),
+                // Last and on its own colour: the one row here that cannot be
+                // undone belongs at the end, not between two ordinary ones.
+                AccountRow(
+                  icon: Icons.person_remove_outlined,
+                  label: 'ลบบัญชี',
+                  tint: AppColors.brandOrangeDeep,
+                  onTap: () => context.goNamed(AppRoute.profileDelete.name),
                 ),
               ],
             ),
@@ -161,11 +176,16 @@ class AccountRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.tint,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+
+  /// Colours the icon and label — used by the one row whose action cannot be
+  /// undone, so it does not read as one more place to go.
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +204,7 @@ class AccountRow extends StatelessWidget {
                 color: AppColors.optionIconBg,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, size: 20, color: AppColors.foreground),
+              child: Icon(icon, size: 20, color: tint ?? AppColors.foreground),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -192,8 +212,8 @@ class AccountRow extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.foreground,
+                style: TextStyle(
+                  color: tint ?? AppColors.foreground,
                   fontSize: 15,
                   height: 1.2,
                   fontWeight: FontWeight.w600,

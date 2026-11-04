@@ -94,7 +94,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   session: session,
                   coverImage: profileCoverImage,
                   onEditAvatar: () =>
-                      unavailable('แก้ไขรูปโปรไฟล์ยังไม่เปิดใช้งาน'),
+                      context.pushNamed(AppRoute.profileEdit.name),
                 ),
               ),
               SliverToBoxAdapter(

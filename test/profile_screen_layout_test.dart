@@ -87,6 +87,11 @@ Widget _harness({
             builder: (_, __) => const Scaffold(body: Text('album-stub')),
           ),
           GoRoute(
+            path: '/profile/edit',
+            name: AppRoute.profileEdit.name,
+            builder: (_, __) => const Scaffold(body: Text('edit-stub')),
+          ),
+          GoRoute(
             path: '/puntok/view',
             name: AppRoute.puntokViewer.name,
             builder: (_, state) => PuntokViewerScreen(
@@ -399,6 +404,18 @@ void main() {
     expect(find.byType(ProfileCountsRow), findsNothing);
     expect(find.byIcon(Icons.edit), findsNothing);
     expect(find.text('เข้าสู่ระบบเพื่อดูโพสต์และทริปของคุณ'), findsOneWidget);
+  });
+
+  testWidgets('the avatar pencil opens the profile editor', (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.edit));
+    await tester.pumpAndSettle();
+
+    expect(find.text('edit-stub'), findsOneWidget);
   });
 
   testWidgets('the menu button opens จัดการบัญชี', (tester) async {

@@ -24,6 +24,47 @@ class AddToNewTrip extends AddToTripResult {
   const AddToNewTrip();
 }
 
+/// Copies [stops] onto the end of [tripId]'s **last** day, in order.
+///
+/// The API has no unscheduled shelf to drop them on, and the end of the trip
+/// is where "one more place" belongs; a plan with no days gets its วันที่ 1
+/// first. A stop linked to a place is copied as that place, so the new plan
+/// gets its photo and hours too; a hand-typed one keeps its name. Legs are
+/// routed once at the end rather than after every stop.
+Future<void> copyStopsToTrip(
+  PlunoApi api,
+  String tripId,
+  List<Activity> stops,
+) async {
+  final trip = await api.trips.byId(tripId);
+  final days = [...trip.days]
+    ..sort((a, b) => a.dayNumber.compareTo(b.dayNumber));
+  final dayId = days.isEmpty
+      ? (await api.itinerary.addDay(tripId, dayNumber: 1)).id
+      : days.last.id;
+
+  for (final stop in stops) {
+    final placeId = stop.location?.placeId?.trim();
+    final linked = placeId != null && placeId.isNotEmpty;
+    final notes = stop.notes?.trim();
+    await api.itinerary.addItem(
+      dayId,
+      placeId: linked ? placeId : null,
+      customName: linked ? null : stop.title,
+      category: stop.category,
+      notes: notes == null || notes.isEmpty ? null : notes,
+      calculateTravelSegments: false,
+    );
+  }
+
+  try {
+    await api.itinerary.retryTravelSegments(tripId);
+  } catch (_) {
+    // The stops are saved; a leg that failed to route shows as such on the
+    // plan and can be retried there.
+  }
+}
+
 /// "เพิ่มลงทริป" — copies one stop of somebody's plan onto one of yours.
 ///
 /// Returns null when dismissed. The stop lands at the end of the chosen
@@ -153,9 +194,8 @@ class _AddToTripSheetState extends ConsumerState<_AddToTripSheet> {
                   height: 48,
                   child: FilledButton(
                     // Greyed until a trip is picked, as the design draws it.
-                    onPressed: _selected == null || _saving
-                        ? null
-                        : () => _add(rows),
+                    onPressed:
+                        _selected == null || _saving ? null : () => _add(rows),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.sheetConfirm,
                       disabledBackgroundColor: AppColors.line,
@@ -197,26 +237,7 @@ class _AddToTripSheetState extends ConsumerState<_AddToTripSheet> {
 
     try {
       final api = await ref.read(plunoApiProvider.future);
-      final trip = await api.trips.byId(target.id);
-      final days = [...trip.days]
-        ..sort((a, b) => a.dayNumber.compareTo(b.dayNumber));
-      final dayId = days.isEmpty
-          ? (await api.itinerary.addDay(target.id, dayNumber: 1)).id
-          : days.last.id;
-
-      final stop = widget.stop;
-      final placeId = stop.location?.placeId?.trim();
-      final linked = placeId != null && placeId.isNotEmpty;
-      final notes = stop.notes?.trim();
-      await api.itinerary.addItem(
-        dayId,
-        // A stop linked to a place is copied as that place, so the new plan
-        // gets its photo and hours too; a hand-typed one keeps its name.
-        placeId: linked ? placeId : null,
-        customName: linked ? null : stop.title,
-        category: stop.category,
-        notes: notes == null || notes.isEmpty ? null : notes,
-      );
+      await copyStopsToTrip(api, target.id, [widget.stop]);
 
       // The trip's own page and the lists that count its places are stale.
       ref.invalidate(myPlansProvider);

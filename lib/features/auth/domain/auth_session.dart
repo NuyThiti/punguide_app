@@ -12,6 +12,7 @@ class AuthSession {
     required this.handle,
     required this.email,
     this.avatarImage,
+    this.name,
   });
 
   /// The signed-in account as the API describes it.
@@ -24,6 +25,7 @@ class AuthSession {
         handle: '@${user.username}',
         email: user.email ?? '',
         avatarImage: user.avatarUrl,
+        name: user.name,
       );
 
   /// The stand-in account used by tests and by the offline guest path.
@@ -35,7 +37,20 @@ class AuthSession {
         'https://images.unsplash.com/photo-1494790108377-be9c29b29330?crop=faces&cs=tinysrgb&fit=crop&fm=jpg&q=80&w=160&h=160',
   );
 
+  /// What to print for this account: the name they set, or their username
+  /// when they never did.
   final String displayName;
+
+  /// The display name **as the account actually holds it** — null for an
+  /// account that has never set one, which is every username registration
+  /// until the traveller does.
+  ///
+  /// Kept apart from [displayName] because the two differ exactly where it
+  /// matters: an edit form pre-filled from [displayName] would offer the
+  /// username as if it were the name, and saving unchanged would quietly
+  /// make it one.
+  final String? name;
+
   final String handle;
   final String email;
   final String? avatarImage;
@@ -54,6 +69,7 @@ class AuthSession {
       handle: handle,
       email: email,
       avatarImage: '$url${separator}t=${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
     );
   }
 
@@ -63,8 +79,10 @@ class AuthSession {
       other.displayName == displayName &&
       other.handle == handle &&
       other.email == email &&
-      other.avatarImage == avatarImage;
+      other.avatarImage == avatarImage &&
+      other.name == name;
 
   @override
-  int get hashCode => Object.hash(displayName, handle, email, avatarImage);
+  int get hashCode =>
+      Object.hash(displayName, handle, email, avatarImage, name);
 }

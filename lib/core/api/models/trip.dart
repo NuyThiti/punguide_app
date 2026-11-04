@@ -1,6 +1,7 @@
 import 'trip_content.dart';
 import 'package:flutter/foundation.dart';
 
+import 'activity.dart';
 import 'day.dart';
 import 'destination_place.dart';
 import 'enums.dart';
@@ -356,6 +357,7 @@ class ApiTrip {
     this.description,
     this.remixEnabled = true,
     this.remixAudience = RemixAudience.everyone,
+    this.canRemix,
     this.draftVisibility,
   });
 
@@ -395,6 +397,7 @@ class ApiTrip {
         // (or a stale local cache) reads the same way.
         remixEnabled: Json.boolean(json, 'remixEnabled', fallback: true),
         remixAudience: RemixAudience.from(json['remixAudience']),
+        canRemix: json['canRemix'] is bool ? json['canRemix'] as bool : null,
         // Owner-only, and only ever set once a shared post has been saved as
         // a draft again — absent means "never" either way.
         draftVisibility: TripVisibility.from(json['draftVisibility']),
@@ -451,6 +454,15 @@ class ApiTrip {
   /// link. Independent of [TripVisibility] — that controls who sees the
   /// trip at all, this controls who among them may copy it.
   final RemixAudience remixAudience;
+
+  /// Whether **this viewer** may remix it right now — the server's own answer
+  /// from [remixEnabled], [remixAudience], sign-in and follows. Decides
+  /// whether Remix Trip shows. False on a `link`-audience trip opened by id
+  /// (remix belongs to the share page there) and on a post with no plan.
+  ///
+  /// Null when the server did not say (one older than the field): the page
+  /// then offers Remix as it always did, and the call itself is the judge.
+  final bool? canRemix;
 
   /// The visibility a post was saved with the last time it was saved as a
   /// draft — set when Save Draft takes an already-shared post down (forcing
@@ -561,4 +573,51 @@ class RemixedTrip {
   /// Days and stops carry brand-new ids.
   final List<ItineraryDay> days;
   final DateTime createdAt;
+}
+
+/// `POST /trips/:sourceTripId/remix/items/into/:targetTripId` — picked stops
+/// copied onto the target trip's staging shelf ("From Remix Trip"), not onto
+/// any day.
+@immutable
+class RemixedItems {
+  const RemixedItems({
+    required this.id,
+    required this.title,
+    required this.replayed,
+    required this.addedItemIds,
+    required this.skippedItemIds,
+    required this.stagedItems,
+    this.sourceTrip,
+  });
+
+  factory RemixedItems.fromJson(Map<String, dynamic> json) => RemixedItems(
+        id: Json.requiredString(json, 'id'),
+        title: Json.string(json, 'title') ?? '',
+        replayed: Json.boolean(json, 'replayed'),
+        addedItemIds: Json.stringList(json, 'addedItemIds'),
+        skippedItemIds: Json.stringList(json, 'skippedItemIds'),
+        stagedItems: Activity.listFrom(json['stagedItems']),
+        sourceTrip: SourceTripRef.maybeFromJson(json['sourceTrip']),
+      );
+
+  /// The **target** trip.
+  final String id;
+  final String title;
+
+  /// A retry with an Idempotency-Key already spent on this target: nothing was
+  /// copied this time, and [addedItemIds] / [skippedItemIds] are empty.
+  final bool replayed;
+
+  /// The new stops' ids on the target.
+  final List<String> addedItemIds;
+
+  /// **Source** stop ids left out because that place already sits on the
+  /// target's shelf.
+  final List<String> skippedItemIds;
+
+  /// The target's whole shelf after the copy, in shelf order.
+  final List<Activity> stagedItems;
+
+  /// The plan that was copied from — a post's linked plan when remixing a post.
+  final SourceTripRef? sourceTrip;
 }

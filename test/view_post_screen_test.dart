@@ -165,7 +165,6 @@ Future<void> _pumpPost(
 const _owner = AuthUser(id: 'u1', username: 'maki');
 const _visitor = AuthUser(id: 'u2', username: 'someone');
 
-
 /// Opens every spot's details drawer — the extras are collapsed by default.
 Future<void> _openDetails(WidgetTester tester) async {
   for (final toggle in find.text('ดูรายละเอียด').evaluate().toList()) {
@@ -254,8 +253,7 @@ void main() {
     expect(find.text('วัดป่าประดู่ พระอารามหลวง'), findsNothing);
   });
 
-  testWidgets('a spot shows the extras the composer collected',
-      (tester) async {
+  testWidgets('a spot shows the extras the composer collected', (tester) async {
     phone(tester);
     await _pumpPost(tester);
     await _openDetails(tester);
@@ -299,7 +297,8 @@ void main() {
     await _openDetails(tester);
 
     expect(find.text('Trip Hack'), findsOneWidget);
-    final hack = find.text('มาเย็น ๆ แสงสวย คนน้อย และร้านข้าง ๆ เพิ่งเปิดพอดี');
+    final hack =
+        find.text('มาเย็น ๆ แสงสวย คนน้อย และร้านข้าง ๆ เพิ่งเปิดพอดี');
     expect(hack, findsOneWidget);
     expect(tester.widget<Text>(hack).overflow, isNot(TextOverflow.ellipsis));
   });
@@ -399,7 +398,97 @@ void main() {
     expect(find.text('ที่เที่ยวระยอง'), findsOneWidget);
   });
 
-  testWidgets('Remix Trip leaves for the remix route', (tester) async {
+  testWidgets(
+      "a post's Remix offers its linked plan's stops, with the post "
+      'as the source', (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      viewer: _visitor,
+      trip: {
+        ..._postJson(),
+        'linkedTrip': {
+          'id': 'plan-7',
+          'title': 'ระยอง 2 วัน',
+          'schedule': <String, dynamic>{},
+        },
+      },
+      extra: {
+        'GET /trips/plan-7': [
+          FakeReply(200, <String, dynamic>{
+            'id': 'plan-7',
+            'ownerId': 'u1',
+            'title': 'ระยอง 2 วัน',
+            'destination': 'ระยอง',
+            'status': 'published',
+            'schedule': <String, dynamic>{},
+            'totalBudget': 0,
+            'days': [
+              {
+                'id': 'pd1',
+                'dayNumber': 1,
+                'activities': [
+                  {'id': 'ps1', 'title': 'หาดแม่รำพึง', 'order': 0},
+                ],
+              },
+            ],
+          }),
+        ],
+        'GET /trips/mine': [
+          FakeReply(200, [
+            {
+              'id': 'mine-1',
+              'title': 'ทริปของฉัน',
+              'destination': 'ระยอง',
+              'status': 'draft',
+              'schedule': <String, dynamic>{},
+              'totalBudget': 0,
+              'isSaved': false,
+              'isLiked': false,
+              'likeCount': 0,
+              'remixCount': 0,
+            },
+          ]),
+        ],
+        'POST /trips/trip-1/remix/items/into/mine-1': [
+          FakeReply(200, <String, dynamic>{
+            'id': 'mine-1',
+            'title': 'ทริปของฉัน',
+            'replayed': false,
+            'addedItemIds': ['x1'],
+            'skippedItemIds': <String>[],
+            'stagedItems': <Map<String, dynamic>>[],
+          }),
+        ],
+      },
+    );
+
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+    expect(find.text('เลือกสถานที่จะ Remix'), findsOneWidget);
+    expect(find.text('หาดแม่รำพึง'), findsOneWidget);
+
+    await tester.tap(find.text('หาดแม่รำพึง'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'ถัดไป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    // The post is the source; the ids are its linked plan's stops.
+    expect(
+      adapter.bodyOf('POST /trips/trip-1/remix/items/into/mine-1'),
+      {
+        'itemIds': ['ps1'],
+      },
+    );
+    expect(find.text('Remix 1 สถานที่ลง ทริปของฉัน แล้ว'), findsOneWidget);
+  });
+
+  testWidgets('a post with no linked plan keeps the remix route',
+      (tester) async {
     phone(tester);
     await _pumpPost(tester, viewer: _visitor);
 
@@ -475,8 +564,13 @@ void main() {
             'regularOpeningHours': {
               'weekdayDescriptions': [
                 for (final day in [
-                  'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี',
-                  'วันศุกร์', 'วันเสาร์', 'วันอาทิตย์',
+                  'วันจันทร์',
+                  'วันอังคาร',
+                  'วันพุธ',
+                  'วันพฤหัสบดี',
+                  'วันศุกร์',
+                  'วันเสาร์',
+                  'วันอาทิตย์',
                 ])
                   '$day: $hours',
               ],
@@ -528,8 +622,7 @@ void main() {
     expect(number, findsOneWidget);
     expect(web, findsOneWidget);
     // One row, not two.
-    expect(tester.getCenter(number).dy,
-        closeTo(tester.getCenter(web).dy, 2));
+    expect(tester.getCenter(number).dy, closeTo(tester.getCenter(web).dy, 2));
     // The raw address never shows; the link carries it.
     expect(find.text('https://onlokyun.example'), findsNothing);
   });
@@ -571,8 +664,7 @@ void main() {
     expect(find.textContaining('ดูรูป'), findsNothing);
   });
 
-  testWidgets('a spot with nothing extra is offered no drawer',
-      (tester) async {
+  testWidgets('a spot with nothing extra is offered no drawer', (tester) async {
     phone(tester);
     await _pumpPost(
       tester,
@@ -755,10 +847,12 @@ void main() {
     // letterbox it into the middle. Sized to the image instead, it lays out at
     // its own pixel size and sits pinned to the top of a black screen.
     final box = tester.getSize(
-      find.descendant(
-        of: find.byType(InteractiveViewer),
-        matching: find.byType(CoverImage),
-      ).first,
+      find
+          .descendant(
+            of: find.byType(InteractiveViewer),
+            matching: find.byType(CoverImage),
+          )
+          .first,
     );
     expect(box.width, 393);
     expect(box.height, 1400);

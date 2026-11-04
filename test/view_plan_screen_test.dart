@@ -609,7 +609,8 @@ void main() {
     expect(find.text('ทริปหลวงพระบางสายชิล'), findsOneWidget);
   });
 
-  testWidgets('เพิ่มลงทริป copies the stop onto the last day of the picked plan',
+  testWidgets(
+      'เพิ่มลงทริป copies the stop onto the last day of the picked plan',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
@@ -654,8 +655,7 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('a failed add keeps the sheet open and says so',
-      (tester) async {
+  testWidgets('a failed add keeps the sheet open and says so', (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -700,7 +700,7 @@ void main() {
     expect(find.text('create page'), findsOneWidget);
   });
 
-  testWidgets('Remix Trip sits in the hero and leaves for the remix route',
+  testWidgets('Remix Trip sits in the hero and opens the Remix sheet',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
@@ -714,6 +714,322 @@ void main() {
       lessThan(tester.getRect(find.text('Trip Overview')).top),
     );
 
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เลือกสถานที่จะ Remix'), findsOneWidget);
+    expect(find.text('remix page'), findsNothing);
+    // Every stop of every day, not only the day on screen.
+    expect(find.text('0 / 3 รายการ', findRichText: true), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('น้ำตกกวางสี'),
+      ),
+      findsOneWidget,
+    );
+    // ถัดไป waits for a pick.
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'ถัดไป'))
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('เลือก Remix ทั้งหมด ticks every stop; ล้างที่เลือก clears them',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester);
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('เลือก Remix ทั้งหมด'));
+    await tester.pump();
+    expect(find.text('3 / 3 รายการ', findRichText: true), findsOneWidget);
+
+    await tester.tap(find.text('ล้างที่เลือก'));
+    await tester.pump();
+    expect(find.text('0 / 3 รายการ', findRichText: true), findsOneWidget);
+  });
+
+  /// Ticks the waterfall (day 2) then the café (day 1), goes to the trip step
+  /// and confirms เดินเล่นพระนคร.
+  Future<void> remixTwoStops(WidgetTester tester) async {
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+    final sheet = find.byType(BottomSheet);
+    await tester.tap(
+      find.descendant(of: sheet, matching: find.text('น้ำตกกวางสี')),
+    );
+    await tester.tap(
+      find.descendant(of: sheet, matching: find.text('Le Banneton Café')),
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'ถัดไป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เดินเล่นพระนคร'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+  }
+
+  const remixPath = 'POST /trips/trip-1/remix/items/into/plan-9';
+
+  Map<String, dynamic> remixed({
+    List<String> added = const ['n1', 'n2'],
+    List<String> skipped = const [],
+    bool replayed = false,
+  }) =>
+      <String, dynamic>{
+        'id': 'plan-9',
+        'title': 'เดินเล่นพระนคร',
+        'replayed': replayed,
+        'addedItemIds': added,
+        'skippedItemIds': skipped,
+        'stagedItems': [
+          {'id': 'n1', 'title': 'Le Banneton Café', 'order': 0},
+          {'id': 'n2', 'title': 'น้ำตกกวางสี', 'order': 1},
+        ],
+      };
+
+  testWidgets('Remix sends the picked stop ids, in plan order, to the shelf',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        remixPath: [FakeReply(200, remixed())],
+      },
+    );
+    await remixTwoStops(tester);
+
+    final request = adapter.requests.singleWhere(
+      (r) => '${r.method} ${r.path}' == remixPath,
+    );
+    // Day 1's café before day 2's waterfall, though ticked the other way.
+    expect((request.data as Map)['itemIds'], ['s1', 's3']);
+    expect(request.headers['Idempotency-Key'], isNotNull);
+    // Nothing is written stop by stop any more.
+    expect(
+      adapter.paths.where((path) => path.startsWith('POST /days/')),
+      isEmpty,
+    );
+    expect(find.text('Remix 2 สถานที่ลง เดินเล่นพระนคร แล้ว'), findsOneWidget);
+  });
+
+  testWidgets('places already on the shelf are reported, not hidden',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        remixPath: [
+          FakeReply(200, remixed(added: ['n1'], skipped: ['s3'])),
+        ],
+      },
+    );
+    await remixTwoStops(tester);
+
+    expect(
+      find.text(
+        'Remix 1 สถานที่ลง เดินเล่นพระนคร แล้ว · 1 สถานที่อยู่ในทริปแล้ว',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets("a refused remix keeps the sheet open with the server's reason",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        remixPath: [
+          const FakeReply(403, {'message': 'เจ้าของปิดการ remix ทริปนี้'}),
+        ],
+      },
+    );
+    await remixTwoStops(tester);
+
+    expect(find.text('เจ้าของปิดการ remix ทริปนี้'), findsOneWidget);
+    expect(find.text('Remix ไปลงทริปไหน?'), findsOneWidget);
+  });
+
+  testWidgets('a retry after a failure reuses its Idempotency-Key',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        remixPath: [
+          const FakeReply(500, null),
+          FakeReply(200, remixed()),
+        ],
+      },
+    );
+    await remixTwoStops(tester);
+    expect(find.text('Remix ไม่สำเร็จ ลองอีกครั้ง'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    final keys = adapter.requests
+        .where((r) => '${r.method} ${r.path}' == remixPath)
+        .map((r) => r.headers['Idempotency-Key'])
+        .toList();
+    expect(keys, hasLength(2));
+    expect(keys.first, isNotNull);
+    expect(keys.last, keys.first);
+    expect(find.text('Remix 2 สถานที่ลง เดินเล่นพระนคร แล้ว'), findsOneWidget);
+  });
+
+  testWidgets('changing the picks after a failure mints a new key',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+        remixPath: [
+          const FakeReply(500, null),
+          FakeReply(200, remixed()),
+        ],
+      },
+    );
+    await remixTwoStops(tester);
+
+    // Back, take every stop, and confirm again.
+    await tester.tap(find.widgetWithText(OutlinedButton, 'ย้อนกลับ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือก Remix ทั้งหมด'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'ถัดไป'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เดินเล่นพระนคร'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
+    await tester.pumpAndSettle();
+
+    final sent = adapter.requests
+        .where((r) => '${r.method} ${r.path}' == remixPath)
+        .toList();
+    expect(sent, hasLength(2));
+    expect((sent.last.data as Map)['itemIds'], ['s1', 's2', 's3']);
+    expect(
+      sent.last.headers['Idempotency-Key'],
+      isNot(sent.first.headers['Idempotency-Key']),
+    );
+  });
+
+  testWidgets('canRemix false hides Remix Trip from a visitor', (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      trip: {..._tripJson(), 'canRemix': false},
+    );
+
+    expect(find.text('Remix Trip'), findsNothing);
+    expect(find.text('ทริปหลวงพระบางสายชิล'), findsOneWidget);
+  });
+
+  testWidgets('the trip step can go back to the stops it came from',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      extra: {
+        'GET /trips/mine': [FakeReply(200, _myPlans)],
+      },
+    );
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือก Remix ทั้งหมด'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'ถัดไป'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'ย้อนกลับ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เลือกสถานที่จะ Remix'), findsOneWidget);
+    // The picks survive the round trip.
+    expect(find.text('3 / 3 รายการ', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets("the trip you are remixing from is not offered as a target",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'GET /trips/mine': [
+          FakeReply(200, [
+            ..._myPlans,
+            {..._myPlans.first, 'id': 'trip-1', 'title': 'ทริปต้นทาง'},
+          ]),
+        ],
+      },
+    );
+    await tester.tap(find.text('Remix Trip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('เลือก Remix ทั้งหมด'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'ถัดไป'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('เดินเล่นพระนคร'), findsOneWidget);
+    expect(find.text('ทริปต้นทาง'), findsNothing);
+  });
+
+  testWidgets('a plan with no stops keeps the whole-trip remix route',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      trip: _tripJson(days: const <Map<String, dynamic>>[]),
+    );
     await tester.tap(find.text('Remix Trip'));
     await tester.pumpAndSettle();
 

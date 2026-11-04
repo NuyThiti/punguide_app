@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
+import 'package:pluno/features/auth/domain/google_authenticator.dart';
 import 'package:pluno/features/auth/presentation/login_screen.dart';
+import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/features/location_access/data/location_permission_store.dart';
 import 'package:pluno/features/location_access/domain/location_service.dart';
@@ -13,6 +15,15 @@ import 'package:pluno/features/location_access/presentation/providers/location_p
 
 import 'support/fake_api.dart';
 import 'support/home_feed_fixtures.dart';
+
+/// Stands in for Firebase, so the launch flow can be driven without a device.
+class _FakeGoogle implements GoogleAuthenticator {
+  @override
+  Future<String?> signIn() async => 'firebase-id-token';
+
+  @override
+  Future<void> signOut() async {}
+}
 
 /// Opens the real [appRouter] on its launch route, with the session already
 /// restored as [session] and the location question answered as [answered].
@@ -39,6 +50,7 @@ Future<void> _launch(
             'DELETE /users/me/location': [const FakeReply(204, null)],
           })),
         ),
+        googleAuthenticatorProvider.overrideWithValue(_FakeGoogle()),
         storedLocationPermissionProvider.overrideWithValue(answered),
         locationPermissionStoreProvider
             .overrideWithValue(InMemoryLocationPermissionStore(answered)),
@@ -59,9 +71,7 @@ void main() {
   testWidgets('signing in carries on to Location Access', (tester) async {
     await _launch(tester);
 
-    await tester.enterText(find.byType(TextFormField).at(0), 'somchai.jai');
-    await tester.enterText(find.byType(TextFormField).at(1), 'password123');
-    await tester.tap(find.text('เข้าสู่ระบบ').last);
+    await tester.tap(find.text('เข้าสู่ระบบด้วย Google'));
     await tester.pumpAndSettle();
 
     expect(find.byType(LocationAccessScreen), findsOneWidget);
