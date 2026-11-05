@@ -107,7 +107,8 @@ class PuntokFeedNotifier extends AsyncNotifier<List<PuntokPost>> {
     final post = _find(id);
     if (post == null) return;
     final saved = !post.saved;
-    _replace(post.copyWith(saved: saved));
+    _replace(post.copyWith(
+        saved: saved, saves: movedSaveCount(post.saves, saved: saved)));
     try {
       final api = await ref.read(plunoApiProvider.future);
       saved ? await api.trips.save(id) : await api.trips.unsave(id);
@@ -158,4 +159,12 @@ List<PuntokPost> withFollowState(
           _ => post,
         },
   ];
+}
+
+/// A clip's save count after the viewer's own tap: up one on a save, down one
+/// (never below zero) on an unsave. Null stays null — nothing to move.
+int? movedSaveCount(int? saves, {required bool saved}) {
+  if (saves == null) return null;
+  final moved = saves + (saved ? 1 : -1);
+  return moved < 0 ? 0 : moved;
 }

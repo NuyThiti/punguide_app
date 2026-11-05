@@ -393,7 +393,41 @@ void main() {
     expect(find.text('Remix Trip'), findsOneWidget);
   });
 
-  testWidgets("a visitor bookmarks the trip from the bar; the owner can't",
+  testWidgets('back and ☰ are see-through glass, not solid discs',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _visitor);
+
+    for (final tooltip in ['ย้อนกลับ', 'เมนู']) {
+      final button = find.byTooltip(tooltip);
+      // The cover is blurred through the button…
+      expect(
+        find.descendant(of: button, matching: find.byType(BackdropFilter)),
+        findsOneWidget,
+        reason: tooltip,
+      );
+      // …under a light wash, not the old 90% white.
+      final face = tester.widget<Container>(
+        find.descendant(of: button, matching: find.byType(Container)).first,
+      );
+      final fill = (face.decoration! as BoxDecoration).color!;
+      expect(fill.a, lessThan(0.5), reason: tooltip);
+    }
+  });
+
+  testWidgets('the bar has no bookmark and no avatar', (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _visitor);
+
+    // Saving lives in Trip Overview's row now.
+    expect(find.byTooltip('บันทึกทริป'), findsNothing);
+    expect(find.byTooltip('เลิกบันทึก'), findsNothing);
+    // The author is a name alone — no avatar circle before it.
+    expect(find.text('Thitichaya Butsala'), findsOneWidget);
+    expect(find.byIcon(Icons.person), findsNothing);
+  });
+
+  testWidgets('a visitor bookmarks the trip from Trip Overview',
       (tester) async {
     phone(tester);
     await _pumpPost(
@@ -405,16 +439,16 @@ void main() {
       },
     );
 
-    await tester.tap(find.byTooltip('บันทึกทริป'));
+    await tester.tap(find.byTooltip('บันทึก'));
     await tester.pumpAndSettle();
     expect(adapter.paths, contains('POST /trips/trip-1/save'));
-    expect(find.byTooltip('เลิกบันทึก'), findsOneWidget);
+    expect(find.byTooltip('เอาออกจากที่บันทึก'), findsOneWidget);
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
 
-    await tester.tap(find.byTooltip('เลิกบันทึก'));
+    await tester.tap(find.byTooltip('เอาออกจากที่บันทึก'));
     await tester.pumpAndSettle();
     expect(adapter.paths, contains('DELETE /trips/trip-1/save'));
-    expect(find.byTooltip('บันทึกทริป'), findsOneWidget);
+    expect(find.byTooltip('บันทึก'), findsOneWidget);
   });
 
   testWidgets('a refused save puts the bookmark back', (tester) async {
@@ -429,16 +463,10 @@ void main() {
       },
     );
 
-    await tester.tap(find.byTooltip('บันทึกทริป'));
+    await tester.tap(find.byTooltip('บันทึก'));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('บันทึกทริป'), findsOneWidget);
+    expect(find.byTooltip('บันทึก'), findsOneWidget);
     expect(find.textContaining('บันทึกทริปไม่สำเร็จ'), findsOneWidget);
-  });
-
-  testWidgets("the owner's bar has no bookmark", (tester) async {
-    phone(tester);
-    await _pumpPost(tester, viewer: _owner);
-    expect(find.byTooltip('บันทึกทริป'), findsNothing);
   });
 
   testWidgets('a trip saved earlier shows a filled bookmark', (tester) async {
@@ -448,7 +476,7 @@ void main() {
       viewer: _visitor,
       trip: {..._postJson(), 'isSaved': true},
     );
-    expect(find.byTooltip('เลิกบันทึก'), findsOneWidget);
+    expect(find.byTooltip('เอาออกจากที่บันทึก'), findsOneWidget);
   });
 
   testWidgets('แก้ไขทริป in the ☰ opens the post settings', (tester) async {

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'trip_content.dart';
 import 'package:flutter/foundation.dart';
 
@@ -173,6 +175,7 @@ class TripListItem {
     required this.isLiked,
     required this.likeCount,
     required this.remixCount,
+    this.saveCount = 0,
     required this.createdAt,
     required this.updatedAt,
     this.destinationPlace,
@@ -207,6 +210,7 @@ class TripListItem {
       isLiked: Json.boolean(json, 'isLiked'),
       likeCount: Json.integer(json, 'likeCount') ?? 0,
       remixCount: Json.integer(json, 'remixCount') ?? 0,
+      saveCount: Json.integer(json, 'saveCount') ?? 0,
       creator: TripCreator.maybeFromJson(json['creator']),
       // Only present when the request carried both `lat` and `lng`, so absent
       // is "unknown" rather than zero.
@@ -267,6 +271,10 @@ class TripListItem {
 
   /// How many trips were remixed from this one.
   final int remixCount;
+
+  /// How many accounts have bookmarked it. 0 from a server that predates the
+  /// field.
+  final int saveCount;
   final TripCreator? creator;
 
   /// Straight-line kilometres from the `lat`/`lng` the feed was asked for, as
@@ -285,6 +293,8 @@ class TripListItem {
   ///
   /// `POST /trips/:id/save` returns nothing, so a list that wants to show the
   /// new bookmark state without re-reading the whole feed patches the one row.
+  /// [saveCount] moves with it, and only when the flag actually changes — the
+  /// same rule the server counts by.
   TripListItem withSaved(bool saved) => TripListItem(
         type: type,
         id: id,
@@ -305,6 +315,9 @@ class TripListItem {
         isLiked: isLiked,
         likeCount: likeCount,
         remixCount: remixCount,
+        saveCount: saved == isSaved
+            ? saveCount
+            : math.max(0, saveCount + (saved ? 1 : -1)),
         creator: creator,
         distanceKm: distanceKm,
         linkedTrip: linkedTrip,
@@ -337,6 +350,7 @@ class ApiTrip {
     required this.isSaved,
     required this.isLiked,
     required this.likeCount,
+    this.saveCount = 0,
     required this.days,
     required this.createdAt,
     required this.updatedAt,
@@ -405,6 +419,7 @@ class ApiTrip {
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
         likeCount: Json.integer(json, 'likeCount') ?? 0,
+        saveCount: Json.integer(json, 'saveCount') ?? 0,
         days: ItineraryDay.listFrom(json['days']),
         createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
         updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
@@ -494,6 +509,9 @@ class ApiTrip {
   final bool isSaved;
   final bool isLiked;
   final int likeCount;
+
+  /// How many accounts have bookmarked it.
+  final int saveCount;
 
   /// Ordered by day number; empty, never null, before an itinerary exists.
   final List<ItineraryDay> days;

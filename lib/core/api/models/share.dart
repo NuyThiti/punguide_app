@@ -144,6 +144,7 @@ class PublicSharedTrip {
     required this.days,
     required this.likeCount,
     required this.remixCount,
+    this.saveCount = 0,
     this.owner,
     this.coverImage,
     this.updatedAt,
@@ -164,6 +165,7 @@ class PublicSharedTrip {
             .toList(growable: false),
         likeCount: Json.integer(json, 'likeCount') ?? 0,
         remixCount: Json.integer(json, 'remixCount') ?? 0,
+        saveCount: Json.integer(json, 'saveCount') ?? 0,
         updatedAt: Json.timestamp(json, 'updatedAt'),
       );
 
@@ -180,5 +182,6 @@ class PublicSharedTrip {
   final List<SharedDay> days;
   final int likeCount;
   final int remixCount;
+  final int saveCount;
   final DateTime? updatedAt;
 }

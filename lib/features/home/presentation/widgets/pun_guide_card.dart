@@ -102,8 +102,7 @@ class PunGuideCard extends StatelessWidget {
     final guide = trip.type.isPost;
     // One accent per card: the chip in front of the type label and the
     // distance pill are the same colour, so the type reads at a glance.
-    final accent =
-        guide ? AppColors.cardGuideAccent : AppColors.cardPlanAccent;
+    final accent = guide ? AppColors.cardGuideAccent : AppColors.cardPlanAccent;
 
     return GestureDetector(
       onTap: onTap,
@@ -189,9 +188,7 @@ class PunGuideCard extends StatelessWidget {
                     destination: trip.destination,
                     distanceLabel: distanceLabel,
                     accent: accent,
-                    onAccent: guide
-                        ? AppColors.cardTitle
-                        : Colors.white,
+                    onAccent: guide ? AppColors.cardTitle : Colors.white,
                   ),
                   const SizedBox(height: 6),
                   _StatsLine(
@@ -493,10 +490,9 @@ class _PlaceLine extends StatelessWidget {
 ///
 /// The right half is three tallies in one row, in the order the traveller is
 /// likeliest to reach for them: how many people have remixed the trip, how
-/// many have hearted it, and their own bookmark. Only the heart carries
-/// `likeCount` — the bookmark used to print it too, which said the same number
-/// twice under the wrong glyph. The API returns no save count, so the
-/// bookmark is an icon with nothing after it until one exists.
+/// many have hearted it, and how many have bookmarked it. Each carries its own
+/// count — `remixCount`, `likeCount`, `saveCount` — and the heart and the
+/// bookmark move theirs by one for the traveller's own unsent tap.
 class _StatsLine extends StatelessWidget {
   const _StatsLine({
     required this.trip,
@@ -533,6 +529,12 @@ class _StatsLine extends StatelessWidget {
     return liked ? trip.likeCount + 1 : math.max(0, trip.likeCount - 1);
   }
 
+  /// [_likeCount] for the bookmark.
+  int get _saveCount {
+    if (saved == trip.isSaved) return trip.saveCount;
+    return saved ? trip.saveCount + 1 : math.max(0, trip.saveCount - 1);
+  }
+
   /// The tallies this card actually shows, left to right. Built as a list so
   /// the gaps between them do not have to restate which ones are present.
   List<Widget> get _tallies {
@@ -546,13 +548,14 @@ class _StatsLine extends StatelessWidget {
           activeColor: liked ? AppColors.cardLiked : null,
           onTap: onLike,
         ),
-      // No count follows it, so there is no zero to hide behind: the bookmark
-      // is only ever an action, and on their own trips there is no action.
-      if (!isMine)
+      // On their own card the bookmark is a readout like the others: there is
+      // nothing to save, but how many people did is still worth seeing.
+      if (_shows(_saveCount))
         _Stat(
           icon: saved ? Icons.bookmark : Icons.bookmark_border,
+          count: _saveCount,
           activeColor: saved ? AppColors.cardPlanAccent : null,
-          onTap: onSave,
+          onTap: isMine ? null : onSave,
         ),
     ];
   }
@@ -610,7 +613,7 @@ class _StatsLine extends StatelessWidget {
 
 /// One tally. The count is dropped at zero — the icon alone reads as "none
 /// yet" without the noise of a 0 on every fresh card — and a null count means
-/// there is no number to print at all, which is the bookmark's case.
+/// there is no number to print at all.
 class _Stat extends StatelessWidget {
   const _Stat({
     required this.icon,
@@ -621,8 +624,7 @@ class _Stat extends StatelessWidget {
 
   final IconData icon;
 
-  /// Null prints no number: the API returns no save count, so the bookmark
-  /// stands alone rather than borrowing someone else's figure.
+  /// Null prints no number.
   final int? count;
 
   /// What the icon wears once the traveller has tapped it. Null leaves it the
@@ -669,4 +671,3 @@ class _Stat extends StatelessWidget {
     return row;
   }
 }
-

@@ -9,9 +9,7 @@ import 'support/home_feed_fixtures.dart';
 /// The colour of the pill wrapped round [label].
 Color chipColourOf(WidgetTester tester, String label) {
   final box = tester.widget<Container>(
-    find
-        .ancestor(of: find.text(label), matching: find.byType(Container))
-        .first,
+    find.ancestor(of: find.text(label), matching: find.byType(Container)).first,
   );
   return (box.decoration! as BoxDecoration).color!;
 }
@@ -151,10 +149,12 @@ void main() {
     expect(find.text('แผนทริป'), findsNothing);
     expect(chipColourOf(tester, '8.5 Km'), AppColors.cardGuideAccent);
     // A guide is measured in places, not days and money.
-    expect(find.textContaining('7 สถานที่', findRichText: true), findsOneWidget);
+    expect(
+        find.textContaining('7 สถานที่', findRichText: true), findsOneWidget);
   });
 
-  testWidgets('a plan that costs nothing reads ฟรี, not a blank', (tester) async {
+  testWidgets('a plan that costs nothing reads ฟรี, not a blank',
+      (tester) async {
     await tester.pumpWidget(_card(feedTrip(durationDays: 0, totalBudget: 0)));
     await tester.pumpAndSettle();
 
@@ -215,18 +215,42 @@ void main() {
     );
   });
 
-  testWidgets('the heart carries likeCount; the bookmark carries no number',
-      (tester) async {
+  testWidgets('each tally carries its own count', (tester) async {
     await tester.pumpWidget(
-      _card(feedTrip(likeCount: 12, remixCount: 4)),
+      _card(
+        TripListItem.fromJson(<String, dynamic>{
+          ...feedTripJson(likeCount: 12, remixCount: 4),
+          'saveCount': 7,
+        }),
+      ),
     );
     await tester.pumpAndSettle();
 
-    // Two numbers on the row, not three: the API returns no save count, so the
-    // bookmark stands alone rather than reprinting the likes.
     expect(find.text('4'), findsOneWidget);
-    // Once, not twice: the bookmark used to reprint the same likes.
+    // Once: the bookmark used to reprint the likes.
     expect(find.text('12'), findsOneWidget);
+    expect(find.text('7'), findsOneWidget);
+  });
+
+  testWidgets('a saved row counts the unsent save, and back down',
+      (tester) async {
+    TripListItem row({required bool saved}) =>
+        TripListItem.fromJson(<String, dynamic>{
+          ...feedTripJson(likeCount: 0),
+          'saveCount': 7,
+          'isSaved': saved,
+        });
+
+    // Fetched unsaved, saved since: the ledger's tap moves the number.
+    await tester.pumpWidget(_card(row(saved: false).withSaved(true)));
+    await tester.pumpAndSettle();
+    expect(find.text('8'), findsOneWidget);
+    expect(find.byIcon(Icons.bookmark), findsOneWidget);
+
+    await tester.pumpWidget(_card(row(saved: true).withSaved(false)));
+    await tester.pumpAndSettle();
+    expect(find.text('6'), findsOneWidget);
+    expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
   });
 
   testWidgets('tapping the heart likes without opening the trip',
@@ -315,9 +339,30 @@ void main() {
 
     expect(find.byIcon(Icons.favorite_border), findsNothing);
     expect(find.byIcon(Icons.shuffle), findsNothing);
-    // The bookmark has no count to fall back on, and there is nothing to save:
-    // it goes whether or not anyone has hearted the trip.
     expect(find.byIcon(Icons.bookmark_border), findsNothing);
+  });
+
+  testWidgets('on my own card a saved count shows as a readout',
+      (tester) async {
+    var opens = 0;
+    await tester.pumpWidget(
+      _card(
+        TripListItem.fromJson(<String, dynamic>{
+          ...feedTripJson(likeCount: 0, remixCount: 0),
+          'saveCount': 5,
+        }),
+        isMine: true,
+        onSave: null,
+        onLike: null,
+        onTap: () => opens++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('5'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.bookmark_border));
+    await tester.pumpAndSettle();
+    expect(opens, 1);
   });
 
   testWidgets('on my own card a heart that has a number still shows, inert',

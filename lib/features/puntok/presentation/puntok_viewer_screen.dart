@@ -118,7 +118,10 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
 
   Future<void> _toggleSave(PuntokPost post) async {
     final wasSaved = post.saved;
-    _replace(post.copyWith(saved: !wasSaved));
+    _replace(post.copyWith(
+      saved: !wasSaved,
+      saves: movedSaveCount(post.saves, saved: !wasSaved),
+    ));
 
     await _call(() async {
       final api = await ref.read(plunoApiProvider.future);

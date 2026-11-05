@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +21,9 @@ import '../../create_trip/domain/plan_labels.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
+import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
+import '../../trips/presentation/trip_like_action.dart';
 import '../../create_post/presentation/widgets/trip_link_picker.dart';
 import '../../my_trips/presentation/delete_trip.dart';
 import '../../my_trips/presentation/providers/my_trips_providers.dart';
@@ -121,12 +125,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             scroll: _scroll,
             trip: trip,
             owned: _owns(trip),
-            // A visitor's bookmark only: saving your own trip changes nothing
-            // you can see, so the owner's bar keeps the room.
-            saved: _owns(trip) == false
-                ? ref.watch(paigunSavedProvider)[trip.id] ?? trip.isSaved
-                : null,
-            onSave: () => _toggleSaved(trip),
             onBack: _leave,
             onMenu: (action) => switch (action) {
               _TripMenuAction.edit => _edit(trip),
@@ -160,6 +158,31 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     final viewer = ref.watch(currentUserProvider);
     if (viewer.isLoading) return null;
     return viewer.valueOrNull?.id == trip.ownerId;
+  }
+
+  /// Trip Overview with the viewer's own heart and bookmark read through the
+  /// app-wide ledgers, so a tap here shows on every wall and back again.
+  Widget _overview(ApiTrip trip, {required String blurb, int? placeCount}) {
+    final liked = ref.watch(tripLikedProvider)[trip.id] ?? trip.isLiked;
+    final owned = _owns(trip);
+    return _PostOverview(
+      trip: trip,
+      blurb: blurb,
+      placeCount: placeCount,
+      liked: liked,
+      // A visitor's bookmark only, as in the bar: saving your own trip
+      // changes nothing you can see.
+      saved: owned == false
+          ? ref.watch(paigunSavedProvider)[trip.id] ?? trip.isSaved
+          : null,
+      onLike: () => toggleTripLikeById(
+        context,
+        ref,
+        tripId: trip.id,
+        wasLiked: liked,
+      ),
+      onSave: () => _toggleSaved(trip),
+    );
   }
 
   /// The bar's bookmark, through the app-wide ledger so Home, ไปกัน and the
@@ -260,7 +283,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
           padding:
               EdgeInsets.fromLTRB(_gutter(context), 20, _gutter(context), 0),
           sliver: SliverToBoxAdapter(
-            child: _PostOverview(trip: trip, blurb: blurb),
+            child: _overview(trip, blurb: blurb),
           ),
         ),
         // No horizontal padding here: the spot photos run to the screen's
@@ -306,8 +329,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
         SliverPadding(
           padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 22),
           sliver: SliverToBoxAdapter(
-            child: _PostOverview(
-              trip: trip,
+            child: _overview(
+              trip,
               blurb: description.isNotEmpty ? description : plan.blurb,
               placeCount: plan.stopCount,
             ),
@@ -499,19 +522,12 @@ class _StickyTopBar extends StatefulWidget {
     required this.scroll,
     required this.trip,
     required this.owned,
-    required this.saved,
-    required this.onSave,
     required this.onBack,
     required this.onMenu,
   });
 
   final ScrollController scroll;
   final ApiTrip trip;
-
-  /// The viewer's bookmark, or null to leave the button off — the owner's
-  /// bar, and while it is not yet known who is looking.
-  final bool? saved;
-  final VoidCallback onSave;
 
   /// Null while it is not yet known who is looking — the menu offers only
   /// แชร์ until it is.
@@ -578,15 +594,7 @@ class _StickyTopBarState extends State<_StickyTopBar> {
                       owned: widget.owned,
                     ),
                   ),
-                  if (widget.saved case final saved?) ...[
-                    _RoundGlassButton(
-                      icon: saved ? Icons.bookmark : Icons.bookmark_border,
-                      iconColor: saved ? AppColors.postPurple : null,
-                      tooltip: saved ? 'เลิกบันทึก' : 'บันทึกทริป',
-                      onTap: widget.onSave,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+                  // Saving lives in Trip Overview's row, beside the heart.
                   _TripMenu(owned: widget.owned, onSelected: widget.onMenu),
                 ],
               ),
@@ -758,7 +766,6 @@ class _PostAuthor extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final avatar = trip.customer?.avatarUrl;
     final authorId = trip.ownerId;
     final showFollow = owned == false;
     final following = showFollow &&
@@ -779,21 +786,6 @@ class _PostAuthor extends ConsumerWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.25),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.8)),
-                  ),
-                  child: avatar == null || avatar.isEmpty
-                      ? const Icon(Icons.person, size: 15, color: Colors.white)
-                      : CoverImage(source: avatar),
-                ),
-                const SizedBox(width: 7),
                 Flexible(
                   child: Text(
                     trip.customer?.name ?? 'ไม่ระบุผู้เขียน',
@@ -1018,14 +1010,37 @@ class _TripMenu extends StatelessWidget {
       child: GestureDetector(
         onTap: () => _open(context),
         behavior: HitTestBehavior.opaque,
+        child: const _GlassCircle(
+          child: Icon(Icons.menu, size: 18, color: AppColors.postHeader),
+        ),
+      ),
+    );
+  }
+}
+
+/// The bar's round button face: frosted, see-through glass rather than a
+/// solid white disc, so the cover reads through it — a light wash, the
+/// picture blurred behind, and a thin bright rim to hold the edge.
+class _GlassCircle extends StatelessWidget {
+  const _GlassCircle({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipOval(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           width: 34,
           height: 34,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.9),
+            color: Colors.white.withValues(alpha: 0.38),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
           ),
-          child: const Icon(Icons.menu, size: 18, color: AppColors.postPurple),
+          child: child,
         ),
       ),
     );
@@ -1037,13 +1052,11 @@ class _RoundGlassButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.iconColor,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
-  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1052,25 +1065,26 @@ class _RoundGlassButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.9),
-          ),
-          child: Icon(icon, size: 16, color: iconColor ?? AppColors.foreground),
+        child: _GlassCircle(
+          child: Icon(icon, size: 16, color: AppColors.postHeader),
         ),
       ),
     );
   }
 }
 
-/// "Trip Overview": the counts, the bookmark, and the post's own blurb.
+/// "Trip Overview": remix · heart · bookmark, the facts, and the blurb.
+///
+/// The row reads like a card's counts row: `remixCount`, `likeCount` and
+/// `saveCount`, the heart and the bookmark moved by one for an unsent tap.
 class _PostOverview extends StatelessWidget {
   const _PostOverview({
     required this.trip,
     required this.blurb,
+    required this.liked,
+    required this.saved,
+    required this.onLike,
+    required this.onSave,
     this.placeCount,
   });
 
@@ -1078,8 +1092,36 @@ class _PostOverview extends StatelessWidget {
   final String blurb;
   final int? placeCount;
 
+  /// The heart as it stands now — the ledger's answer over the trip's.
+  final bool liked;
+
+  /// Null makes the bookmark a readout: the owner's trip (nothing to save),
+  /// or a viewer not yet known. It then shows only once someone has saved it.
+  final bool? saved;
+  final VoidCallback onLike;
+  final VoidCallback onSave;
+
+  /// The ledger stores only the bool, so an unsent flip moves the number here
+  /// rather than waiting for a re-read of the trip.
+  int get _likes {
+    final moved = liked == trip.isLiked ? 0 : (liked ? 1 : -1);
+    final count = trip.likeCount + moved;
+    return count < 0 ? 0 : count;
+  }
+
+  /// [_likes] for the bookmark. With no [saved] of the viewer's own there is
+  /// no tap to count, so the server's figure stands.
+  int get _saves {
+    final saved = this.saved;
+    final moved = saved == null || saved == trip.isSaved ? 0 : (saved ? 1 : -1);
+    final count = trip.saveCount + moved;
+    return count < 0 ? 0 : count;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final saved = this.saved;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1103,12 +1145,32 @@ class _PostOverview extends StatelessWidget {
               value: trip.remixCount,
             ),
             const SizedBox(width: 6),
-            // The design's glyph is a bookmark, but the only count the API
-            // returns is likes — there is no saveCount on a trip.
             _CountChip(
-              icon: Icons.bookmark_border,
-              value: trip.likeCount,
+              key: const Key('like-chip'),
+              icon: liked ? Icons.favorite : Icons.favorite_border,
+              iconColor: liked ? _heartRed : AppColors.muted,
+              value: _likes,
+              tooltip: liked ? 'เลิกถูกใจ' : 'ถูกใจ',
+              onTap: onLike,
             ),
+            if (saved != null) ...[
+              const SizedBox(width: 6),
+              _CountChip(
+                key: const Key('save-chip'),
+                icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                iconColor: saved ? AppColors.postPurple : AppColors.muted,
+                value: _saves,
+                tooltip: saved ? 'เอาออกจากที่บันทึก' : 'บันทึก',
+                onTap: onSave,
+              ),
+            ] else if (_saves > 0) ...[
+              const SizedBox(width: 6),
+              _CountChip(
+                key: const Key('save-chip'),
+                icon: Icons.bookmark_border,
+                value: _saves,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 10),
@@ -1175,15 +1237,33 @@ class _ErrorBody extends StatelessWidget {
   }
 }
 
+/// The heart, filled.
+const _heartRed = Color(0xFFE5484D);
+
+/// A lavender pill: a glyph and, when there is one, its count. Tappable when
+/// [onTap] is given — the heart and the bookmark; the remix count is not.
 class _CountChip extends StatelessWidget {
-  const _CountChip({required this.icon, required this.value});
+  const _CountChip({
+    super.key,
+    required this.icon,
+    this.value,
+    this.iconColor = AppColors.muted,
+    this.tooltip,
+    this.onTap,
+  });
 
   final IconData icon;
-  final int value;
+
+  /// Null draws the glyph alone.
+  final int? value;
+  final Color iconColor;
+  final String? tooltip;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final value = this.value;
+    final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: AppColors.postPurpleWell,
@@ -1192,17 +1272,29 @@ class _CountChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: AppColors.muted),
-          const SizedBox(width: 4),
-          Text(
-            compactCount(value),
-            style: const TextStyle(
-              color: AppColors.foreground,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
+          Icon(icon, size: 13, color: iconColor),
+          if (value != null) ...[
+            const SizedBox(width: 4),
+            Text(
+              compactCount(value),
+              style: const TextStyle(
+                color: AppColors.foreground,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
+          ],
         ],
+      ),
+    );
+    if (onTap == null) return chip;
+
+    return Tooltip(
+      message: tooltip ?? '',
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: chip,
       ),
     );
   }

@@ -21,6 +21,7 @@ Map<String, dynamic> _row(
   required String author,
   required String caption,
   int likes = 0,
+  int saves = 0,
   bool video = true,
   bool liked = false,
   Map<String, dynamic>? linkedTrip,
@@ -39,6 +40,7 @@ Map<String, dynamic> _row(
       'isLiked': liked,
       'likeCount': likes,
       'remixCount': 0,
+      'saveCount': saves,
       'creator': {
         'id': 'u-$id',
         'name': author,
@@ -84,6 +86,7 @@ List<Map<String, dynamic>> _recent() => [
           author: 'cattarevel',
           caption: 'เราจะพาทุกคนไปเดินเที่ยว 1 Day Trip',
           likes: 5597,
+          saves: 321,
           linkedTrip: _plan),
       _row('photo', author: 'PhotoOnly', caption: 'แค่รูป', video: false),
       _row('b', author: 'NamPloyWalks', caption: 'เดินเขาเช้าตรู่', likes: 12),
@@ -104,7 +107,9 @@ class _FeedAdapter extends FakeAdapter {
   Future<ResponseBody> fetch(options, requestStream, cancelFuture) {
     if (options.method == 'GET' && options.path == '/trips') {
       final popular = options.queryParameters['sort'] == 'popular';
-      replies['GET /trips'] = [FakeReply(200, popular ? _popular() : _recent())];
+      replies['GET /trips'] = [
+        FakeReply(200, popular ? _popular() : _recent())
+      ];
     }
     return super.fetch(options, requestStream, cancelFuture);
   }
@@ -255,10 +260,12 @@ void main() {
       'POST /trips/a/save': [const FakeReply(201, <String, dynamic>{})],
     });
 
+    expect(find.text('321'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.bookmark_border));
     await _settle(tester);
 
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
+    expect(find.text('322'), findsOneWidget);
     expect(_adapter.paths, contains('POST /trips/a/save'));
   });
 
@@ -304,7 +311,9 @@ void main() {
 
     final container = ProviderContainer(overrides: [
       plunoApiProvider.overrideWith((ref) async => fakeApi(FakeAdapter({
-            'GET /trips': [const FakeReply(500, {'message': 'down'})],
+            'GET /trips': [
+              const FakeReply(500, {'message': 'down'})
+            ],
           }))),
     ]);
     addTearDown(container.dispose);

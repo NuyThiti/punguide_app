@@ -18,18 +18,32 @@ Future<void> toggleTripLike(
   BuildContext context,
   WidgetRef ref,
   TripListItem trip,
-) async {
+) =>
+    toggleTripLikeById(
+      context,
+      ref,
+      tripId: trip.id,
+      wasLiked: likedNow(ref.read(tripLikedProvider), trip),
+    );
+
+/// [toggleTripLike] for a screen holding a whole trip rather than a list row —
+/// the trip's own page. [wasLiked] is the heart as drawn, ledger included.
+Future<void> toggleTripLikeById(
+  BuildContext context,
+  WidgetRef ref, {
+  required String tripId,
+  required bool wasLiked,
+}) async {
   // Liking needs an account; the feed itself reads fine anonymously.
   if (!ref.read(isSignedInProvider)) {
     _promptSignIn(context);
     return;
   }
 
-  final wasLiked = likedNow(ref.read(tripLikedProvider), trip);
   try {
     await ref
         .read(tripLikedProvider.notifier)
-        .toggle(trip.id, wasLiked: wasLiked);
+        .toggle(tripId, wasLiked: wasLiked);
   } on ApiException catch (failure) {
     if (!context.mounted) return;
     if (failure.isUnauthorized) {

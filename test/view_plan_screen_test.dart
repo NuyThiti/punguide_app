@@ -8,6 +8,7 @@ import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/core/theme/app_colors.dart';
+import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/trip_detail/presentation/share_trip.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
 import 'package:share_plus/share_plus.dart';
@@ -55,6 +56,7 @@ Map<String, dynamic> _tripJson({
       'isLiked': false,
       'likeCount': 1721,
       'remixCount': 1111,
+      'saveCount': 7,
       'days': days ?? _twoDays(),
       'createdAt': '2026-09-10T00:00:00.000Z',
       'updatedAt': '2026-09-10T00:00:00.000Z',
@@ -121,7 +123,8 @@ Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
           (ref) => viewerPending
               ? Completer<AuthUser?>().future
               : Future<AuthUser?>.value(viewer),
-        ),
+        ), // Liking and saving ask for an account first.
+        isSignedInProvider.overrideWithValue(viewer != null),
       ],
       child: MaterialApp.router(
         routerConfig: GoRouter(
@@ -298,6 +301,151 @@ void main() {
     expect(find.text('1.7K'), findsOneWidget);
     // With no description of its own, the plan's styles stand in.
     expect(find.text('วัฒนธรรม · อาหาร'), findsOneWidget);
+  });
+
+  testWidgets('Trip Overview reads remix · heart · bookmark on one row',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _visitor);
+
+    final heart = find.byKey(const Key('like-chip'));
+    final save = find.byKey(const Key('save-chip'));
+    expect(heart, findsOneWidget);
+    expect(save, findsOneWidget);
+    final row = tester.getCenter(find.text('Trip Overview')).dy;
+    expect(tester.getCenter(heart).dy, closeTo(row, 2));
+    expect(tester.getCenter(save).dy, closeTo(row, 2));
+    // Each carries its own count.
+    expect(
+      find.descendant(of: heart, matching: find.text('1.7K')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: save, matching: find.text('7')), findsOneWidget);
+  });
+
+  testWidgets('tapping the bookmark saves the trip and counts it at once',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'POST /trips/trip-1/save': [const FakeReply(204, null)],
+        'DELETE /trips/trip-1/save': [const FakeReply(204, null)],
+      },
+    );
+    final save = find.byKey(const Key('save-chip'));
+
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(adapter.paths, contains('POST /trips/trip-1/save'));
+    expect(find.descendant(of: save, matching: find.text('8')), findsOneWidget);
+
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(adapter.paths, contains('DELETE /trips/trip-1/save'));
+    expect(find.descendant(of: save, matching: find.text('7')), findsOneWidget);
+  });
+
+  testWidgets('tapping the heart likes the trip and counts it at once',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      trip: {..._tripJson(), 'likeCount': 41},
+      extra: {
+        'POST /trips/trip-1/like': [const FakeReply(204, null)],
+        'DELETE /trips/trip-1/like': [const FakeReply(204, null)],
+      },
+    );
+    final heart = find.byKey(const Key('like-chip'));
+    expect(
+        find.descendant(of: heart, matching: find.text('41')), findsOneWidget);
+
+    await tester.tap(heart);
+    await tester.pumpAndSettle();
+    expect(adapter.paths, contains('POST /trips/trip-1/like'));
+    expect(
+        find.descendant(of: heart, matching: find.text('42')), findsOneWidget);
+    expect(find.descendant(of: heart, matching: find.byIcon(Icons.favorite)),
+        findsOneWidget);
+
+    await tester.tap(heart);
+    await tester.pumpAndSettle();
+    expect(adapter.paths, contains('DELETE /trips/trip-1/like'));
+    expect(
+        find.descendant(of: heart, matching: find.text('41')), findsOneWidget);
+  });
+
+  testWidgets('a refused like puts the heart and the count back',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _visitor,
+      trip: {..._tripJson(), 'likeCount': 41},
+      extra: {
+        'POST /trips/trip-1/like': [
+          const FakeReply(404, {'message': 'Trip not found'}),
+        ],
+      },
+    );
+    final heart = find.byKey(const Key('like-chip'));
+    await tester.tap(heart);
+    await tester.pumpAndSettle();
+
+    expect(
+        find.descendant(of: heart, matching: find.text('41')), findsOneWidget);
+    expect(
+      find.descendant(of: heart, matching: find.byIcon(Icons.favorite_border)),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ถูกใจทริปไม่สำเร็จ'), findsOneWidget);
+  });
+
+  testWidgets("the owner's bookmark is a readout, and gone at zero",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _owner);
+
+    expect(find.byKey(const Key('like-chip')), findsOneWidget);
+    final save = find.byKey(const Key('save-chip'));
+    expect(find.descendant(of: save, matching: find.text('7')), findsOneWidget);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(adapter.paths, isNot(contains('POST /trips/trip-1/save')));
+  });
+
+  testWidgets("the owner's row has no bookmark nobody has saved",
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(
+      tester,
+      viewer: _owner,
+      trip: {..._tripJson(), 'saveCount': 0},
+    );
+
+    expect(find.byKey(const Key('like-chip')), findsOneWidget);
+    expect(find.byKey(const Key('save-chip')), findsNothing);
   });
 
   testWidgets('the stops sit under ตารางแผน on white, not cream',
