@@ -16,11 +16,19 @@ class PaigunCard extends StatelessWidget {
     required this.row,
     required this.onTap,
     required this.onSave,
+    required this.liked,
+    required this.onLike,
   });
 
   final NearbyTrip row;
   final VoidCallback onTap;
   final VoidCallback onSave;
+
+  /// The heart as the app-wide like ledger has it. [NearbyTrip] does not carry
+  /// it the way it carries the bookmark, so it is resolved by the wall and
+  /// handed down.
+  final bool liked;
+  final VoidCallback onLike;
 
   @override
   Widget build(BuildContext context) {
@@ -29,8 +37,10 @@ class PaigunCard extends StatelessWidget {
       distanceLabel: row.distanceLabel,
       featured: row.featured,
       saved: row.isSaved,
+      liked: liked,
       onTap: onTap,
       onSave: onSave,
+      onLike: onLike,
     );
   }
 }

@@ -33,12 +33,14 @@ class PuntokPost {
     required this.likes,
     this.poster,
     this.authorAvatar,
+    this.authorId,
     this.comments,
     this.saves,
     this.shares,
     this.liked = false,
     this.saved = false,
     this.following = false,
+    this.followable = true,
     this.linkedTrip,
   });
 
@@ -55,6 +57,7 @@ class PuntokPost {
       poster: cover.stillUrl,
       author: item.creator?.name ?? '',
       authorAvatar: item.creator?.avatarUrl,
+      authorId: item.creator?.id,
       caption: blurb.isEmpty ? item.title : blurb,
       likes: item.likeCount,
       liked: item.isLiked,
@@ -76,6 +79,10 @@ class PuntokPost {
 
   /// An `http(s)` URL or a bundled asset; null draws a placeholder.
   final String? authorAvatar;
+
+  /// The creator's user id — what follow and their profile page key on.
+  /// Null when the row came without a creator.
+  final String? authorId;
   final String caption;
 
   final int likes;
@@ -88,8 +95,13 @@ class PuntokPost {
   final bool liked;
   final bool saved;
 
-  /// There is no follow API yet, so this is never true from the server.
+  /// Whether the viewer follows [author]. The list endpoint does not say, so
+  /// it starts false and the screens fill it from the follow ledger.
   final bool following;
+
+  /// False on the viewer's own clip: there is no one to follow, so the badge
+  /// and the ติดตาม chip are not drawn.
+  final bool followable;
 
   /// The แผนทริป card under the caption; null hides it.
   final LinkedTrip? linkedTrip;
@@ -98,6 +110,8 @@ class PuntokPost {
     int? likes,
     bool? liked,
     bool? saved,
+    bool? following,
+    bool? followable,
   }) {
     return PuntokPost(
       id: id,
@@ -105,6 +119,7 @@ class PuntokPost {
       poster: poster,
       author: author,
       authorAvatar: authorAvatar,
+      authorId: authorId,
       caption: caption,
       likes: likes ?? this.likes,
       comments: comments,
@@ -112,7 +127,8 @@ class PuntokPost {
       shares: shares,
       liked: liked ?? this.liked,
       saved: saved ?? this.saved,
-      following: following,
+      following: following ?? this.following,
+      followable: followable ?? this.followable,
       linkedTrip: linkedTrip,
     );
   }

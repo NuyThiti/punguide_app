@@ -31,20 +31,34 @@ class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
   Future<List<TripListItem>> build() async {
     // Signing in or out changes the per-viewer flags on every row.
     ref.watch(authSessionProvider);
+    // Search reads these rows as they are, so a bookmark flipped anywhere —
+    // ไปกัน, the trip's own page, the saved shelf — is written onto them.
+    ref.listen<Map<String, bool>>(paigunSavedProvider, (_, saved) {
+      final current = state.valueOrNull;
+      if (current != null) {
+        state = AsyncData<List<TripListItem>>(_withSaved(current, saved));
+      }
+    });
     final api = await ref.watch(plunoApiProvider.future);
-    return withoutClips(await api.trips.feed(_query));
+    return _withSaved(
+      withoutClips(await api.trips.feed(_query)),
+      ref.read(paigunSavedProvider),
+    );
   }
 
   Future<void> refresh() async {
     state = const AsyncLoading<List<TripListItem>>();
     state = await AsyncValue.guard(() async {
       final api = await ref.read(plunoApiProvider.future);
-      return withoutClips(await api.trips.feed(_query));
+      return _withSaved(
+        withoutClips(await api.trips.feed(_query)),
+        ref.read(paigunSavedProvider),
+      );
     });
   }
 
-  /// Bookmarks or un-bookmarks one trip, flipping the row before the request
-  /// so the tap feels instant, and putting it back if the server refuses.
+  /// Bookmarks or un-bookmarks one trip, through the app-wide ledger so every
+  /// screen showing it flips together (and flips back if the server refuses).
   ///
   /// Throws [ApiException] so the caller can tell "sign in first" (401) from a
   /// genuine failure.
@@ -55,23 +69,25 @@ class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
     final index = current.indexWhere((trip) => trip.id == tripId);
     if (index < 0) return;
 
-    final wasSaved = current[index].isSaved;
-    state = AsyncData<List<TripListItem>>(
-      List<TripListItem>.of(current)
-        ..[index] = current[index].withSaved(!wasSaved),
-    );
+    final wasSaved =
+        ref.read(paigunSavedProvider)[tripId] ?? current[index].isSaved;
+    await ref
+        .read(paigunSavedProvider.notifier)
+        .toggle(tripId, wasSaved: wasSaved);
+  }
 
-    try {
-      final api = await ref.read(plunoApiProvider.future);
-      if (wasSaved) {
-        await api.trips.unsave(tripId);
-      } else {
-        await api.trips.save(tripId);
-      }
-    } catch (_) {
-      state = AsyncData<List<TripListItem>>(current);
-      rethrow;
-    }
+  static List<TripListItem> _withSaved(
+    List<TripListItem> rows,
+    Map<String, bool> saved,
+  ) {
+    if (saved.isEmpty) return rows;
+    return [
+      for (final row in rows)
+        switch (saved[row.id]) {
+          final flag? when flag != row.isSaved => row.withSaved(flag),
+          _ => row,
+        },
+    ];
   }
 }
 

@@ -87,6 +87,16 @@ Widget _harness({
             builder: (_, __) => const Scaffold(body: Text('album-stub')),
           ),
           GoRoute(
+            path: '/users/:userId/follows',
+            name: AppRoute.userFollows.name,
+            builder: (_, state) => Scaffold(
+              body: Text(
+                'follows-stub ${state.params['userId']} '
+                '${state.queryParams['tab']}',
+              ),
+            ),
+          ),
+          GoRoute(
             path: '/profile/edit',
             name: AppRoute.profileEdit.name,
             builder: (_, __) => const Scaffold(body: Text('edit-stub')),
@@ -147,10 +157,15 @@ void main() {
     );
     expect(find.text(AuthSession.demo.handle), findsOneWidget);
 
-    for (final (value, label) in ProfileHero.counts) {
-      expect(find.text(value), findsOneWidget);
-      expect(find.text(label), findsOneWidget);
+    // Remix and Like are still the design's; the follow counts are real.
+    for (final count in ProfileHero.designCounts.take(2)) {
+      expect(find.text(count.value), findsOneWidget);
+      expect(find.text(count.label), findsOneWidget);
     }
+    expect(find.text('1.2K'), findsOneWidget);
+    expect(find.text('Follower'), findsOneWidget);
+    expect(find.text('42'), findsOneWidget);
+    expect(find.text('Following'), findsOneWidget);
 
     // Back and menu both ride on the cover.
     expect(find.byIcon(Icons.chevron_left), findsOneWidget);
@@ -159,6 +174,17 @@ void main() {
     // The old row-menu profile is gone.
     expect(find.text('ทริปของฉัน'), findsNothing);
     expect(find.text('ตั้งค่าระบบ'), findsNothing);
+  });
+
+  testWidgets('Follower and Following open the account\'s own lists',
+      (tester) async {
+    _usePhone(tester);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Follower'));
+    await tester.pumpAndSettle();
+    expect(find.text('follows-stub me-1 followers'), findsOneWidget);
   });
 
   testWidgets('the top bar stays put while the wall scrolls under it',

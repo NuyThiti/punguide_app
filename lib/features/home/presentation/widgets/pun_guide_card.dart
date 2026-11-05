@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -22,9 +24,11 @@ class PunGuideCard extends StatelessWidget {
     required this.trip,
     required this.onTap,
     this.onSave,
+    this.onLike,
     this.distanceLabel,
     this.featured = false,
     this.saved,
+    this.liked,
     this.onDelete,
     this.isMine = false,
   });
@@ -38,6 +42,11 @@ class PunGuideCard extends StatelessWidget {
   /// reads for the rest of its decisions.
   final VoidCallback? onSave;
 
+  /// Null leaves the heart inert, the same way [onSave] does for the
+  /// bookmark. A wall of the traveller's own trips passes null: the likes are
+  /// other people's, so the heart there is a readout.
+  final VoidCallback? onLike;
+
   /// "2.3 Km", or null when the destination has no coordinates.
   final String? distanceLabel;
 
@@ -48,6 +57,11 @@ class PunGuideCard extends StatelessWidget {
   /// track — the board flips one on a card that sits in two walls at once.
   /// Null falls back to what the row itself came back with.
   final bool? saved;
+
+  /// The heart as it stands now, when something outside the row is keeping
+  /// track — same reason as [saved]. Null falls back to the row's own
+  /// `isLiked`.
+  final bool? liked;
 
   /// Turns the corner button into a delete. Only a wall of the traveller's
   /// *own* trips passes this: bookmarking your own trip does nothing, so the
@@ -183,7 +197,9 @@ class PunGuideCard extends StatelessWidget {
                   _StatsLine(
                     trip: trip,
                     saved: saved ?? trip.isSaved,
+                    liked: liked ?? trip.isLiked,
                     onSave: onSave,
+                    onLike: onLike,
                     isMine: isMine,
                   ),
                 ],
@@ -469,29 +485,77 @@ class _PlaceLine extends StatelessWidget {
   }
 }
 
-/// What the trip is made of on the left, remixes and saves on the right.
+/// What the trip is made of on the left, remixes, hearts and the bookmark on
+/// the right.
 ///
 /// The left half is [tripFactsLine], so a post prints its places where a plan
 /// prints its days and budget rather than leaving the line blank.
+///
+/// The right half is three tallies in one row, in the order the traveller is
+/// likeliest to reach for them: how many people have remixed the trip, how
+/// many have hearted it, and their own bookmark. Only the heart carries
+/// `likeCount` — the bookmark used to print it too, which said the same number
+/// twice under the wrong glyph. The API returns no save count, so the
+/// bookmark is an icon with nothing after it until one exists.
 class _StatsLine extends StatelessWidget {
   const _StatsLine({
     required this.trip,
     required this.saved,
+    required this.liked,
     required this.isMine,
     this.onSave,
+    this.onLike,
   });
 
   final TripListItem trip;
   final bool saved;
+  final bool liked;
   final bool isMine;
 
   /// Null leaves the bookmark a readout rather than a button.
   final VoidCallback? onSave;
 
+  /// Null leaves the heart a readout rather than a button.
+  final VoidCallback? onLike;
+
   /// A tally nobody has added to yet is still worth an icon on someone else's
   /// card — it is the affordance. On the traveller's own card there is nothing
   /// to do with it, so a zero leaves no trace at all.
   bool _shows(int count) => count > 0 || !isMine;
+
+  /// What the heart should read, with the traveller's own unsent tap counted.
+  ///
+  /// The row was fetched with `likeCount`/`isLiked` as they stood then; a tap
+  /// since is held outside the row, so the number has to be moved here or it
+  /// would sit still while the heart fills.
+  int get _likeCount {
+    if (liked == trip.isLiked) return trip.likeCount;
+    return liked ? trip.likeCount + 1 : math.max(0, trip.likeCount - 1);
+  }
+
+  /// The tallies this card actually shows, left to right. Built as a list so
+  /// the gaps between them do not have to restate which ones are present.
+  List<Widget> get _tallies {
+    return <Widget>[
+      if (_shows(trip.remixCount))
+        _Stat(icon: Icons.shuffle, count: trip.remixCount),
+      if (_shows(_likeCount))
+        _Stat(
+          icon: liked ? Icons.favorite : Icons.favorite_border,
+          count: _likeCount,
+          activeColor: liked ? AppColors.cardLiked : null,
+          onTap: onLike,
+        ),
+      // No count follows it, so there is no zero to hide behind: the bookmark
+      // is only ever an action, and on their own trips there is no action.
+      if (!isMine)
+        _Stat(
+          icon: saved ? Icons.bookmark : Icons.bookmark_border,
+          activeColor: saved ? AppColors.cardPlanAccent : null,
+          onTap: onSave,
+        ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -523,24 +587,18 @@ class _StatsLine extends StatelessWidget {
         const SizedBox(width: 6),
         ConstrainedBox(
           // Capped so a long duration + budget run can never push the counts
-          // off a 320pt phone.
-          constraints: const BoxConstraints(maxWidth: 72),
+          // off a 320pt phone. Wider than it was, for the third tally.
+          constraints: const BoxConstraints(maxWidth: 104),
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerRight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_shows(trip.remixCount)) ...[
-                  _Stat(icon: Icons.shuffle, count: trip.remixCount),
-                  if (_shows(trip.likeCount)) const SizedBox(width: 10),
+                for (final (index, tally) in _tallies.indexed) ...[
+                  if (index > 0) const SizedBox(width: 8),
+                  tally,
                 ],
-                if (_shows(trip.likeCount))
-                  _Stat(
-                    icon: saved ? Icons.bookmark : Icons.bookmark_border,
-                    count: trip.likeCount,
-                    onTap: onSave,
-                  ),
               ],
             ),
           ),
@@ -551,24 +609,38 @@ class _StatsLine extends StatelessWidget {
 }
 
 /// One tally. The count is dropped at zero — the icon alone reads as "none
-/// yet" without the noise of a 0 on every fresh card.
+/// yet" without the noise of a 0 on every fresh card — and a null count means
+/// there is no number to print at all, which is the bookmark's case.
 class _Stat extends StatelessWidget {
-  const _Stat({required this.icon, required this.count, this.onTap});
+  const _Stat({
+    required this.icon,
+    this.count,
+    this.activeColor,
+    this.onTap,
+  });
 
   final IconData icon;
-  final int count;
+
+  /// Null prints no number: the API returns no save count, so the bookmark
+  /// stands alone rather than borrowing someone else's figure.
+  final int? count;
+
+  /// What the icon wears once the traveller has tapped it. Null leaves it the
+  /// card's own accent, which is how every untapped tally reads.
+  final Color? activeColor;
 
   /// Null leaves the tally inert, which is the case for every one but the
-  /// bookmark on someone else's card.
+  /// heart and the bookmark on someone else's card.
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final count = this.count;
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 13, color: AppColors.cardPlanAccent),
-        if (count > 0) ...[
+        Icon(icon, size: 13, color: activeColor ?? AppColors.cardPlanAccent),
+        if (count != null && count > 0) ...[
           const SizedBox(width: 3),
           Text(
             compactCount(count),

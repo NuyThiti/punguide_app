@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
+import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
 import 'package:pluno/features/trips/presentation/providers/trip_providers.dart';
 import 'package:pluno/shared/widgets/cover_image.dart';
@@ -109,6 +110,8 @@ List<Map<String, dynamic>> _spots() => [
 Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
     ProviderScope(
       overrides: [
+        // Signed in exactly when there is a viewer, so the bookmark can save.
+        isSignedInProvider.overrideWithValue(viewer != null),
         plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
         selectedTripProvider.overrideWith((ref, tripId) async => null),
         currentUserProvider.overrideWith(
@@ -154,11 +157,27 @@ Future<void> _pumpPost(
 }) async {
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(200, trip ?? _postJson())],
+    // The author chip reads whether the visitor already follows the owner.
+    'GET /users/u1': [
+      const FakeReply(200, {
+        'id': 'u1',
+        'username': 'maki',
+        'followerCount': 0,
+        'followingCount': 0,
+        'isFollowing': false,
+        'followsYou': false,
+        'isMe': false,
+      }),
+    ],
     ...extra,
   });
   await tester.pumpWidget(
     _harness(viewer: viewer, viewerPending: viewerPending),
   );
+  await tester.pumpAndSettle();
+  // Knowing the viewer starts the author's profile read only after that
+  // settle; one more pass lets it land.
+  await tester.pump();
   await tester.pumpAndSettle();
 }
 
@@ -372,6 +391,64 @@ void main() {
     // No edit bar — but Remix Trip is in the hero for everyone now.
     expect(find.text('แก้ไขโพสต์'), findsNothing);
     expect(find.text('Remix Trip'), findsOneWidget);
+  });
+
+  testWidgets("a visitor bookmarks the trip from the bar; the owner can't",
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'POST /trips/trip-1/save': [const FakeReply(204, null)],
+        'DELETE /trips/trip-1/save': [const FakeReply(204, null)],
+      },
+    );
+
+    await tester.tap(find.byTooltip('บันทึกทริป'));
+    await tester.pumpAndSettle();
+    expect(adapter.paths, contains('POST /trips/trip-1/save'));
+    expect(find.byTooltip('เลิกบันทึก'), findsOneWidget);
+    expect(find.byIcon(Icons.bookmark), findsOneWidget);
+
+    await tester.tap(find.byTooltip('เลิกบันทึก'));
+    await tester.pumpAndSettle();
+    expect(adapter.paths, contains('DELETE /trips/trip-1/save'));
+    expect(find.byTooltip('บันทึกทริป'), findsOneWidget);
+  });
+
+  testWidgets('a refused save puts the bookmark back', (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      viewer: _visitor,
+      extra: {
+        'POST /trips/trip-1/save': [
+          const FakeReply(404, {'message': 'Trip not found'}),
+        ],
+      },
+    );
+
+    await tester.tap(find.byTooltip('บันทึกทริป'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('บันทึกทริป'), findsOneWidget);
+    expect(find.textContaining('บันทึกทริปไม่สำเร็จ'), findsOneWidget);
+  });
+
+  testWidgets("the owner's bar has no bookmark", (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _owner);
+    expect(find.byTooltip('บันทึกทริป'), findsNothing);
+  });
+
+  testWidgets('a trip saved earlier shows a filled bookmark', (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      viewer: _visitor,
+      trip: {..._postJson(), 'isSaved': true},
+    );
+    expect(find.byTooltip('เลิกบันทึก'), findsOneWidget);
   });
 
   testWidgets('แก้ไขทริป in the ☰ opens the post settings', (tester) async {

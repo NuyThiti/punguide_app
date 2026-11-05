@@ -244,6 +244,16 @@ class PlunoApiClient {
           headers: headers,
           receiveTimeout: receiveTimeout);
 
+  /// A POST whose success is the status alone — `204 No Content` on
+  /// `POST /trips/:id/save` and its kin. [post] treats an empty body as a
+  /// failure, which here it is not; any body that does come back is ignored.
+  Future<void> postNoContent(
+    String path, {
+    Object? body,
+    Map<String, String>? headers,
+  }) =>
+      _sendNullable<dynamic>('POST', path, body: body, headers: headers);
+
   Future<T> patch<T>(
     String path, {
     Object? body,

@@ -4,6 +4,7 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../../shared/models/feed_rows.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../data/paigun_origin_store.dart';
 import '../../domain/nearby_trip.dart';
 import '../../domain/trip_filter.dart';
@@ -163,11 +164,14 @@ Future<void> refreshPaigunFeed(WidgetRef ref) async {
       .then<void>((_) {}, onError: (_, __) {});
 }
 
-/// Bookmarks the traveller has flipped on this board, by trip id.
+/// Bookmarks the traveller has flipped this session, by trip id — the one
+/// copy every screen reads through.
 ///
-/// A trip can sit in both walls at once, and each wall is its own request, so
-/// the bookmark cannot live in either list — it would go stale in the other
-/// one the moment it was tapped. This is the one copy both walls read through.
+/// A trip can sit in both ไปกัน walls, Home, search and its own page at once,
+/// and each of those is its own request, so the bookmark cannot live in any
+/// one list — it would go stale in the others the moment it was tapped. Rows
+/// read `ledger[id] ?? row.isSaved`. Only server-accepted flips stay here, so
+/// an entry is never older than the row it overrides.
 final paigunSavedProvider =
     NotifierProvider<PaigunSavedNotifier, Map<String, bool>>(
   PaigunSavedNotifier.new,
@@ -175,10 +179,17 @@ final paigunSavedProvider =
 
 class PaigunSavedNotifier extends Notifier<Map<String, bool>> {
   @override
-  Map<String, bool> build() => const <String, bool>{};
+  Map<String, bool> build() {
+    // `isSaved` is per viewer: another account's taps must not carry over.
+    // Keyed on the account rather than the session, which a token refresh
+    // replaces without anyone signing out.
+    ref.watch(authSessionProvider.select((session) => session?.userId));
+    return const <String, bool>{};
+  }
 
   /// Flips the bookmark before the request so the tap feels instant, and puts
-  /// it back if the server refuses.
+  /// it back if the server refuses. `POST`/`DELETE /trips/:id/save` are both
+  /// idempotent, so a double tap cannot leave the server out of step.
   ///
   /// Throws [ApiException] so the caller can tell "sign in first" (401) from a
   /// genuine failure.
@@ -197,5 +208,14 @@ class PaigunSavedNotifier extends Notifier<Map<String, bool>> {
       state = previous;
       rethrow;
     }
+    // The shelf is ordered by when you saved, so it is re-read rather than
+    // patched; it only fetches if something is showing it.
+    ref.invalidate(savedFeedProvider);
+  }
+
+  /// Notes a bookmark another screen has already written to the server.
+  void record(String tripId, {required bool saved}) {
+    state = <String, bool>{...state, tripId: saved};
+    ref.invalidate(savedFeedProvider);
   }
 }

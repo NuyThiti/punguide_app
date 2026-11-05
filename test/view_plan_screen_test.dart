@@ -167,11 +167,27 @@ Future<void> _pumpTrip(
   shared.clear();
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(status, trip ?? _tripJson())],
+    // The author chip reads whether the visitor already follows the owner.
+    'GET /users/u1': [
+      const FakeReply(200, {
+        'id': 'u1',
+        'username': 'maki',
+        'followerCount': 0,
+        'followingCount': 0,
+        'isFollowing': false,
+        'followsYou': false,
+        'isMe': false,
+      }),
+    ],
     ...extra,
   });
   await tester.pumpWidget(
     _harness(viewer: viewer, viewerPending: viewerPending),
   );
+  await tester.pumpAndSettle();
+  // Knowing the viewer starts the author's profile read only after that
+  // settle; one more pass lets it land.
+  await tester.pump();
   await tester.pumpAndSettle();
 }
 

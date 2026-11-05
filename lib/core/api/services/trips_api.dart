@@ -535,17 +535,18 @@ class TripsApi {
     return RemixedItems.fromJson(Json.asMap(body));
   }
 
-  /// Bookmarks a trip. Idempotent, and works on other people's trips.
+  /// Bookmarks a trip: `204`, no body. Idempotent, and works on other
+  /// people's trips whatever their visibility — nothing is copied out.
   /// The new count is not returned — re-read the trip for `isSaved`.
   Future<void> save(String tripId) =>
-      _client.post<dynamic>('/trips/$tripId/save');
+      _client.postNoContent('/trips/$tripId/save');
 
   Future<void> unsave(String tripId) =>
       _client.delete<void>('/trips/$tripId/save');
 
   /// Likes a trip. Idempotent; read `likeCount` back from the trip.
   Future<void> like(String tripId) =>
-      _client.post<dynamic>('/trips/$tripId/like');
+      _client.postNoContent('/trips/$tripId/like');
 
   Future<void> unlike(String tripId) =>
       _client.delete<void>('/trips/$tripId/like');

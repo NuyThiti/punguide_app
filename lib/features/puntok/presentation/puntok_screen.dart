@@ -7,6 +7,9 @@ import '../../../core/router/app_router.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../auth/presentation/providers/auth_providers.dart';
+import '../../follow/presentation/follow_actions.dart';
+import '../../follow/presentation/providers/follow_providers.dart';
 import '../domain/models/puntok_post.dart';
 import 'providers/puntok_providers.dart';
 import 'widgets/puntok_player_pager.dart';
@@ -40,7 +43,11 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
   @override
   Widget build(BuildContext context) {
     final feed = ref.watch(puntokFeedProvider);
-    final posts = feed.valueOrNull ?? const <PuntokPost>[];
+    final posts = withFollowState(
+      feed.valueOrNull ?? const <PuntokPost>[],
+      ref.watch(followLedgerProvider),
+      myId: ref.watch(authSessionProvider)?.userId,
+    );
     final tab = ref.watch(puntokFeedTabProvider);
     final navHeight = AppBottomNav.heightOf(context);
 
@@ -69,8 +76,9 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
               icon: tab == PuntokFeed.following
                   ? Icons.people_outline
                   : Icons.video_library_outlined,
-              // No follow API yet, so Following can never fill — say so
-              // rather than implying the traveller follows nobody.
+              // The feed has no "only people I follow" filter yet, so
+              // Following can never fill — say so rather than implying the
+              // traveller follows nobody.
               text: tab == PuntokFeed.following
                   ? 'ฟีดคนที่คุณติดตามยังไม่เปิดใช้งาน'
                   : 'ยังไม่มีคลิป Puntok',
@@ -83,14 +91,17 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
               bottomInset: navHeight,
               onLike: (post) => _act(() => _feed.toggleLike(post.id)),
               onSave: (post) => _act(() => _feed.toggleSave(post.id)),
-              onFollow: () => _notYet('ติดตาม'),
+              onFollow: (post) => _follow(post),
               onOpenPlan: (planId) => context.pushNamed(
                 AppRoute.tripDetail.name,
                 params: {'tripId': planId},
               ),
               onComment: () => _notYet('คอมเมนต์'),
               onShare: () => _notYet('แชร์'),
-              onCreator: () => _notYet('โปรไฟล์ครีเอเตอร์'),
+              onCreator: (post) {
+                final id = post.authorId;
+                if (id != null) openUserProfile(context, id);
+              },
             ),
           Positioned(
             top: 0,
@@ -157,6 +168,12 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
       onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
       onUnavailable: _showMessage,
     );
+  }
+
+  void _follow(PuntokPost post) {
+    final id = post.authorId;
+    if (id == null) return;
+    toggleFollow(context, ref, userId: id, following: post.following);
   }
 
   void _notYet(String label) => _showMessage('$label — เร็วๆ นี้');

@@ -21,7 +21,9 @@ Widget _card(
   String? distanceLabel,
   bool featured = false,
   VoidCallback? onSave = _noop,
+  VoidCallback? onLike = _noop,
   VoidCallback? onTap = _noop,
+  bool? liked,
   bool isMine = false,
 }) {
   return MaterialApp(
@@ -35,6 +37,8 @@ Widget _card(
             featured: featured,
             onTap: onTap ?? () {},
             onSave: onSave,
+            onLike: onLike,
+            liked: liked,
             isMine: isMine,
           ),
         ),
@@ -188,6 +192,93 @@ void main() {
     expect(opens, 0);
   });
 
+  testWidgets('the counts row is remix, heart then bookmark', (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(likeCount: 12, remixCount: 4)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.shuffle), findsOneWidget);
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+    expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
+
+    final order = tester
+        .widgetList<Icon>(find.byType(Icon))
+        .map((icon) => icon.icon)
+        .where((icon) => icon != Icons.photo_outlined)
+        .toList();
+    expect(
+      order,
+      containsAllInOrder(
+        <IconData>[Icons.shuffle, Icons.favorite_border, Icons.bookmark_border],
+      ),
+    );
+  });
+
+  testWidgets('the heart carries likeCount; the bookmark carries no number',
+      (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(likeCount: 12, remixCount: 4)),
+    );
+    await tester.pumpAndSettle();
+
+    // Two numbers on the row, not three: the API returns no save count, so the
+    // bookmark stands alone rather than reprinting the likes.
+    expect(find.text('4'), findsOneWidget);
+    // Once, not twice: the bookmark used to reprint the same likes.
+    expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('tapping the heart likes without opening the trip',
+      (tester) async {
+    var likes = 0;
+    var opens = 0;
+    await tester.pumpWidget(
+      _card(
+        feedTrip(likeCount: 12),
+        onLike: () => likes++,
+        onTap: () => opens++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.favorite_border));
+    await tester.pumpAndSettle();
+
+    expect(likes, 1);
+    expect(opens, 0);
+  });
+
+  testWidgets('a hearted row fills red and counts the unsent tap',
+      (tester) async {
+    await tester.pumpWidget(
+      _card(feedTrip(likeCount: 12), liked: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.favorite_border), findsNothing);
+    final heart = tester.widget<Icon>(find.byIcon(Icons.favorite));
+    expect(heart.color, AppColors.cardLiked);
+    // The row was fetched unliked, so the ledger's tap has to move the number
+    // as well as the glyph.
+    expect(find.text('13'), findsOneWidget);
+  });
+
+  testWidgets('an un-hearted row counts its tap back down', (tester) async {
+    await tester.pumpWidget(
+      _card(
+        TripListItem.fromJson(
+          <String, dynamic>{...feedTripJson(likeCount: 12), 'isLiked': true},
+        ),
+        liked: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('11'), findsOneWidget);
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+  });
+
   testWidgets('a saved row shows the filled bookmark', (tester) async {
     await tester.pumpWidget(_card(feedTrip(isSaved: true, likeCount: 3)));
     await tester.pumpAndSettle();
@@ -205,6 +296,7 @@ void main() {
 
     // The icons are the affordance, so they stay; the 0s do not.
     expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
     expect(find.byIcon(Icons.shuffle), findsOneWidget);
     expect(find.text('0'), findsNothing);
   });
@@ -212,15 +304,23 @@ void main() {
   testWidgets('on my own card a zero tally disappears entirely',
       (tester) async {
     await tester.pumpWidget(
-      _card(feedTrip(likeCount: 0, remixCount: 0), isMine: true, onSave: null),
+      _card(
+        feedTrip(likeCount: 0, remixCount: 0),
+        isMine: true,
+        onSave: null,
+        onLike: null,
+      ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.bookmark_border), findsNothing);
+    expect(find.byIcon(Icons.favorite_border), findsNothing);
     expect(find.byIcon(Icons.shuffle), findsNothing);
+    // The bookmark has no count to fall back on, and there is nothing to save:
+    // it goes whether or not anyone has hearted the trip.
+    expect(find.byIcon(Icons.bookmark_border), findsNothing);
   });
 
-  testWidgets('on my own card a tally that has a number still shows, inert',
+  testWidgets('on my own card a heart that has a number still shows, inert',
       (tester) async {
     var opens = 0;
     await tester.pumpWidget(
@@ -228,6 +328,7 @@ void main() {
         feedTrip(likeCount: 9, remixCount: 0),
         isMine: true,
         onSave: null,
+        onLike: null,
         onTap: () => opens++,
       ),
     );
@@ -235,9 +336,10 @@ void main() {
 
     expect(find.text('9'), findsOneWidget);
     expect(find.byIcon(Icons.shuffle), findsNothing);
+    expect(find.byIcon(Icons.bookmark_border), findsNothing);
 
     // A readout, not a button: the tap falls through to the card itself.
-    await tester.tap(find.byIcon(Icons.bookmark_border));
+    await tester.tap(find.byIcon(Icons.favorite_border));
     await tester.pumpAndSettle();
     expect(opens, 1);
   });

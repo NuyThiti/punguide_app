@@ -72,18 +72,21 @@ class AppColors {
   static const postShare = Color(0xFF6D28D9);
   static const postPurpleSoft = Color(0xFFEDE4FF);
   static const postPurpleWell = Color(0xFFF4EEFF);
+
   /// "AI สร้างโพสจากรูป" (Figma 2502-39595), deepest to lightest — the last
   /// stop is the one the button's own glow leans toward.
   static const postImportStart = Color(0xFF5927FF);
   static const postImportMid = Color(0xFF7C46FA);
   static const postImportMid2 = Color(0xFFCC74FF);
   static const postImportEnd = Color(0xFFD8FF54);
+
   /// The Create from Photos page's own dark cap (Figma 2480-80792's
   /// "AI-Hero-Card") — a shade lighter than [postHeader], not reused from it.
   static const postImportHeroBg = Color(0xFF2C2C2C);
 
   /// A sheet's own close chip, beside its title (Figma 2480-80871).
   static const postCloseChip = Color(0xFFE0E0E0);
+
   /// The "เพิ่มรูป" sheet's icon wells: a plain one for ถ่ายรูป/Video, and the
   /// same purple that highlights เลือกจากคลังภาพ's whole row.
   static const postSourceIconWell = Color(0xFFF0E9FF);
@@ -111,6 +114,11 @@ class AppColors {
   static const cardTitle = Color(0xFF1B1D1A);
   static const cardFacts = Color(0xFF6F7570);
   static const cardCoverPill = Color(0xFF1C1714);
+
+  /// A heart that has been tapped. The only warm colour in the counts row —
+  /// the rest of the tallies stay the card's accent, so the one thing the
+  /// traveller has actually done reads first.
+  static const cardLiked = Color(0xFFF2456B);
 
   /// ตัวกรอง sheet (Figma 2480-59246): the board darkened behind it, the
   /// grabber, and the peach a chosen chip wears.

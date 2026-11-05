@@ -16,10 +16,14 @@ import '../../../shared/widgets/cover_image.dart';
 import '../../../shared/widgets/action_sheet.dart';
 import '../../../shared/widgets/full_image_viewer.dart';
 import '../../create_trip/domain/plan_labels.dart';
+import '../../auth/presentation/providers/auth_providers.dart';
+import '../../follow/presentation/follow_actions.dart';
+import '../../follow/presentation/providers/follow_providers.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 import '../../create_post/presentation/widgets/trip_link_picker.dart';
 import '../../my_trips/presentation/delete_trip.dart';
 import '../../my_trips/presentation/providers/my_trips_providers.dart';
+import '../../paigun/presentation/providers/paigun_providers.dart';
 import '../../profile/presentation/providers/profile_providers.dart';
 import 'share_trip.dart';
 import 'widgets/add_to_trip_sheet.dart';
@@ -117,6 +121,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             scroll: _scroll,
             trip: trip,
             owned: _owns(trip),
+            // A visitor's bookmark only: saving your own trip changes nothing
+            // you can see, so the owner's bar keeps the room.
+            saved: _owns(trip) == false
+                ? ref.watch(paigunSavedProvider)[trip.id] ?? trip.isSaved
+                : null,
+            onSave: () => _toggleSaved(trip),
             onBack: _leave,
             onMenu: (action) => switch (action) {
               _TripMenuAction.edit => _edit(trip),
@@ -136,7 +146,6 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
                           : 'แชร์ทริปยังไม่เปิดใช้งาน',
                     ),
             },
-            onFollow: () => _snack('ติดตามยังไม่เปิดใช้งาน'),
           ),
         ),
       ],
@@ -151,6 +160,41 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     final viewer = ref.watch(currentUserProvider);
     if (viewer.isLoading) return null;
     return viewer.valueOrNull?.id == trip.ownerId;
+  }
+
+  /// The bar's bookmark, through the app-wide ledger so Home, ไปกัน and the
+  /// saved shelf flip with it. Signed out, it asks for an account instead.
+  Future<void> _toggleSaved(ApiTrip trip) async {
+    if (!ref.read(isSignedInProvider)) return _promptSignIn();
+    final wasSaved = ref.read(paigunSavedProvider)[trip.id] ?? trip.isSaved;
+    try {
+      await ref
+          .read(paigunSavedProvider.notifier)
+          .toggle(trip.id, wasSaved: wasSaved);
+      _snack(wasSaved ? 'เอาออกจากทริปที่บันทึกไว้แล้ว' : 'บันทึกทริปแล้ว');
+    } on ApiException catch (failure) {
+      if (failure.isUnauthorized) return _promptSignIn();
+      _snack(
+        failure.isNetworkFailure
+            ? 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง'
+            : 'บันทึกทริปไม่สำเร็จ: ${failure.message}',
+      );
+    }
+  }
+
+  void _promptSignIn() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('เข้าสู่ระบบก่อนเพื่อบันทึกทริป'),
+          action: SnackBarAction(
+            label: 'เข้าสู่ระบบ',
+            onPressed: () => context.goNamed(AppRoute.login.name),
+          ),
+        ),
+      );
   }
 
   void _remix() => context.goNamed(
@@ -455,20 +499,25 @@ class _StickyTopBar extends StatefulWidget {
     required this.scroll,
     required this.trip,
     required this.owned,
+    required this.saved,
+    required this.onSave,
     required this.onBack,
     required this.onMenu,
-    required this.onFollow,
   });
 
   final ScrollController scroll;
   final ApiTrip trip;
+
+  /// The viewer's bookmark, or null to leave the button off — the owner's
+  /// bar, and while it is not yet known who is looking.
+  final bool? saved;
+  final VoidCallback onSave;
 
   /// Null while it is not yet known who is looking — the menu offers only
   /// แชร์ until it is.
   final bool? owned;
   final VoidCallback onBack;
   final ValueChanged<_TripMenuAction> onMenu;
-  final VoidCallback onFollow;
 
   @override
   State<_StickyTopBar> createState() => _StickyTopBarState();
@@ -526,9 +575,18 @@ class _StickyTopBarState extends State<_StickyTopBar> {
                   Expanded(
                     child: _PostAuthor(
                       trip: widget.trip,
-                      onFollow: widget.onFollow,
+                      owned: widget.owned,
                     ),
                   ),
+                  if (widget.saved case final saved?) ...[
+                    _RoundGlassButton(
+                      icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                      iconColor: saved ? AppColors.postPurple : null,
+                      tooltip: saved ? 'เลิกบันทึก' : 'บันทึกทริป',
+                      onTap: widget.onSave,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   _TripMenu(owned: widget.owned, onSelected: widget.onMenu),
                 ],
               ),
@@ -686,66 +744,99 @@ class _HeroAction extends StatelessWidget {
   }
 }
 
-/// The author, centred between the two round buttons.
-class _PostAuthor extends StatelessWidget {
-  const _PostAuthor({required this.trip, required this.onFollow});
+/// The author, centred between the two round buttons. Tapping them opens
+/// their profile; the chip follows them.
+///
+/// The trip says nothing about follows, so whether the viewer already follows
+/// the author comes from their profile — read only for someone else's trip.
+/// No chip on your own, or while it is not yet known whose it is.
+class _PostAuthor extends ConsumerWidget {
+  const _PostAuthor({required this.trip, required this.owned});
 
   final ApiTrip trip;
-  final VoidCallback onFollow;
+  final bool? owned;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final avatar = trip.customer?.avatarUrl;
+    final authorId = trip.ownerId;
+    final showFollow = owned == false;
+    final following = showFollow &&
+        resolveFollowing(
+          ref,
+          authorId,
+          ref.watch(userProfileProvider(authorId)).valueOrNull?.isFollowing ??
+              false,
+        );
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          width: 26,
-          height: 26,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.25),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
-          ),
-          child: avatar == null || avatar.isEmpty
-              ? const Icon(Icons.person, size: 15, color: Colors.white)
-              : CoverImage(source: avatar),
-        ),
-        const SizedBox(width: 7),
         Flexible(
-          child: Text(
-            trip.customer?.name ?? 'ไม่ระบุผู้เขียน',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
+          child: GestureDetector(
+            onTap: () => openUserProfile(context, authorId),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.25),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.8)),
+                  ),
+                  child: avatar == null || avatar.isEmpty
+                      ? const Icon(Icons.person, size: 15, color: Colors.white)
+                      : CoverImage(source: avatar),
+                ),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    trip.customer?.name ?? 'ไม่ระบุผู้เขียน',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        const SizedBox(width: 7),
-        GestureDetector(
-          onTap: onFollow,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.22),
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+        if (showFollow) ...[
+          const SizedBox(width: 7),
+          GestureDetector(
+            onTap: () => toggleFollow(
+              context,
+              ref,
+              userId: authorId,
+              following: following,
             ),
-            child: const Text(
-              'ติดตาม',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+              ),
+              child: Text(
+                following ? 'กำลังติดตาม' : 'ติดตาม',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -946,11 +1037,13 @@ class _RoundGlassButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    this.iconColor,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -966,7 +1059,7 @@ class _RoundGlassButton extends StatelessWidget {
             shape: BoxShape.circle,
             color: Colors.white.withValues(alpha: 0.9),
           ),
-          child: Icon(icon, size: 16, color: AppColors.foreground),
+          child: Icon(icon, size: 16, color: iconColor ?? AppColors.foreground),
         ),
       ),
     );

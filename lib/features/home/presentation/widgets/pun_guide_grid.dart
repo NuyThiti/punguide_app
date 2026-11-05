@@ -16,10 +16,12 @@ class PunGuideGrid extends StatelessWidget {
     required this.trips,
     required this.onOpen,
     this.onSave,
+    this.onLike,
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
     this.distanceLabelOf,
     this.featuredOf,
     this.savedOf,
+    this.likedOf,
     this.overlayOf,
     this.onDelete,
     this.isMine = false,
@@ -30,6 +32,9 @@ class PunGuideGrid extends StatelessWidget {
 
   /// Null leaves the bookmark off every card — see [PunGuideCard.onSave].
   final ValueChanged<TripListItem>? onSave;
+
+  /// Null leaves the heart a readout on every card — see [PunGuideCard.onLike].
+  final ValueChanged<TripListItem>? onLike;
   final EdgeInsetsGeometry padding;
 
   /// "2.3 Km" for a row, or null to leave the violet chip off. Search has no
@@ -41,6 +46,10 @@ class PunGuideGrid extends StatelessWidget {
 
   /// Resolves the bookmark when something outside the row tracks it.
   final bool Function(TripListItem trip)? savedOf;
+
+  /// Resolves the heart when something outside the row tracks it — the
+  /// app-wide like ledger, which every wall reads through.
+  final bool Function(TripListItem trip)? likedOf;
 
   /// Something to lay over a card's top-left corner — Save Draft's "Editing"
   /// tag. Null for rows that carry none. Stacked at the wall rather than
@@ -100,9 +109,11 @@ class PunGuideGrid extends StatelessWidget {
                       distanceLabel: distanceLabelOf?.call(trip),
                       featured: featuredOf?.call(trip) ?? false,
                       saved: savedOf?.call(trip),
+                      liked: likedOf?.call(trip),
                       isMine: isMine,
                       onTap: () => onOpen(trip),
                       onSave: _saveFor(trip),
+                      onLike: _likeFor(trip),
                       onDelete: _deleteFor(trip),
                     ),
             ),
@@ -114,6 +125,11 @@ class PunGuideGrid extends StatelessWidget {
   VoidCallback? _saveFor(TripListItem trip) {
     final onSave = this.onSave;
     return onSave == null ? null : () => onSave(trip);
+  }
+
+  VoidCallback? _likeFor(TripListItem trip) {
+    final onLike = this.onLike;
+    return onLike == null ? null : () => onLike(trip);
   }
 
   VoidCallback? _deleteFor(TripListItem trip) {

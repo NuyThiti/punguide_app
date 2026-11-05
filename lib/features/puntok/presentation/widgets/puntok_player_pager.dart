@@ -36,8 +36,8 @@ class PuntokPlayerPager extends StatefulWidget {
   final ValueChanged<PuntokPost> onSave;
   final VoidCallback onComment;
   final VoidCallback onShare;
-  final VoidCallback onCreator;
-  final VoidCallback onFollow;
+  final ValueChanged<PuntokPost> onCreator;
+  final ValueChanged<PuntokPost> onFollow;
   final ValueChanged<String> onOpenPlan;
 
   /// Supply one to drive the pager from outside — the feed jumps to the top
@@ -130,11 +130,11 @@ class _PuntokPlayerPagerState extends State<PuntokPlayerPager>
           onTogglePlay: _togglePlay,
           onLike: () => widget.onLike(post),
           onSave: () => widget.onSave(post),
-          onFollow: widget.onFollow,
+          onFollow: () => widget.onFollow(post),
           onOpenPlan: widget.onOpenPlan,
           onComment: widget.onComment,
           onShare: widget.onShare,
-          onCreator: widget.onCreator,
+          onCreator: () => widget.onCreator(post),
         );
       },
     );

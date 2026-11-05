@@ -102,29 +102,30 @@ class _Avatar extends StatelessWidget {
                   : null,
             ),
           ),
-          Positioned(
-            bottom: 0,
-            child: GestureDetector(
-              onTap: onFollow,
-              child: Container(
-                width: _badge,
-                height: _badge,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [AppColors.createTop, AppColors.brandOrangeDeep],
+          if (post.followable)
+            Positioned(
+              bottom: 0,
+              child: GestureDetector(
+                onTap: onFollow,
+                child: Container(
+                  width: _badge,
+                  height: _badge,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [AppColors.createTop, AppColors.brandOrangeDeep],
+                    ),
                   ),
-                ),
-                child: Icon(
-                  post.following ? Icons.check : Icons.add,
-                  color: Colors.white,
-                  size: 14,
+                  child: Icon(
+                    post.following ? Icons.check : Icons.add,
+                    color: Colors.white,
+                    size: 14,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

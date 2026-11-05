@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/formatting/compact_count.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../follow/presentation/providers/follow_providers.dart';
 import '../../../shared/models/feed_rows.dart';
 import '../../home/presentation/widgets/pun_guide_grid.dart';
 import '../../my_trips/presentation/delete_trip.dart';
@@ -72,11 +74,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             .clamp(0.0, 1.0);
   }
 
+  /// Remix and Like stay the design's figures — the API has no account-wide
+  /// totals for either. Follower / Following are real, and open their lists;
+  /// a dash while they load or when the read failed.
+  List<ProfileCount> _counts(
+    ({String userId, FollowSummary summary})? follows,
+  ) {
+    void open(FollowListKind kind) => context.pushNamed(
+          AppRoute.userFollows.name,
+          params: {'userId': follows!.userId},
+          queryParams: {'tab': kind.path},
+        );
+
+    final summary = follows?.summary;
+    return <ProfileCount>[
+      ProfileHero.designCounts[0],
+      ProfileHero.designCounts[1],
+      (
+        value: summary == null ? '–' : compactCount(summary.followerCount),
+        label: 'Follower',
+        onTap: follows == null ? null : () => open(FollowListKind.followers),
+      ),
+      (
+        value: summary == null ? '–' : compactCount(summary.followingCount),
+        label: 'Following',
+        onTap: follows == null ? null : () => open(FollowListKind.following),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(authSessionProvider);
     final tab = ref.watch(profileTabProvider);
     final rows = ref.watch(profileTabRowsProvider);
+    final follows = ref.watch(myFollowSummaryProvider).valueOrNull;
 
     void unavailable(String message) => ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -93,6 +125,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: ProfileHero(
                   session: session,
                   coverImage: profileCoverImage,
+                  counts: _counts(follows),
                   onEditAvatar: () =>
                       context.pushNamed(AppRoute.profileEdit.name),
                 ),
@@ -183,7 +216,8 @@ class _TabBody extends ConsumerWidget {
       return _filler(
         Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: ProfileAlbumsView(onOpen: (album) => _openAlbum(context, album)),
+          child:
+              ProfileAlbumsView(onOpen: (album) => _openAlbum(context, album)),
         ),
       );
     }

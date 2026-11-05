@@ -500,8 +500,7 @@ class ChatTurn {
   });
 
   factory ChatTurn.fromJson(Map<String, dynamic> json) => ChatTurn(
-        schemaVersion:
-            Json.integer(json, 'schemaVersion') ?? chatSchemaVersion,
+        schemaVersion: Json.integer(json, 'schemaVersion') ?? chatSchemaVersion,
         conversationId: Json.requiredString(json, 'conversationId'),
         messageId: Json.requiredString(json, 'messageId'),
         status: ChatTurnStatus.from(json['status']),
@@ -553,8 +552,7 @@ class ChatMessage {
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        schemaVersion:
-            Json.integer(json, 'schemaVersion') ?? chatSchemaVersion,
+        schemaVersion: Json.integer(json, 'schemaVersion') ?? chatSchemaVersion,
         id: Json.requiredString(json, 'id'),
         role: ChatRole.from(json['role']),
         status: ChatTurnStatus.from(json['status']),
@@ -645,9 +643,8 @@ class ChatConversation {
         id: Json.requiredString(json, 'id'),
         title: Json.string(json, 'title'),
         locale: Json.string(json, 'locale'),
-        preferences: json['preferences'] is Map
-            ? Json.asMap(json['preferences'])
-            : null,
+        preferences:
+            json['preferences'] is Map ? Json.asMap(json['preferences']) : null,
         lastMessageAt: Json.timestamp(json, 'lastMessageAt'),
         createdAt: Json.timestamp(json, 'createdAt'),
         updatedAt: Json.timestamp(json, 'updatedAt'),

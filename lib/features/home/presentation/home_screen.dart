@@ -9,6 +9,8 @@ import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../trips/presentation/providers/trip_like_providers.dart';
+import '../../trips/presentation/trip_like_action.dart';
 import 'providers/home_feed_providers.dart';
 import 'widgets/destination_card.dart';
 import 'widgets/home_assistant_fab.dart';
@@ -257,16 +259,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           in ref.watch(homeBoardRowsProvider).valueOrNull ?? const [])
         row.trip.id: row,
     };
+    // Hearts flipped anywhere in the app, so a card tapped on ไปกัน or on the
+    // trip's own page comes back here already filled.
+    final liked = ref.watch(tripLikedProvider);
 
     return PunGuideGrid(
       trips: items,
       featuredOf: (trip) => decorated[trip.id]?.featured ?? false,
       savedOf: (trip) => decorated[trip.id]?.isSaved,
+      likedOf: (trip) => likedNow(liked, trip),
       onOpen: (trip) => context.goNamed(
         AppRoute.tripDetail.name,
         params: {'tripId': trip.id},
       ),
       onSave: _toggleSaved,
+      onLike: (trip) => toggleTripLike(context, ref, trip),
     );
   }
 

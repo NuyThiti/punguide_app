@@ -41,8 +41,8 @@ final currentUserProvider = FutureProvider<AuthUser?>((ref) async {
 /// a tier cheaper. Null for anything that is not one of our own places (not a
 /// UUID) or that the lookup failed for — a caller with nothing to add just
 /// renders as it was.
-final placeDetailsProvider =
-    FutureProvider.autoDispose.family<PlaceDetails?, String>((ref, placeId) async {
+final placeDetailsProvider = FutureProvider.autoDispose
+    .family<PlaceDetails?, String>((ref, placeId) async {
   if (!_uuid.hasMatch(placeId)) return null;
   try {
     final api = await ref.watch(plunoApiProvider.future);

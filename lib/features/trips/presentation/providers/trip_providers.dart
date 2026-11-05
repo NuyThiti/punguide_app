@@ -158,17 +158,4 @@ class TripActions {
     }
     return trip;
   }
-
-  Future<Trip> remixTrip(Trip source) async {
-    final now = DateTime.now();
-    final remix = source.copyWith(
-      id: '${source.id}-remix-${now.millisecondsSinceEpoch}',
-      title: '${source.title} Remix',
-      createdAt: now,
-      updatedAt: now,
-      isSaved: true,
-    );
-    await saveTrip(remix);
-    return remix;
-  }
 }

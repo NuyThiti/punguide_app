@@ -151,8 +151,10 @@ class _CreatorBlock extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            _FollowChip(following: post.following, onTap: onFollow),
+            if (post.followable) ...[
+              const SizedBox(width: 8),
+              _FollowChip(following: post.following, onTap: onFollow),
+            ],
           ],
         ),
         const SizedBox(height: 6),

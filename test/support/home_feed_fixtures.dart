@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
+import 'package:pluno/features/follow/presentation/providers/follow_providers.dart';
 import 'package:pluno/core/api/api_providers.dart';
 import 'package:pluno/features/home/presentation/providers/home_feed_providers.dart';
 import 'package:pluno/features/my_trips/presentation/providers/my_trips_providers.dart';
@@ -178,6 +179,20 @@ List<Override> profileOverrides({
     savedFeedProvider.overrideWith(() => _StubSavedFeed(saved)),
     myAlbumsProvider.overrideWith(() => _StubMyAlbums(albums)),
     authSessionProvider.overrideWith((ref) => AuthController(session)),
+    // The account's own counts, as `GET /users/me-1/follow-summary` would
+    // answer them.
+    myFollowSummaryProvider.overrideWith(
+      (ref) async => session == null
+          ? null
+          : (
+              userId: 'me-1',
+              summary: const FollowSummary(
+                followerCount: 1200,
+                followingCount: 42,
+                isFollowing: false,
+              ),
+            ),
+    ),
   ];
 }
 

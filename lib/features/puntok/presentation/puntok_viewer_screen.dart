@@ -6,7 +6,13 @@ import '../../../core/api/api_providers.dart';
 import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../../shared/widgets/app_frame.dart';
+import '../../auth/presentation/providers/auth_providers.dart';
+import '../../follow/presentation/follow_actions.dart';
+import '../../follow/presentation/providers/follow_providers.dart';
+import '../../paigun/presentation/providers/paigun_providers.dart';
+import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../domain/models/puntok_post.dart';
+import 'providers/puntok_providers.dart';
 import 'widgets/puntok_player_pager.dart';
 
 /// What a wall hands the viewer: the clips it was showing, and which one was
@@ -55,20 +61,27 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
             )
           else
             PuntokPlayerPager(
-              posts: _posts,
-              initialIndex: (widget.args?.initialIndex ?? 0)
-                  .clamp(0, _posts.length - 1),
+              posts: withFollowState(
+                _posts,
+                ref.watch(followLedgerProvider),
+                myId: ref.watch(authSessionProvider)?.userId,
+              ),
+              initialIndex:
+                  (widget.args?.initialIndex ?? 0).clamp(0, _posts.length - 1),
               bottomInset: bottomInset,
               onLike: _toggleLike,
               onSave: _toggleSave,
-              onFollow: () => _notYet('ติดตาม'),
+              onFollow: (post) => _follow(post),
               onOpenPlan: (planId) => context.pushNamed(
                 AppRoute.tripDetail.name,
                 params: {'tripId': planId},
               ),
               onComment: () => _notYet('คอมเมนต์'),
               onShare: () => _notYet('แชร์'),
-              onCreator: () => _notYet('โปรไฟล์ครีเอเตอร์'),
+              onCreator: (post) {
+                final id = post.authorId;
+                if (id != null) openUserProfile(context, id);
+              },
             ),
           Positioned(
             top: 0,
@@ -96,7 +109,10 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
 
     await _call(() async {
       final api = await ref.read(plunoApiProvider.future);
-      wasLiked ? await api.trips.unlike(post.id) : await api.trips.like(post.id);
+      wasLiked
+          ? await api.trips.unlike(post.id)
+          : await api.trips.like(post.id);
+      ref.read(tripLikedProvider.notifier).record(post.id, liked: !wasLiked);
     }, onFailure: () => _replace(post));
   }
 
@@ -106,7 +122,10 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
 
     await _call(() async {
       final api = await ref.read(plunoApiProvider.future);
-      wasSaved ? await api.trips.unsave(post.id) : await api.trips.save(post.id);
+      wasSaved
+          ? await api.trips.unsave(post.id)
+          : await api.trips.save(post.id);
+      ref.read(paigunSavedProvider.notifier).record(post.id, saved: !wasSaved);
     }, onFailure: () => _replace(post));
   }
 
@@ -131,8 +150,7 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
     if (!mounted) return;
     setState(() {
       _posts = [
-        for (final existing in _posts)
-          existing.id == post.id ? post : existing,
+        for (final existing in _posts) existing.id == post.id ? post : existing,
       ];
     });
   }
@@ -143,6 +161,12 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
     } else {
       context.goNamed(AppRoute.profile.name);
     }
+  }
+
+  void _follow(PuntokPost post) {
+    final id = post.authorId;
+    if (id == null) return;
+    toggleFollow(context, ref, userId: id, following: post.following);
   }
 
   void _notYet(String label) => _showMessage('$label — เร็วๆ นี้');

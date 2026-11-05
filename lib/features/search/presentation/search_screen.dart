@@ -13,6 +13,8 @@ import '../../home/presentation/providers/home_feed_providers.dart';
 import '../../home/presentation/widgets/destination_card.dart';
 import '../../home/presentation/widgets/home_filter_bar.dart';
 import '../../home/presentation/widgets/pun_guide_grid.dart';
+import '../../trips/presentation/providers/trip_like_providers.dart';
+import '../../trips/presentation/trip_like_action.dart';
 import 'providers/search_providers.dart';
 
 /// Search over the public trip feed.
@@ -215,6 +217,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             trips: trending,
             onOpen: _openTrip,
             onSave: _toggleSaved,
+            likedOf: _likedOf,
+            onLike: _toggleLiked,
           ),
         ],
         if (recents.isEmpty && destinations.isEmpty && trending.isEmpty)
@@ -258,6 +262,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             trips: trips,
             onOpen: _openTrip,
             onSave: _toggleSaved,
+            likedOf: _likedOf,
+            onLike: _toggleLiked,
           ),
         ],
       ],
@@ -291,6 +297,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref.read(recentSearchesProvider.notifier).record(_query);
     context.goNamed(AppRoute.tripDetail.name, params: {'tripId': trip.id});
   }
+
+  bool _likedOf(TripListItem trip) =>
+      likedNow(ref.watch(tripLikedProvider), trip);
+
+  Future<void> _toggleLiked(TripListItem trip) =>
+      toggleTripLike(context, ref, trip);
 
   Future<void> _toggleSaved(TripListItem trip) async {
     // Results are rows of the shared feed, so the flip shows up here and on

@@ -10,6 +10,8 @@ import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../home/presentation/widgets/home_assistant_fab.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../trips/presentation/providers/trip_like_providers.dart';
+import '../../trips/presentation/trip_like_action.dart';
 import '../domain/nearby_trip.dart';
 import 'providers/paigun_providers.dart';
 import 'widgets/paigun_filter_bar.dart';
@@ -33,6 +35,9 @@ class PaigunScreen extends ConsumerWidget {
     final origin = ref.watch(paigunOriginProvider);
     final query = ref.watch(paigunQueryProvider);
     final rows = ref.watch(paigunTripsProvider);
+    // Hearts flipped anywhere in the app — the ledger is the one copy, the
+    // same way the bookmark is.
+    final liked = ref.watch(tripLikedProvider);
 
     return AppFrame(
       background: AppColors.screen,
@@ -89,6 +94,9 @@ class PaigunScreen extends ConsumerWidget {
                         ),
                         onOpen: (row) => _openTrip(context, row),
                         onSave: (row) => _toggleSaved(context, ref, row),
+                        likedOf: (row) => likedNow(liked, row.trip),
+                        onLike: (row) =>
+                            toggleTripLike(context, ref, row.trip),
                         onRetry: () => refreshPaigunFeed(ref),
                       ),
                     ],
@@ -219,6 +227,8 @@ class _Section extends StatelessWidget {
     required this.emptyMessage,
     required this.onOpen,
     required this.onSave,
+    required this.likedOf,
+    required this.onLike,
     required this.onRetry,
   });
 
@@ -226,6 +236,8 @@ class _Section extends StatelessWidget {
   final String emptyMessage;
   final ValueChanged<NearbyTrip> onOpen;
   final ValueChanged<NearbyTrip> onSave;
+  final bool Function(NearbyTrip row) likedOf;
+  final ValueChanged<NearbyTrip> onLike;
   final VoidCallback onRetry;
 
   @override
@@ -233,7 +245,13 @@ class _Section extends StatelessWidget {
     return rows.when(
       data: (all) {
         if (all.isEmpty) return _EmptyState(message: emptyMessage);
-        return PaigunGrid(rows: all, onOpen: onOpen, onSave: onSave);
+        return PaigunGrid(
+          rows: all,
+          onOpen: onOpen,
+          onSave: onSave,
+          likedOf: likedOf,
+          onLike: onLike,
+        );
       },
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),

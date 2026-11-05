@@ -220,7 +220,8 @@ class FilterDateRow extends StatelessWidget {
 }
 
 class _DateWell extends StatelessWidget {
-  const _DateWell({required this.hint, required this.value, required this.onTap});
+  const _DateWell(
+      {required this.hint, required this.value, required this.onTap});
 
   final String hint;
   final DateTime? value;
@@ -259,8 +260,18 @@ class _DateWell extends StatelessWidget {
 /// "28 ก.ย. 69" — short enough for a well half the sheet wide.
 String _thaiDate(DateTime date) {
   const months = <String>[
-    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
   ];
   // Buddhist era, two digits, as every other date on the app reads.
   final year = (date.year + 543) % 100;

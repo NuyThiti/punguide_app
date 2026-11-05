@@ -5,6 +5,9 @@ import '../../../../shared/widgets/cover_image.dart';
 import '../../../auth/domain/auth_session.dart';
 import 'profile_top_bar.dart';
 
+/// One figure under the avatar. [onTap] null draws it inert.
+typedef ProfileCount = ({String value, String label, VoidCallback? onTap});
+
 /// The dark card the profile opens on (Figma 1539-8068): cover photo, the
 /// avatar, the name, and the four counts. Back and จัดการบัญชี live in
 /// [ProfileTopBar], which is pinned over this rather than scrolling with it.
@@ -16,21 +19,26 @@ class ProfileHero extends StatelessWidget {
     required this.session,
     required this.coverImage,
     required this.onEditAvatar,
+    this.counts = designCounts,
   });
 
   final AuthSession? session;
   final String coverImage;
   final VoidCallback onEditAvatar;
 
+  /// What the counts row prints. Defaults to the design's own figures.
+  final List<ProfileCount> counts;
+
   static const double avatarSize = 84;
 
-  /// Remix / Like / Follower / Following. The API returns none of these, so
-  /// the figures are the design's own and are not read from the session.
-  static const counts = <(String, String)>[
-    ('2.9K', 'Remix'),
-    ('1K', 'Like'),
-    ('828', 'Follower'),
-    ('342', 'Following'),
+  /// Remix / Like / Follower / Following as the design prints them. The API
+  /// has no account-wide Remix or Like totals, so those two stay the design's
+  /// own; the profile screen swaps in real follower counts.
+  static const designCounts = <ProfileCount>[
+    (value: '2.9K', label: 'Remix', onTap: null),
+    (value: '1K', label: 'Like', onTap: null),
+    (value: '828', label: 'Follower', onTap: null),
+    (value: '342', label: 'Following', onTap: null),
   ];
 
   @override
@@ -103,7 +111,7 @@ class ProfileHero extends StatelessWidget {
                 ),
                 if (signedIn) ...[
                   const SizedBox(height: 16),
-                  const ProfileCountsRow(),
+                  ProfileCountsRow(counts: counts),
                 ],
               ],
             ),
@@ -114,46 +122,52 @@ class ProfileHero extends StatelessWidget {
   }
 }
 
-/// The four counts, straight on the cover — no pill behind them.
+/// The counts, straight on the cover — no pill behind them.
 class ProfileCountsRow extends StatelessWidget {
-  const ProfileCountsRow({super.key});
+  const ProfileCountsRow({super.key, this.counts = ProfileHero.designCounts});
+
+  final List<ProfileCount> counts;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        for (final (value, label) in ProfileHero.counts)
+        for (final (:value, :label, :onTap) in counts)
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      height: 1.1,
-                      fontWeight: FontWeight.w800,
+            child: GestureDetector(
+              onTap: onTap,
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        height: 1.1,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.66),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.66),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
       ],

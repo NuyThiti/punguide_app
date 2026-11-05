@@ -17,7 +17,7 @@ class ProfileTopBar extends StatelessWidget {
     required this.progress,
     required this.title,
     required this.onBack,
-    required this.onMenu,
+    this.onMenu,
   });
 
   /// 0 = over the hero, 1 = over the wall. Anything between crossfades.
@@ -25,7 +25,9 @@ class ProfileTopBar extends StatelessWidget {
 
   final String title;
   final VoidCallback onBack;
-  final VoidCallback onMenu;
+
+  /// Null on someone else's profile, which has no account menu.
+  final VoidCallback? onMenu;
 
   /// Height of the bar itself, above the status bar.
   static const double barHeight = 48;
@@ -81,14 +83,18 @@ class ProfileTopBar extends StatelessWidget {
               ),
             ),
           ),
-          _BarButton(
-            icon: Icons.menu,
-            tooltip: 'จัดการบัญชี',
-            color: glyph,
-            discOpacity: 0,
-            size: 22,
-            onTap: onMenu,
-          ),
+          if (onMenu case final onMenu?)
+            _BarButton(
+              icon: Icons.menu,
+              tooltip: 'จัดการบัญชี',
+              color: glyph,
+              discOpacity: 0,
+              size: 22,
+              onTap: onMenu,
+            )
+          else
+            // Keeps the title centred.
+            const SizedBox(width: 36),
         ],
       ),
     );

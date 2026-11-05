@@ -13,6 +13,7 @@ class AuthSession {
     required this.email,
     this.avatarImage,
     this.name,
+    this.userId,
   });
 
   /// The signed-in account as the API describes it.
@@ -26,6 +27,7 @@ class AuthSession {
         email: user.email ?? '',
         avatarImage: user.avatarUrl,
         name: user.name,
+        userId: user.id,
       );
 
   /// The stand-in account used by tests and by the offline guest path.
@@ -51,6 +53,10 @@ class AuthSession {
   /// make it one.
   final String? name;
 
+  /// The account's id. Null only for the offline stand-in and [demo], which
+  /// have no server account behind them.
+  final String? userId;
+
   final String handle;
   final String email;
   final String? avatarImage;
@@ -70,6 +76,7 @@ class AuthSession {
       email: email,
       avatarImage: '$url${separator}t=${DateTime.now().millisecondsSinceEpoch}',
       name: name,
+      userId: userId,
     );
   }
 
@@ -80,9 +87,10 @@ class AuthSession {
       other.handle == handle &&
       other.email == email &&
       other.avatarImage == avatarImage &&
-      other.name == name;
+      other.name == name &&
+      other.userId == userId;
 
   @override
   int get hashCode =>
-      Object.hash(displayName, handle, email, avatarImage, name);
+      Object.hash(displayName, handle, email, avatarImage, name, userId);
 }

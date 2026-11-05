@@ -3,6 +3,7 @@ import '../network/api_config.dart';
 import 'services/auth_api.dart';
 import 'services/budget_api.dart';
 import 'services/chat_api.dart';
+import 'services/follow_api.dart';
 import 'services/itinerary_api.dart';
 import 'services/media_api.dart';
 import 'services/places_api.dart';
@@ -25,6 +26,7 @@ export 'models/day.dart';
 export 'models/destination_place.dart';
 export 'models/enums.dart';
 export 'models/expense.dart';
+export 'models/follow.dart';
 export 'models/json.dart' show Json, Patch;
 export 'models/media.dart';
 export 'models/place.dart';
@@ -40,6 +42,7 @@ export 'models/user_location.dart';
 export 'services/auth_api.dart';
 export 'services/budget_api.dart';
 export 'services/chat_api.dart';
+export 'services/follow_api.dart';
 export 'services/itinerary_api.dart';
 export 'services/media_api.dart';
 export 'services/places_api.dart';
@@ -55,6 +58,7 @@ class PlunoApi {
   PlunoApi(this.client)
       : auth = AuthApi(client),
         users = UsersApi(client),
+        follows = FollowApi(client),
         trips = TripsApi(client),
         itinerary = ItineraryApi(client),
         budget = BudgetApi(client),
@@ -72,6 +76,9 @@ class PlunoApi {
   final PlunoApiClient client;
   final AuthApi auth;
   final UsersApi users;
+
+  /// Follow / unfollow, follower lists, and other people's profiles.
+  final FollowApi follows;
   final TripsApi trips;
   final ItineraryApi itinerary;
 

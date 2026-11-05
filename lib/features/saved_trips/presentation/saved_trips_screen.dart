@@ -16,6 +16,8 @@ import '../../profile/presentation/profile_screen.dart' show profileCoverImage;
 import '../../profile/presentation/providers/profile_providers.dart';
 import '../../puntok/domain/models/puntok_post.dart';
 import '../../puntok/presentation/puntok_viewer_screen.dart';
+import '../../trips/presentation/providers/trip_like_providers.dart';
+import '../../trips/presentation/trip_like_action.dart';
 
 /// ทริปที่บันทึกไว้ — the traveller's bookmarks, from `GET /trips/saved`.
 ///
@@ -88,6 +90,12 @@ class SavedTripsScreen extends ConsumerWidget {
                                       // definition, whatever the row itself
                                       // was fetched saying.
                                       savedOf: (_) => true,
+                                      likedOf: (trip) => likedNow(
+                                        ref.watch(tripLikedProvider),
+                                        trip,
+                                      ),
+                                      onLike: (trip) =>
+                                          toggleTripLike(context, ref, trip),
                                       onOpen: (trip) =>
                                           _open(context, trips, trip),
                                       onSave: (trip) => _unsave(

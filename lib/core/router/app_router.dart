@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../api/pluno_api.dart' show FollowListKind;
+
 import '../../features/ai_chat/presentation/ai_chat_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/create_post/presentation/create_post_screen.dart';
@@ -9,6 +11,8 @@ import '../../features/create_puntok/presentation/create_puntok_screen.dart';
 import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_screen.dart';
+import '../../features/follow/presentation/follow_list_screen.dart';
+import '../../features/follow/presentation/user_profile_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/launch/presentation/launch_screen.dart';
 import '../../features/location_access/presentation/location_access_screen.dart';
@@ -60,6 +64,8 @@ enum AppRoute {
   albumDetail,
   locationAccess,
   locationPicker,
+  userProfile,
+  userFollows,
 }
 
 /// Holds a location-led screen behind the Location Access page until the
@@ -303,6 +309,28 @@ final appRouter = GoRouter(
       name: AppRoute.profileAccount.name,
       pageBuilder: (context, state) =>
           _instantPage(state, const AccountScreen()),
+    ),
+    GoRoute(
+      path: '/users/:userId',
+      name: AppRoute.userProfile.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        UserProfileScreen(userId: state.params['userId']!),
+      ),
+    ),
+    // ?tab=followers|following picks the tab it opens on.
+    GoRoute(
+      path: '/users/:userId/follows',
+      name: AppRoute.userFollows.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        FollowListScreen(
+          userId: state.params['userId']!,
+          initial: state.queryParams['tab'] == FollowListKind.following.path
+              ? FollowListKind.following
+              : FollowListKind.followers,
+        ),
+      ),
     ),
     GoRoute(
       path: '/profile',

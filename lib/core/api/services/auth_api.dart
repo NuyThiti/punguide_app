@@ -72,7 +72,7 @@ class AuthApi {
   /// revoked — this ends the session on this device.
   Future<void> logout() async {
     try {
-      await _client.post<dynamic>('/auth/logout');
+      await _client.postNoContent('/auth/logout');
     } finally {
       await _client.clearSession();
     }

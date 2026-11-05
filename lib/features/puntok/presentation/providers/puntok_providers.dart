@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../follow/presentation/providers/follow_providers.dart';
+import '../../../paigun/presentation/providers/paigun_providers.dart';
+import '../../../trips/presentation/providers/trip_like_providers.dart';
 import '../../domain/models/puntok_post.dart';
 
 /// The tab in force above the feed.
@@ -66,7 +69,8 @@ class PuntokFeedNotifier extends AsyncNotifier<List<PuntokPost>> {
       ..removeWhere((existing) => existing.id == post.id)
       ..insert(0, post);
     final current = state.valueOrNull;
-    if (current == null || ref.read(puntokFeedTabProvider) != PuntokFeed.forYou) {
+    if (current == null ||
+        ref.read(puntokFeedTabProvider) != PuntokFeed.forYou) {
       return;
     }
     state = AsyncData([
@@ -93,6 +97,9 @@ class PuntokFeedNotifier extends AsyncNotifier<List<PuntokPost>> {
       _replace(post);
       rethrow;
     }
+    // A clip is a trip like any other, so a heart tapped here has to show on
+    // the card the same post wears over on a wall.
+    ref.read(tripLikedProvider.notifier).record(id, liked: liked);
   }
 
   /// Same shape as [toggleLike], for the bookmark.
@@ -108,6 +115,7 @@ class PuntokFeedNotifier extends AsyncNotifier<List<PuntokPost>> {
       _replace(post);
       rethrow;
     }
+    ref.read(paigunSavedProvider.notifier).record(id, saved: saved);
   }
 
   PuntokPost? _find(String id) {
@@ -126,4 +134,28 @@ class PuntokFeedNotifier extends AsyncNotifier<List<PuntokPost>> {
     final index = _shared.indexWhere((existing) => existing.id == post.id);
     if (index >= 0) _shared[index] = post;
   }
+}
+
+/// The clips with each creator's follow badge set from the viewer's own taps,
+/// and with no follow control at all on the viewer's own clips ([myId]).
+///
+/// The list endpoint says nothing about follows, so a clip starts unfollowed
+/// and only the ledger moves it. Untouched rows come back as the same objects.
+List<PuntokPost> withFollowState(
+  List<PuntokPost> posts,
+  FollowLedger ledger, {
+  String? myId,
+}) {
+  if (ledger.following.isEmpty && myId == null) return posts;
+  return [
+    for (final post in posts)
+      if (myId != null && post.authorId == myId)
+        post.followable ? post.copyWith(followable: false) : post
+      else
+        switch (ledger.isFollowing(post.authorId ?? '')) {
+          final bool following when following != post.following =>
+            post.copyWith(following: following),
+          _ => post,
+        },
+  ];
 }

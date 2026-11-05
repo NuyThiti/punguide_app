@@ -5,6 +5,7 @@ import '../../../../core/api/pluno_api.dart';
 import '../../../../shared/models/feed_rows.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../my_trips/presentation/providers/my_trips_providers.dart';
+import '../../../paigun/presentation/providers/paigun_providers.dart';
 
 /// The five icons under the profile hero (Figma 1539-8068).
 ///
@@ -66,6 +67,8 @@ class SavedFeedNotifier extends AsyncNotifier<List<TripListItem>> {
       if (previous != null) state = AsyncData<List<TripListItem>>(previous);
       rethrow;
     }
+    // So the same trip's bookmark goes hollow on Home and its own page too.
+    ref.read(paigunSavedProvider.notifier).record(tripId, saved: false);
   }
 }
 
