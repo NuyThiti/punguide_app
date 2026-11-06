@@ -534,20 +534,6 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined, color: primaryColor),
-              title: const Text(
-                'แก้ไขรายละเอียดทริป',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                context.goNamed(
-                  AppRoute.editTripBrief.name,
-                  params: {'tripId': widget.tripId},
-                );
-              },
-            ),
           ],
         ),
       ),
