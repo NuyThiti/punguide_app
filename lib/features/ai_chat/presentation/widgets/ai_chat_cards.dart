@@ -383,7 +383,8 @@ class AiChatItineraryPreview extends StatelessWidget {
         if (block.durationDays != null) '${block.durationDays} วัน',
         if (block.estimatedCost != null)
           'ประมาณ ${block.estimatedCost!.round()} ${block.currency ?? ''}'
-              '${block.isPerPerson ? '/คน' : ''}'.trim(),
+                  '${block.isPerPerson ? '/คน' : ''}'
+              .trim(),
       ];
 }
 

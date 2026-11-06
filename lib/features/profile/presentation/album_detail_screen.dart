@@ -121,8 +121,7 @@ class _AlbumBody extends ConsumerWidget {
                 )
               else
                 SliverGrid(
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
                     crossAxisSpacing: 3,
                     mainAxisSpacing: 3,

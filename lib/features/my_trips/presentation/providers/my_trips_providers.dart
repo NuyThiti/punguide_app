@@ -99,8 +99,7 @@ class MyTripsNotifier extends AsyncNotifier<List<TripListItem>> {
 final visibleMyTripsProvider = Provider<AsyncValue<List<TripListItem>>>((ref) {
   final filter = ref.watch(myTripsFilterProvider);
   return ref.watch(myTripsProvider).whenData(
-        (trips) =>
-            List<TripListItem>.unmodifiable(trips.where(filter.accepts)),
+        (trips) => List<TripListItem>.unmodifiable(trips.where(filter.accepts)),
       );
 });
 

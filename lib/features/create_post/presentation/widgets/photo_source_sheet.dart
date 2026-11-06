@@ -69,8 +69,8 @@ class _SourceRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.postSourceIconWell,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.2)),
                 ),
                 child: SvgPicture.asset(iconAsset, width: 24, height: 24),
               ),

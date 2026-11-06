@@ -10,6 +10,8 @@ import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
+import '../../trip_detail/presentation/widgets/comment_sheet.dart';
+import '../../trips/presentation/providers/trip_comment_providers.dart';
 import '../domain/models/puntok_post.dart';
 import 'providers/puntok_providers.dart';
 import 'widgets/puntok_player_pager.dart';
@@ -87,7 +89,10 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
             PuntokPlayerPager(
               key: _pagerKey,
               controller: _pageController,
-              posts: posts,
+              posts: withCommentCounts(
+                posts,
+                ref.watch(tripCommentCountProvider),
+              ),
               bottomInset: navHeight,
               onLike: (post) => _act(() => _feed.toggleLike(post.id)),
               onSave: (post) => _act(() => _feed.toggleSave(post.id)),
@@ -96,7 +101,12 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
                 AppRoute.tripDetail.name,
                 params: {'tripId': planId},
               ),
-              onComment: () => _notYet('คอมเมนต์'),
+              onComment: (post) => showCommentSheet(
+                context,
+                tripId: post.id,
+                ownerId: post.authorId ?? '',
+                commentCount: post.comments ?? 0,
+              ),
               onShare: () => _notYet('แชร์'),
               onCreator: (post) {
                 final id = post.authorId;

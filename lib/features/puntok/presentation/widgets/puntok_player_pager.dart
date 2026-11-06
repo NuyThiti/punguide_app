@@ -34,7 +34,9 @@ class PuntokPlayerPager extends StatefulWidget {
 
   final ValueChanged<PuntokPost> onLike;
   final ValueChanged<PuntokPost> onSave;
-  final VoidCallback onComment;
+
+  /// The 💬 on the clip on screen.
+  final ValueChanged<PuntokPost> onComment;
   final VoidCallback onShare;
   final ValueChanged<PuntokPost> onCreator;
   final ValueChanged<PuntokPost> onFollow;
@@ -132,7 +134,7 @@ class _PuntokPlayerPagerState extends State<PuntokPlayerPager>
           onSave: () => widget.onSave(post),
           onFollow: () => widget.onFollow(post),
           onOpenPlan: widget.onOpenPlan,
-          onComment: widget.onComment,
+          onComment: () => widget.onComment(post),
           onShare: widget.onShare,
           onCreator: () => widget.onCreator(post),
         );

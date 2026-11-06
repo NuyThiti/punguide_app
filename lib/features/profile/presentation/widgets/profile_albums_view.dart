@@ -132,9 +132,8 @@ class _ShelfTabs extends StatelessWidget {
                             ? AppColors.foreground
                             : AppColors.navIconMuted,
                         fontSize: 15,
-                        fontWeight: shelf == active
-                            ? FontWeight.w700
-                            : FontWeight.w500,
+                        fontWeight:
+                            shelf == active ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 6),

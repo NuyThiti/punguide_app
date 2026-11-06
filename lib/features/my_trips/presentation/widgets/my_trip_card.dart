@@ -206,7 +206,8 @@ class _TripMenu extends StatelessWidget {
     return PopupMenuButton<VoidCallback>(
       onSelected: (action) => action(),
       tooltip: 'ตัวเลือก',
-      icon: const Icon(Icons.more_vert, size: 20, color: AppColors.navIconMuted),
+      icon:
+          const Icon(Icons.more_vert, size: 20, color: AppColors.navIconMuted),
       padding: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       color: Colors.white,

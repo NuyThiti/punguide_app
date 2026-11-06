@@ -223,8 +223,7 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
                         index: _mainIndex,
                         zoom: _zoom,
                         onDelete: () => _removePhoto(_mainIndex),
-                        onZoomChanged: (value) =>
-                            setState(() => _zoom = value),
+                        onZoomChanged: (value) => setState(() => _zoom = value),
                         onReset: () => setState(() => _zoom = 1),
                       ),
                       const SizedBox(height: 12),
@@ -413,8 +412,7 @@ class _TitleField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide:
-              const BorderSide(color: AppColors.postPurple, width: 1.3),
+          borderSide: const BorderSide(color: AppColors.postPurple, width: 1.3),
         ),
       ),
     );
@@ -560,8 +558,8 @@ class _MainPhotoPreview extends StatelessWidget {
             _RoundIconButton(
               icon: Icons.fullscreen,
               tooltip: 'ดูเต็มจอ',
-              onTap: () => showFullImages(context,
-                  urls: allPaths, initialIndex: index),
+              onTap: () =>
+                  showFullImages(context, urls: allPaths, initialIndex: index),
               background: AppColors.postField,
               foreground: AppColors.postRowIcon,
               size: 32,
@@ -693,8 +691,7 @@ class _DashedAddPhotosButton extends StatelessWidget {
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
         side: const BorderSide(color: AppColors.postDashed),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         padding: const EdgeInsets.symmetric(vertical: 14),
       ),
       icon: const Icon(Icons.add_photo_alternate_outlined,

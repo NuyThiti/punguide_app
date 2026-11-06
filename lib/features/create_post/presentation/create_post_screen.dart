@@ -1497,9 +1497,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
     final phone = live.internationalPhoneNumber ?? live.nationalPhoneNumber;
     final hours = _todayOpenClose(live);
-    final fillContact = !item.details.hasContact &&
-        phone != null &&
-        phone.trim().isNotEmpty;
+    final fillContact =
+        !item.details.hasContact && phone != null && phone.trim().isNotEmpty;
     final fillHours = !item.details.hasTime && hours != null;
     if (!fillContact && !fillHours) return;
 
@@ -1739,8 +1738,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final resolvedTitle = _titleForPublish(draft);
     final title = resolvedTitle.isEmpty ? _defaultPostTitle : resolvedTitle;
     final resolvedDestination = _destinationForPublish(draft);
-    final destination =
-        resolvedDestination.isEmpty ? _defaultPostDestination : resolvedDestination;
+    final destination = resolvedDestination.isEmpty
+        ? _defaultPostDestination
+        : resolvedDestination;
     setState(() => _publishing = true);
     try {
       if (draft.topics.expand((s) => s.photos).length > 200)
@@ -1854,8 +1854,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         // `description`, which every reader sees. `specialNotes` beside it
         // is the owner's private note and must not carry public prose.
         description: overview.isEmpty ? null : overview,
-        coverMediaId:
-            coverId == null ? const Patch<String>.clear() : Patch<String>.value(coverId),
+        coverMediaId: coverId == null
+            ? const Patch<String>.clear()
+            : Patch<String>.value(coverId),
         contents: contents,
         // Stored exactly as typed: the server does no per-head arithmetic,
         // so "ต่อคน" stays the app's reading of the same number.
@@ -1901,7 +1902,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
     }
   }
-
 
   /// The first picture the post carries, in the order it reads. Null when it
   /// carries none — sections can be all words, and the oldest posts reference
@@ -1954,8 +1954,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     }
     final prepared = await preparePostPhoto(path);
     try {
-      _uploaded[key] =
-          await api.media.uploadUnattached(bytes: prepared.$1, filename: prepared.$2);
+      _uploaded[key] = await api.media
+          .uploadUnattached(bytes: prepared.$1, filename: prepared.$2);
       _uncertainUploads.remove(key);
     } on ApiException catch (error) {
       if (error.isNetworkFailure || (error.statusCode ?? 0) >= 500) {
@@ -1969,8 +1969,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// the draft. Fire-and-forget: a failed cleanup is not worth surfacing,
   /// and there is no auto-cleanup job on the server either way yet.
   void _forgetUploadIfOrphaned(String path) {
-    final stillUsed = _blocks
-        .any((block) => block.items.any((item) => item.imagePaths.contains(path)));
+    final stillUsed = _blocks.any(
+        (block) => block.items.any((item) => item.imagePaths.contains(path)));
     if (stillUsed) return;
     final media = _uploaded.remove(path);
     if (media == null) return;
@@ -2143,123 +2143,123 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       return AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
                         child: PostBlock(
-                        key: ValueKey(_blocks[index].id),
-                        titleController: _blocks[index].title,
-                        titleFocus: _blocks[index].titleFocus,
-                        bodyController: _blocks[index].body,
-                        imagePath: null,
-                        onImportPhotos: _createFromPhotos,
-                        importing: _arranging,
-                        items: _blocks[index]
-                            .items
-                            .map((item) => PostBlockItem(
-                                id: item.id,
-                                bodyController: item.body,
-                                imagePaths: item.imagePaths,
-                                place: item.place,
-                                location: item.location,
-                                legacyMapId: item.legacyMapId,
-                                details: item.details,
-                                locationFieldKey:
-                                    _locationFieldKeyFor(item.id),
-                                locationHasError: _locationErrorItemIds
-                                    .contains(item.id)))
-                            .toList(growable: false),
-                        imagePaths: _blocks[index].imagePaths,
-                        unavailableImages: _unavailablePaths,
-                        coverPath: _coverPath,
-                        onMoveImage: (photoIndex) =>
-                            _movePhoto(index, photoIndex),
-                        onDropImage: (move) =>
-                            _transferPhoto(move.$1, move.$2, index),
-                        onDropBeforeImage: (move, position) =>
-                            _transferPhoto(move.$1, move.$2, index, position),
-                        onRemoveItem: (itemIndex) =>
-                            _removeItem(index, itemIndex),
-                        onPickImageInItem: (itemIndex) =>
-                            _pickPhoto(index, itemIndex),
-                        onClearImagesInItem: (itemIndex) => setState(() {
-                          final removed = List.of(
-                              _blocks[index].items[itemIndex].imagePaths);
-                          _blocks[index].items[itemIndex].imagePaths.clear();
-                          removed.forEach(_forgetUploadIfOrphaned);
-                          _syncCover();
-                        }),
-                        onRemoveImageInItem: (itemIndex, photoIndex) =>
-                            setState(() {
-                          final removed = _blocks[index]
-                              .items[itemIndex]
-                              .imagePaths
-                              .removeAt(photoIndex);
-                          _forgetUploadIfOrphaned(removed);
-                          _syncCover();
-                        }),
-                        onMoveImageInItem: (itemIndex, photoIndex) =>
-                            _movePhotoFrom((
-                          block: index,
-                          item: itemIndex,
-                          photo: photoIndex
-                        )),
-                        onDropImageInItem: (move, itemIndex) =>
-                            _transferPhotoFrom(move, index, itemIndex),
-                        blockIndex: index,
-                        onDropBeforeImageInItem: (move, itemIndex, position) =>
-                            _transferPhotoFrom(
-                                move, index, itemIndex, position),
-                        onPickPlaceInItem: (itemIndex) =>
-                            _pickPlace(index, itemIndex),
-                        onClearPlaceInItem: (itemIndex) => setState(() {
-                          final item = _blocks[index].items[itemIndex];
-                          item.place = null;
-                          item.location = const ContentLocation(
-                              status: ContentLocationStatus.none);
-                          item.legacyMapId = null;
-                        }),
-                        onConfirmLocationInItem: (itemIndex) =>
-                            _confirmLocation(index, itemIndex),
-                        onSelectCover: (path) {
-                          if (_legacyUrls.contains(path)) {
-                            _message(
-                                'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
-                            return;
-                          }
-                          setState(() {
-                            _coverPath = path;
-                            _coverOffPage = false;
-                          });
-                        },
-                        onRemoveImage: (photoIndex) => setState(() {
-                          final removed = _blocks[index]
+                          key: ValueKey(_blocks[index].id),
+                          titleController: _blocks[index].title,
+                          titleFocus: _blocks[index].titleFocus,
+                          bodyController: _blocks[index].body,
+                          imagePath: null,
+                          onImportPhotos: _createFromPhotos,
+                          importing: _arranging,
+                          items: _blocks[index]
                               .items
-                              .first
-                              .imagePaths
-                              .removeAt(photoIndex);
-                          _forgetUploadIfOrphaned(removed);
-                          _syncCover();
-                        }),
-                        place: _blocks[index].items.first.place,
-                        onPickImage: () => _pickPhoto(index),
-                        onExtra: (itemIndex, extra) =>
-                            _editExtra(index, itemIndex, extra),
-                        onClearImage: () => setState(() {
-                          final removed =
-                              List.of(_blocks[index].items.first.imagePaths);
-                          _blocks[index].items.first.imagePaths.clear();
-                          removed.forEach(_forgetUploadIfOrphaned);
-                          _syncCover();
-                        }),
-                        onPickPlace: () => _pickPlace(index),
-                        onClearPlace: () => setState(() {
-                          final item = _blocks[index].items.first;
-                          item.place = null;
-                          item.location = const ContentLocation(
-                              status: ContentLocationStatus.none);
-                          item.legacyMapId = null;
-                        }),
-                        onRemove: _blocks.length == 1
-                            ? null
-                            : () => _removeBlock(index),
-                        locationErrorText: 'กรุณาเพิ่ม Location',
+                              .map((item) => PostBlockItem(
+                                  id: item.id,
+                                  bodyController: item.body,
+                                  imagePaths: item.imagePaths,
+                                  place: item.place,
+                                  location: item.location,
+                                  legacyMapId: item.legacyMapId,
+                                  details: item.details,
+                                  locationFieldKey:
+                                      _locationFieldKeyFor(item.id),
+                                  locationHasError:
+                                      _locationErrorItemIds.contains(item.id)))
+                              .toList(growable: false),
+                          imagePaths: _blocks[index].imagePaths,
+                          unavailableImages: _unavailablePaths,
+                          coverPath: _coverPath,
+                          onMoveImage: (photoIndex) =>
+                              _movePhoto(index, photoIndex),
+                          onDropImage: (move) =>
+                              _transferPhoto(move.$1, move.$2, index),
+                          onDropBeforeImage: (move, position) =>
+                              _transferPhoto(move.$1, move.$2, index, position),
+                          onRemoveItem: (itemIndex) =>
+                              _removeItem(index, itemIndex),
+                          onPickImageInItem: (itemIndex) =>
+                              _pickPhoto(index, itemIndex),
+                          onClearImagesInItem: (itemIndex) => setState(() {
+                            final removed = List.of(
+                                _blocks[index].items[itemIndex].imagePaths);
+                            _blocks[index].items[itemIndex].imagePaths.clear();
+                            removed.forEach(_forgetUploadIfOrphaned);
+                            _syncCover();
+                          }),
+                          onRemoveImageInItem: (itemIndex, photoIndex) =>
+                              setState(() {
+                            final removed = _blocks[index]
+                                .items[itemIndex]
+                                .imagePaths
+                                .removeAt(photoIndex);
+                            _forgetUploadIfOrphaned(removed);
+                            _syncCover();
+                          }),
+                          onMoveImageInItem: (itemIndex, photoIndex) =>
+                              _movePhotoFrom((
+                            block: index,
+                            item: itemIndex,
+                            photo: photoIndex
+                          )),
+                          onDropImageInItem: (move, itemIndex) =>
+                              _transferPhotoFrom(move, index, itemIndex),
+                          blockIndex: index,
+                          onDropBeforeImageInItem:
+                              (move, itemIndex, position) => _transferPhotoFrom(
+                                  move, index, itemIndex, position),
+                          onPickPlaceInItem: (itemIndex) =>
+                              _pickPlace(index, itemIndex),
+                          onClearPlaceInItem: (itemIndex) => setState(() {
+                            final item = _blocks[index].items[itemIndex];
+                            item.place = null;
+                            item.location = const ContentLocation(
+                                status: ContentLocationStatus.none);
+                            item.legacyMapId = null;
+                          }),
+                          onConfirmLocationInItem: (itemIndex) =>
+                              _confirmLocation(index, itemIndex),
+                          onSelectCover: (path) {
+                            if (_legacyUrls.contains(path)) {
+                              _message(
+                                  'รูปเดิมนี้ไม่มี mediaId สำหรับตั้งปก กรุณาเลือกรูปใหม่ในส่วนใหม่');
+                              return;
+                            }
+                            setState(() {
+                              _coverPath = path;
+                              _coverOffPage = false;
+                            });
+                          },
+                          onRemoveImage: (photoIndex) => setState(() {
+                            final removed = _blocks[index]
+                                .items
+                                .first
+                                .imagePaths
+                                .removeAt(photoIndex);
+                            _forgetUploadIfOrphaned(removed);
+                            _syncCover();
+                          }),
+                          place: _blocks[index].items.first.place,
+                          onPickImage: () => _pickPhoto(index),
+                          onExtra: (itemIndex, extra) =>
+                              _editExtra(index, itemIndex, extra),
+                          onClearImage: () => setState(() {
+                            final removed =
+                                List.of(_blocks[index].items.first.imagePaths);
+                            _blocks[index].items.first.imagePaths.clear();
+                            removed.forEach(_forgetUploadIfOrphaned);
+                            _syncCover();
+                          }),
+                          onPickPlace: () => _pickPlace(index),
+                          onClearPlace: () => setState(() {
+                            final item = _blocks[index].items.first;
+                            item.place = null;
+                            item.location = const ContentLocation(
+                                status: ContentLocationStatus.none);
+                            item.legacyMapId = null;
+                          }),
+                          onRemove: _blocks.length == 1
+                              ? null
+                              : () => _removeBlock(index),
+                          locationErrorText: 'กรุณาเพิ่ม Location',
                         ),
                       );
                     }),

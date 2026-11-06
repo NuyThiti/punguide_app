@@ -188,7 +188,7 @@ void main() {
 
     expect(
       container.read(locationPermissionProvider),
-      LocationPermissionStatus.denied,
+      LocationPermissionStatus.later,
     );
     // With no destination carried in, the board is the fallback — a refusal is
     // not a dead end, it just means no GPS fix. (The gate passes the real
@@ -224,8 +224,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets("the picker opens on the account's stored place",
-      (tester) async {
+  testWidgets("the picker opens on the account's stored place", (tester) async {
     _phone(tester);
 
     final adapter = FakeAdapter({

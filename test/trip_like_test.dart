@@ -13,7 +13,8 @@ ProviderContainer _container(FakeAdapter adapter) {
   final container = ProviderContainer(
     overrides: <Override>[
       plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
-      authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo)),
+      authSessionProvider
+          .overrideWith((ref) => AuthController(AuthSession.demo)),
     ],
   );
   addTearDown(container.dispose);
@@ -73,7 +74,8 @@ void main() {
 
   test('the ledger answers for a row, falling back to what it was fetched as',
       () {
-    final container = _container(FakeAdapter(const <String, List<FakeReply>>{}));
+    final container =
+        _container(FakeAdapter(const <String, List<FakeReply>>{}));
     final trip = feedTrip();
 
     expect(likedNow(container.read(tripLikedProvider), trip), isFalse);

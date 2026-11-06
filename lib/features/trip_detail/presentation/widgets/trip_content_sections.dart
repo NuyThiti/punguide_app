@@ -19,8 +19,10 @@ List<String> postPhotoUrls(List<TripContent> sections) => [
       for (final section in sections)
         if (section.mediaIds != null)
           for (final image in section.images)
-            if (!image.unavailable && image.urls != null) image.urls!.full
-            else ...[]
+            if (!image.unavailable && image.urls != null)
+              image.urls!.full
+            else
+              ...[]
         else
           ...section.imageUrls,
     ];
@@ -215,8 +217,8 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
     // A suggested pin is the assistant's guess and the server hides it from a
     // public read; only a place the writer confirmed is theirs to publish.
     final location = section.location;
-    final confirmed = location != null &&
-        location.status == ContentLocationStatus.confirmed;
+    final confirmed =
+        location != null && location.status == ContentLocationStatus.confirmed;
     final place = confirmed ? _placeLabel(location) : null;
 
     // One of our own places — fetched automatically so a reader sees its
@@ -234,8 +236,7 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
     final contact = section.contactInfo?.trim() ?? '';
     // The national form is what the design prints ("085 809 0835"); the
     // international one dials from anywhere, so it is what the link calls.
-    final phone =
-        live?.nationalPhoneNumber ?? live?.internationalPhoneNumber;
+    final phone = live?.nationalPhoneNumber ?? live?.internationalPhoneNumber;
     final dial = live?.internationalPhoneNumber ?? live?.nationalPhoneNumber;
     final website = live?.websiteUri?.trim();
     final hack = section.tripHack?.trim() ?? '';
@@ -266,9 +267,24 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                // Nothing to put under it: a stored `ContentLocation` has no
-                // address, so the design's purple street line has no field
-                // behind it. The place name is the whole of what is known.
+                // The purple street line. A stored `ContentLocation` has no
+                // address of its own, so it is Google's, through the place;
+                // the row opens Google Maps either way.
+                if (place != null) ...[
+                  const SizedBox(height: 6),
+                  SpotMapLink(
+                    name: place,
+                    address: live?.address,
+                    latitude: location?.latitude,
+                    longitude: location?.longitude,
+                    // A pin often carries Google's id itself (`ChIJ…`).
+                    googlePlaceId: live?.externalRef ??
+                        (placeId != null && placeId.startsWith('ChIJ')
+                            ? placeId
+                            : null),
+                    googleMapsUri: live?.googleMapsUri,
+                  ),
+                ],
                 if (section.content.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(
@@ -319,8 +335,8 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
                 // Only offered when there is something behind it — a spot
                 // with no hours, no way there and no tip has nothing to
                 // show, and an empty drawer is worse than none.
-                if (_hasDetails(time, transport, contact, phone, website,
-                    hack)) ...[
+                if (_hasDetails(
+                    time, transport, contact, phone, website, hack)) ...[
                   const SizedBox(height: 12),
                   SpotDetailsToggle(
                     open: _open,
@@ -363,8 +379,8 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
     final week = live?.regularOpeningHours?.weekdayDescriptions ??
         live?.currentOpeningHours?.weekdayDescriptions ??
         const <String>[];
-    final openNow =
-        live?.currentOpeningHours?.openNow ?? live?.regularOpeningHours?.openNow;
+    final openNow = live?.currentOpeningHours?.openNow ??
+        live?.regularOpeningHours?.openNow;
 
     final opens = section.opensAt;
     final closes = section.closesAt;
@@ -480,8 +496,10 @@ class _SpotCarouselState extends State<_SpotCarousel> {
 
   /// Only loadable photos can open, so tapping the third of four opens the
   /// third one the reader can actually see.
-  List<String> get _gallery =>
-      [for (final url in widget.photos) if (url != null) url];
+  List<String> get _gallery => [
+        for (final url in widget.photos)
+          if (url != null) url
+      ];
 
   int _galleryIndexOf(int index) {
     var seen = 0;
@@ -634,6 +652,105 @@ class SpotInfoRow extends StatelessWidget {
 /// A phone opens the dialler and the website opens in the browser. A link
 /// that cannot open stays where it is rather than failing loudly — there is
 /// nothing the reader could do about it.
+/// The spot's location as a link: a pin and its address in purple, underlined,
+/// opening Google Maps at the place.
+///
+/// Google's own link for the place wins when it gave one; otherwise a search
+/// pinned to the coordinates (and to Google's id for the place when known, so
+/// the right listing opens rather than a bare pin), and failing those, the
+/// name.
+class SpotMapLink extends StatelessWidget {
+  const SpotMapLink({
+    super.key,
+    required this.name,
+    this.address,
+    this.latitude,
+    this.longitude,
+    this.googlePlaceId,
+    this.googleMapsUri,
+  });
+
+  final String name;
+
+  /// Printed when known; otherwise the row reads "เปิดในแผนที่".
+  final String? address;
+  final double? latitude;
+  final double? longitude;
+  final String? googlePlaceId;
+  final String? googleMapsUri;
+
+  /// Where the tap goes.
+  Uri get uri {
+    final direct = googleMapsUri?.trim();
+    if (direct != null && direct.isNotEmpty) {
+      final parsed = Uri.tryParse(direct);
+      if (parsed != null && parsed.hasScheme) return parsed;
+    }
+    final placeId = googlePlaceId?.trim();
+    return Uri.https('www.google.com', '/maps/search/', <String, String>{
+      'api': '1',
+      'query':
+          latitude != null && longitude != null ? '$latitude,$longitude' : name,
+      if (placeId != null && placeId.isNotEmpty) 'query_place_id': placeId,
+    });
+  }
+
+  Future<void> _open(BuildContext context) async {
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (opened || !context.mounted) return;
+    } catch (_) {
+      if (!context.mounted) return;
+    }
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(const SnackBar(content: Text('เปิดแผนที่ไม่สำเร็จ')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final line = address?.trim();
+    final label = line == null || line.isEmpty ? 'เปิดในแผนที่' : line;
+
+    return Semantics(
+      link: true,
+      label: 'เปิด $name ในแผนที่',
+      child: GestureDetector(
+        key: const Key('spot-map-link'),
+        onTap: () => _open(context),
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 1),
+              child: Icon(
+                Icons.location_on_outlined,
+                size: 15,
+                color: AppColors.postPurple,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.postPurple,
+                  fontSize: 13,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppColors.postPurple,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class SpotLinkRow extends StatelessWidget {
   const SpotLinkRow({this.phone, this.dial, this.website});
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/cover_image.dart';
@@ -101,17 +100,23 @@ class _LocationAccessScreenState extends ConsumerState<LocationAccessScreen> {
     // Straight to the map, as the design has it: having just granted the
     // permission, the next thing to settle is which place the board measures
     // from.
-    context.goNamed(AppRoute.locationPicker.name);
+    // Carries the rest of the launch sequence across the map, so granting the
+    // permission does not skip whatever was still owed after it.
+    final then = widget.from;
+    context.go(
+      then == null
+          ? '/location/pick'
+          : '/location/pick?then=${Uri.encodeComponent(then)}',
+    );
   }
 
-  /// "ไว้ทีหลังนะ" — remembered as a refusal so the app does not ask twice in
-  /// one run, then on to wherever they were going. Saying "later" to the OS
+  /// "ไว้ทีหลังนะ" — remembered so the app does not ask twice in one run, then on to wherever they were going. Saying "later" to the OS
   /// does not mean giving up on the board: the origin can still be set by hand
   /// in the picker.
   Future<void> _later() async {
     await ref
         .read(locationPermissionProvider.notifier)
-        .record(LocationPermissionStatus.denied);
+        .record(LocationPermissionStatus.later);
     if (!mounted) return;
     context.go(widget.from ?? '/paigun');
   }

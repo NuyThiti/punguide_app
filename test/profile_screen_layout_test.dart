@@ -46,8 +46,7 @@ final _saved = <TripListItem>[
 /// Enough rows that the wall is taller than the viewport — the sticky-bar
 /// cases need something to scroll past.
 List<TripListItem> _tallWall() => <TripListItem>[
-      for (var i = 0; i < 10; i++)
-        feedTrip(id: 'tall-$i', title: 'ทริปที่ $i'),
+      for (var i = 0; i < 10; i++) feedTrip(id: 'tall-$i', title: 'ทริปที่ $i'),
     ];
 
 Widget _harness({
@@ -333,8 +332,7 @@ void main() {
     expect(find.text(_mine.first.title), findsNothing);
   }, skip: !tripDeleteEnabled);
 
-  testWidgets('albums carry no delete, whatever the flag says',
-      (tester) async {
+  testWidgets('albums carry no delete, whatever the flag says', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
@@ -469,8 +467,7 @@ void main() {
     expect(find.text('detail-stub'), findsOneWidget);
   });
 
-  testWidgets('the shared nav is present and labelled My Post',
-      (tester) async {
+  testWidgets('the shared nav is present and labelled My Post', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());

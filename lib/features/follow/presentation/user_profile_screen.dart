@@ -119,7 +119,8 @@ class _Body extends ConsumerWidget {
                 return PunGuideGrid(
                   trips: theirs,
                   isMine: profile.isMe,
-                  likedOf: (trip) => likedNow(ref.watch(tripLikedProvider), trip),
+                  likedOf: (trip) =>
+                      likedNow(ref.watch(tripLikedProvider), trip),
                   // Their own wall has nothing to heart; everyone else's does.
                   onLike: profile.isMe
                       ? null

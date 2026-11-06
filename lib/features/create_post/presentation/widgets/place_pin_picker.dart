@@ -117,7 +117,8 @@ class _PlacePinPickerState extends ConsumerState<_PlacePinPicker> {
   /// place is close enough to describe where they are standing. Failing
   /// that, the stored place's own address: the account keeps a `places` row,
   /// so there is always one to hand when anything is stored at all.
-  PostPlace _currentLocationPlace(UserLocation? stored, List<PostPlace> nearby) {
+  PostPlace _currentLocationPlace(
+      UserLocation? stored, List<PostPlace> nearby) {
     final closest = nearby.isEmpty ? null : nearby.first;
     final near = (closest?.distanceKm ?? 1) < 0.15;
     final own = stored == null ? null : postPlaceFromSearchResult(stored.place);
@@ -665,8 +666,7 @@ class _SuggestedList extends StatelessWidget {
                 ),
             ],
           ),
-        if (options.contactInfo case final contact?
-            when !contact.isEmpty)
+        if (options.contactInfo case final contact? when !contact.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: ListTile(
@@ -680,9 +680,8 @@ class _SuggestedList extends StatelessWidget {
                 if (contact.website?.trim().isNotEmpty ?? false)
                   contact.website!.trim(),
               ].join('\n')),
-              isThreeLine:
-                  (contact.phoneNumber?.trim().isNotEmpty ?? false) &&
-                      (contact.website?.trim().isNotEmpty ?? false),
+              isThreeLine: (contact.phoneNumber?.trim().isNotEmpty ?? false) &&
+                  (contact.website?.trim().isNotEmpty ?? false),
             ),
           ),
         for (final place in options.options)

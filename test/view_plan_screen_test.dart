@@ -305,7 +305,8 @@ void main() {
 
   testWidgets('Trip Overview reads remix · heart · bookmark on one row',
       (tester) async {
-    tester.view.physicalSize = const Size(393 * 3, 900 * 3);
+    // Room to spare — the test font is far wider than a real one.
+    tester.view.physicalSize = const Size(700 * 3, 900 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
@@ -351,6 +352,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(adapter.paths, contains('DELETE /trips/trip-1/save'));
     expect(find.descendant(of: save, matching: find.text('7')), findsOneWidget);
+  });
+
+  testWidgets('on a narrow phone the chips drop under the heading, whole',
+      (tester) async {
+    tester.view.physicalSize = const Size(320 * 3, 900 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pumpTrip(tester, viewer: _visitor);
+
+    final heading = tester.getRect(find.text('Trip Overview'));
+    final heart = tester.getRect(find.byKey(const Key('like-chip')));
+    expect(heart.top, greaterThan(heading.bottom));
+    expect(tester.takeException(), isNull);
+    // Never squeezed to "Trip…".
+    expect(
+      tester.widget<Text>(find.text('Trip Overview')).overflow,
+      isNot(TextOverflow.ellipsis),
+    );
   });
 
   testWidgets('tapping the heart likes the trip and counts it at once',

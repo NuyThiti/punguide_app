@@ -579,7 +579,8 @@ class _PostBlockContentItem extends StatelessWidget {
                     ),
                     child: _BlockPhoto(
                       source: item.imagePaths[0],
-                      unavailable: unavailableImages.contains(item.imagePaths[0]),
+                      unavailable:
+                          unavailableImages.contains(item.imagePaths[0]),
                       isCover: item.imagePaths[0] == coverPath,
                       onSelectCover: onSelectCover == null
                           ? null
@@ -1099,11 +1100,10 @@ class _PhotoActionsSheet extends StatelessWidget {
           ),
           if (canSetCover && !isCover)
             ListTile(
-              leading: const Icon(Icons.image_outlined,
-                  color: AppColors.postPurple),
+              leading:
+                  const Icon(Icons.image_outlined, color: AppColors.postPurple),
               title: const Text('ตั้งเป็นรูปปก'),
-              onTap: () =>
-                  Navigator.of(context).pop(_PhotoAction.setCover),
+              onTap: () => Navigator.of(context).pop(_PhotoAction.setCover),
             ),
           ListTile(
             leading: const Icon(Icons.drive_file_move_outline,
@@ -1112,8 +1112,8 @@ class _PhotoActionsSheet extends StatelessWidget {
             onTap: () => Navigator.of(context).pop(_PhotoAction.move),
           ),
           ListTile(
-            leading:
-                const Icon(Icons.delete_outline, color: AppColors.brandOrangeDeep),
+            leading: const Icon(Icons.delete_outline,
+                color: AppColors.brandOrangeDeep),
             title: const Text('ลบรูปนี้'),
             onTap: () => Navigator.of(context).pop(_PhotoAction.remove),
           ),

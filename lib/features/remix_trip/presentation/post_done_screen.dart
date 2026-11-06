@@ -168,8 +168,7 @@ class _ShareRow extends StatelessWidget {
           background: const Color(0xFFE2402F),
           // Stand-in until the real PDF mark is dropped in — see the share
           // icons tracked for this screen.
-          icon: const Icon(Icons.picture_as_pdf,
-              size: 20, color: Colors.white),
+          icon: const Icon(Icons.picture_as_pdf, size: 20, color: Colors.white),
           onTap: () => _todo(context, 'ส่งออก PDF ยังไม่เปิดใช้งาน'),
         ),
         _ShareAction(

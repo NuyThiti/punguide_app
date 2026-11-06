@@ -126,8 +126,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       height: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.4,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(AppColors.brandOrange),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.brandOrange),
                       ),
                     ),
                   ),

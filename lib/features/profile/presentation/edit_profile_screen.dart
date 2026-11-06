@@ -374,9 +374,8 @@ class _LocationRow extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: name == null
-                        ? AppColors.muted
-                        : AppColors.foreground,
+                    color:
+                        name == null ? AppColors.muted : AppColors.foreground,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -515,7 +514,8 @@ class _EditNotice extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(32, 64, 32, 48),
       child: Column(
         children: [
-          const Icon(Icons.lock_outline, size: 34, color: AppColors.navIconMuted),
+          const Icon(Icons.lock_outline,
+              size: 34, color: AppColors.navIconMuted),
           const SizedBox(height: 12),
           Text(
             message,

@@ -39,7 +39,9 @@ Future<void> confirmDeleteTrip(
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          error.statusCode == 401 ? 'เข้าสู่ระบบก่อน จึงจะลบได้' : error.message,
+          error.statusCode == 401
+              ? 'เข้าสู่ระบบก่อน จึงจะลบได้'
+              : error.message,
         ),
       ),
     );
@@ -49,7 +51,6 @@ Future<void> confirmDeleteTrip(
     );
   }
 }
-
 
 /// The "ลบทริปนี้" confirmation on its own — true only on ลบ.
 ///

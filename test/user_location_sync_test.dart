@@ -45,7 +45,15 @@ FakeAdapter _adapter({
       FakeReply(putStatus, <String, dynamic>{'location': stored ?? _place()}),
     ],
     'DELETE $_path': <FakeReply>[const FakeReply(204, null)],
-    'GET $_suggest': <FakeReply>[FakeReply(200, nearby ?? [_place()])],
+    'PUT /users/me/preferences/location-access': <FakeReply>[
+      FakeReply(200, <String, dynamic>{
+        'locationAccess': <String, dynamic>{'status': 'denied'},
+        'travelStyle': null,
+      }),
+    ],
+    'GET $_suggest': <FakeReply>[
+      FakeReply(200, nearby ?? [_place()])
+    ],
   });
 }
 
@@ -200,8 +208,7 @@ void main() {
       expect(_locationCalls(adapter), ['PUT $_path', 'PUT $_path']);
     });
 
-    test('a reading days old is not filed as where the traveller is',
-        () async {
+    test('a reading days old is not filed as where the traveller is', () async {
       final adapter = _adapter();
       final container = _container(adapter);
 
@@ -298,7 +305,47 @@ void main() {
 
       // Taking the permission back is a request for the data to be gone.
       expect(container.read(locationFixProvider), isNull);
-      expect(_locationCalls(adapter), ['PUT $_path', 'DELETE $_path']);
+      // One call, not two: recording anything but granted clears the stored
+      // place server-side, so a separate DELETE would be wasted.
+      expect(_locationCalls(adapter), ['PUT $_path']);
+      expect(
+        adapter.paths,
+        contains('PUT /users/me/preferences/location-access'),
+      );
+      expect(
+        adapter.bodyOf('PUT /users/me/preferences/location-access'),
+        containsPair('status', 'denied'),
+      );
+    });
+
+    test('ไว้ทีหลังนะ is recorded as later, not as a refusal', () async {
+      final adapter = _adapter();
+      final container = _container(adapter);
+
+      await container
+          .read(locationPermissionProvider.notifier)
+          .record(LocationPermissionStatus.later);
+
+      // "not now" and "no" read the same on the device but not to the
+      // account, which keeps them apart.
+      expect(
+        adapter.bodyOf('PUT /users/me/preferences/location-access'),
+        containsPair('status', 'later'),
+      );
+    });
+
+    test('"could not ask" is not an answer the account is told about',
+        () async {
+      final adapter = _adapter();
+      final container = _container(adapter);
+
+      await container
+          .read(locationPermissionProvider.notifier)
+          .record(LocationPermissionStatus.unavailable);
+
+      // The API takes granted, denied or later; none of them is true of a
+      // question that could not be put, and `denied` would wipe the place.
+      expect(adapter.paths, isEmpty);
     });
 
     test('"could not ask" does not throw away a good stored position',

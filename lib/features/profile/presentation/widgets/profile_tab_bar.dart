@@ -71,8 +71,7 @@ class ProfileTabBar extends StatelessWidget {
 
 /// One tab's art: either a bundled SVG or a Material glyph, never both.
 class _TabSpec {
-  const _TabSpec.asset(this.tab, String this.asset, this.tooltip)
-      : icon = null;
+  const _TabSpec.asset(this.tab, String this.asset, this.tooltip) : icon = null;
   const _TabSpec.glyph(this.tab, IconData this.icon, this.tooltip)
       : asset = null;
 
@@ -115,8 +114,7 @@ class _Tab extends StatelessWidget {
                     : SvgPicture.asset(
                         asset,
                         height: 21,
-                        colorFilter:
-                            ColorFilter.mode(color, BlendMode.srcIn),
+                        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
                       ),
               ),
             ),

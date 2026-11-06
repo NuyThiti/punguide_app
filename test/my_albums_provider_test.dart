@@ -23,20 +23,20 @@ ProviderContainer _container(FakeAdapter adapter) {
 
 /// A page of `limit` rows, every other one a clip the server still labels
 /// `content`.
-List<Map<String, dynamic>> _page(int count, {int from = 0}) => <Map<String,
-    dynamic>>[
-  for (var i = from; i < from + count; i++)
-    if (i.isEven)
-      feedTripJson(id: 'post-$i', title: 'โพสต์ $i', type: 'content')
-    else
-      feedTripJson(
-        id: 'clip-$i',
-        title: 'คลิป $i',
-        type: 'content',
-        coverUrl: 'https://cdn.test/$i.mov',
-        coverMediaType: 'video',
-      ),
-];
+List<Map<String, dynamic>> _page(int count, {int from = 0}) =>
+    <Map<String, dynamic>>[
+      for (var i = from; i < from + count; i++)
+        if (i.isEven)
+          feedTripJson(id: 'post-$i', title: 'โพสต์ $i', type: 'content')
+        else
+          feedTripJson(
+            id: 'clip-$i',
+            title: 'คลิป $i',
+            type: 'content',
+            coverUrl: 'https://cdn.test/$i.mov',
+            coverMediaType: 'video',
+          ),
+    ];
 
 void main() {
   test('asks for posts and plans, never puntok', () async {

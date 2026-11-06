@@ -5,8 +5,16 @@ enum LocationPermissionStatus {
   /// The traveller allowed it — once, or while using the app.
   granted,
 
-  /// The traveller tapped "Don't Allow".
+  /// The traveller tapped "Don't Allow" in the OS dialog, or took the
+  /// permission back later.
   denied,
+
+  /// The traveller tapped ไว้ทีหลังนะ, so the OS was never asked.
+  ///
+  /// Kept apart from [denied] because the account records the two
+  /// differently — see `LocationAccessAnswer` — and because they mean
+  /// different things: one is a refusal, the other is "not now".
+  later,
 
   /// The flow cannot run at all on this build.
   unavailable,

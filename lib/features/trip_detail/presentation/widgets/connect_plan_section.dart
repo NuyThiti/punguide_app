@@ -51,7 +51,9 @@ class ConnectPlanSection extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      connected ? 'เชื่อมแพลน${title ?? ''}' : 'เชื่อมแพลนของฉัน',
+                      connected
+                          ? 'เชื่อมแพลน${title ?? ''}'
+                          : 'เชื่อมแพลนของฉัน',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -67,7 +69,8 @@ class ConnectPlanSection extends StatelessWidget {
                           : 'เชื่อมโพสต์นี้กับแพลนท่องเที่ยวของคุณ',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                      style:
+                          const TextStyle(color: AppColors.muted, fontSize: 12),
                     ),
                   ],
                 ),
@@ -99,7 +102,8 @@ class _Leading extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: coverUrl == null || coverUrl!.isEmpty
-            ? const Icon(Icons.map_outlined, color: AppColors.postPurple, size: 18)
+            ? const Icon(Icons.map_outlined,
+                color: AppColors.postPurple, size: 18)
             : CoverImage(source: coverUrl!),
       );
     }

@@ -7,6 +7,7 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../data/paigun_origin_store.dart';
 import '../../domain/nearby_trip.dart';
+import '../../../trip_style/presentation/providers/trip_style_providers.dart';
 import '../../domain/trip_filter.dart';
 
 /// The chips across the top of the ไปกัน board (Figma 2480-67909).
@@ -96,7 +97,21 @@ final paigunQueryProvider = StateProvider<String>((ref) => '');
 /// Empty until the traveller finishes the wizard, and it outlives the wizard's
 /// own route so reopening it shows the answers already in force. Kept in
 /// memory only — a filter is a mood, not a setting.
-final tripFilterProvider = StateProvider<TripFilter>((ref) => TripFilter.none);
+/// The ตัวกรอง sheet's answers, as the board is currently narrowed by them.
+///
+/// Starts from สไตล์เที่ยวของฉัน — the launch sequence asks it once, and the
+/// point of asking is that the board arrives already leaning the traveller's
+/// way. `main` seeds [storedTripStyleProvider] before the app builds; the page
+/// itself writes here directly when it is answered, because that snapshot
+/// does not change mid-run.
+final tripFilterProvider = StateProvider<TripFilter>((ref) {
+  final chosen = ref.watch(storedTripStyleProvider);
+  if (chosen == null || chosen.isEmpty) return TripFilter.none;
+  return TripFilter.none.copyWith(
+    styles: chosen.styles,
+    constraints: chosen.constraints,
+  );
+});
 
 /// The board's wall, straight from `GET /trips`.
 ///

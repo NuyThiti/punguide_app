@@ -9,6 +9,8 @@ import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
+import 'package:pluno/features/trip_detail/presentation/widgets/comment_sheet.dart';
+import 'package:pluno/features/trip_detail/presentation/widgets/trip_content_sections.dart';
 import 'package:pluno/features/trips/presentation/providers/trip_providers.dart';
 import 'package:pluno/shared/widgets/cover_image.dart';
 
@@ -393,6 +395,309 @@ void main() {
     expect(find.text('Remix Trip'), findsOneWidget);
   });
 
+  group('comments', () {
+    Map<String, dynamic> comment(
+      String id,
+      String body, {
+      String authorId = 'u9',
+      String username = 'pongsak.t',
+      String? parentId,
+      int replyCount = 0,
+      bool canEdit = false,
+      bool canDelete = false,
+    }) =>
+        <String, dynamic>{
+          'id': id,
+          'tripId': 'trip-1',
+          'parentId': parentId,
+          'body': body,
+          'author': {'id': authorId, 'username': username},
+          'replyCount': replyCount,
+          'createdAt': DateTime.now()
+              .subtract(const Duration(hours: 5))
+              .toUtc()
+              .toIso8601String(),
+          'editedAt': null,
+          'isMine': canEdit,
+          'canEdit': canEdit,
+          'canDelete': canDelete,
+        };
+
+    Map<String, dynamic> page(List<Map<String, dynamic>> items) =>
+        <String, dynamic>{
+          'items': items,
+          'total': items.length,
+          'limit': 20,
+          'offset': 0,
+          'hasMore': false,
+        };
+
+    final thread = [
+      comment('c1', 'remix ไปแล้ว งบรวม ฿1,200 พอดี'),
+      comment(
+        'c2',
+        'On Lok Yun ไปกี่โมงดีคะ',
+        authorId: 'u8',
+        username: 'mintwalks',
+        replyCount: 1,
+      ),
+    ];
+
+    Future<void> openSheet(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('comment-chip')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a post shows 💬 with its count', (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        trip: {..._postJson(), 'commentCount': 200},
+      );
+
+      final chip = find.byKey(const Key('comment-chip'));
+      expect(chip, findsOneWidget);
+      expect(
+        find.descendant(of: chip, matching: find.text('200')),
+        findsOneWidget,
+      );
+    });
+
+    // A fresh test, not a re-pump: an unchanged tree keeps the cached trip.
+    testWidgets('a plan has no 💬', (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        trip: {..._postJson(), 'type': 'plan_trip'},
+      );
+      expect(find.byKey(const Key('comment-chip')), findsNothing);
+    });
+
+    testWidgets('the sheet lists the thread, marks the owner, opens replies',
+        (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'GET /trips/trip-1/comments': [FakeReply(200, page(thread))],
+          'GET /trips/trip-1/comments/c2/replies': [
+            FakeReply(
+              200,
+              page([
+                comment(
+                  'r1',
+                  'ไปก่อน 08:00 ครับ',
+                  authorId: 'u1',
+                  username: 'cattravel',
+                  parentId: 'c2',
+                ),
+              ]),
+            ),
+          ],
+        },
+      );
+      await openSheet(tester);
+
+      expect(find.text('Comment'), findsOneWidget);
+      expect(find.text('remix ไปแล้ว งบรวม ฿1,200 พอดี'), findsOneWidget);
+      expect(find.textContaining('5 ชม.', findRichText: true), findsWidgets);
+      expect(find.text('ดูการตอบกลับ 1 รายการ'), findsOneWidget);
+
+      await tester.tap(find.text('ดูการตอบกลับ 1 รายการ'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ไปก่อน 08:00 ครับ'), findsOneWidget);
+      expect(find.text('ดูการตอบกลับ 1 รายการ'), findsNothing);
+      // u1 owns the post.
+      expect(find.textContaining('เจ้าของทริป', findRichText: true),
+          findsOneWidget);
+    });
+
+    testWidgets(
+        'sending a comment posts it, shows it first, and counts it at '
+        'once', (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        trip: {..._postJson(), 'commentCount': 2},
+        extra: {
+          'GET /trips/trip-1/comments': [FakeReply(200, page(thread))],
+          'POST /trips/trip-1/comments': [
+            FakeReply(201, comment('c3', 'สวยมากค่ะ', canEdit: true)),
+          ],
+        },
+      );
+      await openSheet(tester);
+
+      await tester.enterText(find.byType(TextField), '  สวยมากค่ะ  ');
+      await tester.pump();
+      await tester.tap(find.byTooltip('ส่ง'));
+      await tester.pumpAndSettle();
+
+      expect(
+          adapter.bodyOf('POST /trips/trip-1/comments'), {'body': 'สวยมากค่ะ'});
+      expect(
+        tester.getTopLeft(find.text('สวยมากค่ะ')).dy,
+        lessThan(
+          tester.getTopLeft(find.text('remix ไปแล้ว งบรวม ฿1,200 พอดี')).dy,
+        ),
+      );
+
+      // The 💬 behind the sheet moved without the trip being read again.
+      final chip = find.byKey(const Key('comment-chip'));
+      expect(
+          find.descendant(of: chip, matching: find.text('3')), findsOneWidget);
+      expect(
+        adapter.paths.where((p) => p == 'GET /trips/trip-1'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('answering a reply names who it answers', (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'GET /trips/trip-1/comments': [FakeReply(200, page(thread))],
+          'GET /trips/trip-1/comments/c2/replies': [
+            FakeReply(
+              200,
+              page([
+                comment(
+                  'r1',
+                  'ไปก่อน 08:00 ครับ',
+                  authorId: 'u1',
+                  username: 'cattravel',
+                  parentId: 'c2',
+                ),
+              ]),
+            ),
+          ],
+          'POST /trips/trip-1/comments': [
+            FakeReply(
+              201,
+              comment('r2', '@cattravel ขอบคุณค่ะ', parentId: 'c2'),
+            ),
+          ],
+        },
+      );
+      await openSheet(tester);
+      await tester.tap(find.text('ดูการตอบกลับ 1 รายการ'));
+      await tester.pumpAndSettle();
+
+      // ตอบกลับ under cattravel's reply — the last one on screen.
+      await tester.tap(find.text('ตอบกลับ').last);
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'ขอบคุณค่ะ');
+      await tester.pump();
+      await tester.tap(find.byTooltip('ส่ง'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.bodyOf('POST /trips/trip-1/comments'), {
+        'body': '@cattravel ขอบคุณค่ะ',
+        'parentId': 'r1',
+      });
+    });
+
+    testWidgets('ตอบกลับ sends the comment as parentId', (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'GET /trips/trip-1/comments': [FakeReply(200, page(thread))],
+          'POST /trips/trip-1/comments': [
+            FakeReply(201, comment('r9', 'ขอบคุณค่ะ', parentId: 'c1')),
+          ],
+        },
+      );
+      await openSheet(tester);
+
+      await tester.tap(find.text('ตอบกลับ').first);
+      await tester.pump();
+      expect(find.text('ตอบกลับ @pongsak.t'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'ขอบคุณค่ะ');
+      await tester.pump();
+      await tester.tap(find.byTooltip('ส่ง'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.bodyOf('POST /trips/trip-1/comments'),
+          {'body': 'ขอบคุณค่ะ', 'parentId': 'c1'});
+      expect(find.text('ขอบคุณค่ะ'), findsOneWidget);
+    });
+
+    testWidgets('signed out, writing asks for an account and sends nothing',
+        (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        extra: {
+          'GET /trips/trip-1/comments': [FakeReply(200, page(thread))],
+        },
+      );
+      await openSheet(tester);
+
+      await tester.tap(find.text('ตอบกลับ').first);
+      await tester.pump();
+
+      expect(find.text('เข้าสู่ระบบก่อนเพื่อแสดงความคิดเห็น'), findsOneWidget);
+      expect(find.text('ตอบกลับ @pongsak.t'), findsNothing);
+      expect(adapter.paths, isNot(contains('POST /trips/trip-1/comments')));
+    });
+
+    testWidgets('a deletable comment can be removed from its menu',
+        (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'GET /trips/trip-1/comments': [
+            FakeReply(
+              200,
+              page([
+                comment('c1', 'ของฉันเอง', canEdit: true, canDelete: true),
+                ...thread.skip(1),
+              ]),
+            ),
+          ],
+          'DELETE /trips/trip-1/comments/c1': [const FakeReply(204, null)],
+        },
+      );
+      await openSheet(tester);
+
+      // Only the deletable one offers a menu.
+      expect(find.byTooltip('ตัวเลือกความคิดเห็น'), findsOneWidget);
+      await tester.tap(find.byTooltip('ตัวเลือกความคิดเห็น'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ลบความคิดเห็น'));
+      await tester.pumpAndSettle();
+
+      expect(adapter.paths, contains('DELETE /trips/trip-1/comments/c1'));
+      expect(find.text('ของฉันเอง'), findsNothing);
+      expect(find.text('On Lok Yun ไปกี่โมงดีคะ'), findsOneWidget);
+    });
+  });
+
+  test('commentAge reads like the design', () {
+    final now = DateTime(2026, 11, 5, 12);
+    expect(commentAge(now.subtract(const Duration(seconds: 20)), now: now),
+        'เมื่อสักครู่');
+    expect(commentAge(now.subtract(const Duration(minutes: 7)), now: now),
+        '7 นาที');
+    expect(
+        commentAge(now.subtract(const Duration(hours: 5)), now: now), '5 ชม.');
+    expect(
+        commentAge(now.subtract(const Duration(days: 3)), now: now), '3 วัน');
+    expect(commentAge(DateTime(2026, 3, 7), now: now), '7 มี.ค. 2569');
+  });
+
   testWidgets('back and ☰ are see-through glass, not solid discs',
       (tester) async {
     phone(tester);
@@ -683,6 +988,107 @@ void main() {
           }),
         ],
       };
+
+  testWidgets("a pinned spot shows Google's address as a map link",
+      (tester) async {
+    phone(tester);
+    final reply = google();
+    final body = Map<String, dynamic>.from(
+      reply['GET /places/$placeId']!.single.body! as Map,
+    )..['address'] = 'ถนนพระสุเมรุ แขวงบวรนิเวศ เขตพระนคร';
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [pinnedSpot()]),
+      extra: {
+        'GET /places/$placeId': [FakeReply(200, body)],
+      },
+    );
+
+    final link = find.byKey(const Key('spot-map-link'));
+    expect(link, findsOneWidget);
+    // Shown without opening the details — it is the place's own line.
+    expect(
+      find.descendant(
+        of: link,
+        matching: find.text('ถนนพระสุเมรุ แขวงบวรนิเวศ เขตพระนคร'),
+      ),
+      findsOneWidget,
+    );
+    final uri = tester.widget<SpotMapLink>(find.byType(SpotMapLink)).uri;
+    expect(uri.host, 'www.google.com');
+    expect(uri.queryParameters['query_place_id'], 'g-1');
+  });
+
+  testWidgets('a pin Google says nothing about still opens the map',
+      (tester) async {
+    phone(tester);
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [pinnedSpot()]),
+    );
+
+    expect(find.text('เปิดในแผนที่'), findsOneWidget);
+    final uri = tester.widget<SpotMapLink>(find.byType(SpotMapLink)).uri;
+    expect(uri.queryParameters['query'], 'On Lok Yun');
+  });
+
+  testWidgets("a pin holding Google's own id reads that place's address",
+      (tester) async {
+    phone(tester);
+    const googleId = 'ChIJ0QDC8BOZ4jARY7WqIrAOkck';
+    await _pumpPost(
+      tester,
+      trip: _postJson(contents: [
+        {
+          'title': 'ของหวาน',
+          'content': 'ขนมปังปิ้ง',
+          'location': {
+            'status': 'confirmed',
+            'name': 'มนต์นมสด',
+            'placeId': googleId,
+            'latitude': 13.754154,
+            'longitude': 100.501137,
+          },
+        },
+      ]),
+      extra: {
+        'GET /places/google/$googleId': [
+          const FakeReply(200, {
+            'externalRef': googleId,
+            'name': 'มนต์นมสด',
+            'address': '160/1-3 ถนนดินสอ เขตพระนคร',
+          }),
+        ],
+      },
+    );
+
+    expect(find.text('160/1-3 ถนนดินสอ เขตพระนคร'), findsOneWidget);
+    final uri = tester.widget<SpotMapLink>(find.byType(SpotMapLink)).uri;
+    expect(uri.queryParameters['query'], '13.754154,100.501137');
+    expect(uri.queryParameters['query_place_id'], googleId);
+  });
+
+  test('the map link prefers Google, then coordinates, then the name', () {
+    expect(
+      const SpotMapLink(
+        name: 'On Lok Yun',
+        latitude: 13.75,
+        longitude: 100.5,
+        googleMapsUri: 'https://maps.google.com/?cid=123',
+      ).uri.toString(),
+      'https://maps.google.com/?cid=123',
+    );
+    expect(
+      const SpotMapLink(name: 'On Lok Yun', latitude: 13.75, longitude: 100.5)
+          .uri
+          .queryParameters['query'],
+      '13.75,100.5',
+    );
+    expect(
+      const SpotMapLink(name: 'On Lok Yun').uri.queryParameters['query'],
+      'On Lok Yun',
+    );
+  });
 
   testWidgets("the writer's hours borrow Google's days when they agree",
       (tester) async {

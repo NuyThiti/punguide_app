@@ -126,9 +126,8 @@ void main() {
     await tester.pumpWidget(_harness(_container()));
     await tester.pumpAndSettle();
 
-    final rows = tester
-        .widgetList<AccountRow>(find.byType(AccountRow))
-        .toList();
+    final rows =
+        tester.widgetList<AccountRow>(find.byType(AccountRow)).toList();
     // The one row that cannot be undone goes at the end, in its own colour.
     expect(rows.last.label, 'ลบบัญชี');
     expect(rows.last.tint, isNotNull);

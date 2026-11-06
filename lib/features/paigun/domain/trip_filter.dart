@@ -24,6 +24,7 @@ class TripFilter {
     this.budgetPerPerson,
     this.radiusKm,
     this.styles = const <String>[],
+    this.constraints = const <String>[],
   });
 
   /// Nothing answered — every row survives, and the board looks as it did
@@ -52,6 +53,15 @@ class TripFilter {
 
   /// Thai chip labels, as [styleByLabel] keys them.
   final List<String> styles;
+
+  /// เงื่อนไข / ข้อจำกัด, as [constraintByLabel] keys them — plus anything the
+  /// traveller typed themselves.
+  ///
+  /// The ตัวกรอง sheet does not ask these; สไตล์เที่ยวของฉัน does, once, during
+  /// the launch sequence, and the answer rides along on every board request
+  /// from then on. A trip that cannot take a wheelchair is not one to offer
+  /// somebody who said they need one.
+  final List<String> constraints;
 
   /// How many days the window spans, counting both endpoints — Sep 28–30 is
   /// three — and one for a window with only a start.
@@ -96,6 +106,7 @@ class TripFilter {
     double? budgetPerPerson,
     double? radiusKm,
     List<String>? styles,
+    List<String>? constraints,
     bool clearDates = false,
     bool clearRadius = false,
   }) =>
@@ -107,6 +118,7 @@ class TripFilter {
         budgetPerPerson: budgetPerPerson ?? this.budgetPerPerson,
         radiusKm: clearRadius ? null : radiusKm ?? this.radiusKm,
         styles: styles ?? this.styles,
+        constraints: constraints ?? this.constraints,
       );
 
   /// The answers as `GET /trips` parameters.
@@ -147,6 +159,20 @@ class TripFilter {
       }
     }
 
+    // Same split as the styles above: four of the six chips have an enum, and
+    // the dietary two — อิสลาม, มังสวิรัติ — go up as free text rather than
+    // being dropped. See [constraintByLabel].
+    final constraintEnums = <TripConstraint>[];
+    final freeConstraints = <String>[];
+    for (final label in constraints) {
+      final rule = constraintByLabel[label];
+      if (rule == null) {
+        freeConstraints.add(label);
+      } else {
+        constraintEnums.add(rule);
+      }
+    }
+
     return TripFeedQuery(
       // The chip row and the search box, which belong to the board rather than
       // to the sheet — they narrow the same request all the same.
@@ -154,6 +180,8 @@ class TripFilter {
       q: query,
       styles: styleEnums,
       customStyles: freeStyles,
+      constraints: constraintEnums,
+      customConstraints: freeConstraints,
       // Sending zeroes would read as "at least nobody", so an untouched row
       // sends nothing at all.
       adults: hasPeople ? adults : null,

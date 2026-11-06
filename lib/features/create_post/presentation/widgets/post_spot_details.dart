@@ -143,9 +143,7 @@ class _DetailRow extends StatelessWidget {
                     Text(
                       lines[i],
                       style: TextStyle(
-                        color: i == 0
-                            ? AppColors.foreground
-                            : AppColors.muted,
+                        color: i == 0 ? AppColors.foreground : AppColors.muted,
                         fontSize: i == 0 ? 14 : 13,
                         fontWeight: i == 0 ? FontWeight.w700 : FontWeight.w500,
                         height: 1.35,
@@ -214,8 +212,9 @@ class _RecommendTimeSheetState extends ConsumerState<_RecommendTimeSheet> {
   /// null the tab defaults to today.
   int? _googleDay;
 
-  TimeOfDay get _wheelValue =>
-      _mode == _TimeMode.visited ? _visited : (_editingOpens ? _opens : _closes);
+  TimeOfDay get _wheelValue => _mode == _TimeMode.visited
+      ? _visited
+      : (_editingOpens ? _opens : _closes);
 
   void _setWheel(TimeOfDay value) {
     setState(() {

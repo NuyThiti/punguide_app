@@ -176,6 +176,7 @@ class TripListItem {
     required this.likeCount,
     required this.remixCount,
     this.saveCount = 0,
+    this.commentCount = 0,
     required this.createdAt,
     required this.updatedAt,
     this.destinationPlace,
@@ -211,6 +212,7 @@ class TripListItem {
       likeCount: Json.integer(json, 'likeCount') ?? 0,
       remixCount: Json.integer(json, 'remixCount') ?? 0,
       saveCount: Json.integer(json, 'saveCount') ?? 0,
+      commentCount: Json.integer(json, 'commentCount') ?? 0,
       creator: TripCreator.maybeFromJson(json['creator']),
       // Only present when the request carried both `lat` and `lng`, so absent
       // is "unknown" rather than zero.
@@ -275,6 +277,9 @@ class TripListItem {
   /// How many accounts have bookmarked it. 0 from a server that predates the
   /// field.
   final int saveCount;
+
+  /// Every comment under the trip, replies included.
+  final int commentCount;
   final TripCreator? creator;
 
   /// Straight-line kilometres from the `lat`/`lng` the feed was asked for, as
@@ -351,6 +356,7 @@ class ApiTrip {
     required this.isLiked,
     required this.likeCount,
     this.saveCount = 0,
+    this.commentCount = 0,
     required this.days,
     required this.createdAt,
     required this.updatedAt,
@@ -420,6 +426,7 @@ class ApiTrip {
         isLiked: Json.boolean(json, 'isLiked'),
         likeCount: Json.integer(json, 'likeCount') ?? 0,
         saveCount: Json.integer(json, 'saveCount') ?? 0,
+        commentCount: Json.integer(json, 'commentCount') ?? 0,
         days: ItineraryDay.listFrom(json['days']),
         createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
         updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
@@ -512,6 +519,9 @@ class ApiTrip {
 
   /// How many accounts have bookmarked it.
   final int saveCount;
+
+  /// Every comment under the trip, replies included.
+  final int commentCount;
 
   /// Ordered by day number; empty, never null, before an itinerary exists.
   final List<ItineraryDay> days;

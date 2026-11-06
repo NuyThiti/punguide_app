@@ -38,16 +38,28 @@ final currentUserProvider = FutureProvider<AuthUser?>((ref) async {
 ///
 /// Neither reviews nor photos: every screen that uses this already has its
 /// own photos and nowhere to put a review list, so both are left off to stay
-/// a tier cheaper. Null for anything that is not one of our own places (not a
-/// UUID) or that the lookup failed for — a caller with nothing to add just
-/// renders as it was.
+/// a tier cheaper.
+///
+/// [placeId] is one of ours (a UUID) or Google's own id (`ChIJ…`): a post's
+/// pin often carries the latter, since the place was never saved to our
+/// table, and `GET /places/google/:externalRef` reads the same sheet for it.
+/// Null for anything else, or when the lookup fails — a caller with nothing to
+/// add just renders as it was.
 final placeDetailsProvider = FutureProvider.autoDispose
     .family<PlaceDetails?, String>((ref, placeId) async {
-  if (!_uuid.hasMatch(placeId)) return null;
+  final ours = _uuid.hasMatch(placeId);
+  if (!ours && !_googlePlaceId.hasMatch(placeId)) return null;
   try {
     final api = await ref.watch(plunoApiProvider.future);
-    return await api.places.byId(placeId, reviews: false, photos: false);
+    return ours
+        ? await api.places.byId(placeId, reviews: false, photos: false)
+        : await api.places.byGoogleId(placeId, reviews: false, photos: false);
   } catch (_) {
     return null;
   }
 });
+
+/// Google place ids are long, URL-safe tokens — `ChIJ0QDC8BOZ4jARY7WqIrAOkck`.
+/// Anything with spaces or punctuation (a hand-typed name, coordinates) is
+/// not one, and never reaches the network.
+final _googlePlaceId = RegExp(r'^[A-Za-z0-9_-]{16,}$');

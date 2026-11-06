@@ -2,6 +2,7 @@ import '../../network/api_client.dart';
 import '../models/auth_user.dart';
 import '../models/json.dart';
 import '../models/user_location.dart';
+import '../models/user_preferences.dart';
 import 'upload_form.dart';
 
 /// Sign-up, sign-in, and the session probe.
@@ -165,6 +166,46 @@ class UsersApi {
       body: <String, dynamic>{'placeId': placeId},
     );
     return UserLocation.fromEnvelope(body);
+  }
+
+  /// Which onboarding pages this account has answered.
+  ///
+  /// Always a 200: a brand new account comes back with both halves null,
+  /// which is the answer rather than an error.
+  Future<UserPreferences> preferences() async {
+    final body =
+        await _client.get<Map<String, dynamic>>('/users/me/preferences');
+    return UserPreferences.fromJson(Json.asMap(body));
+  }
+
+  /// Records what the traveller tapped on the Location Access page.
+  ///
+  /// Anything but [LocationAccessAnswer.granted] also erases the stored
+  /// place, so there is no need to call `deleteLocation` as well. And
+  /// `granted` does not store one — that still takes [saveLocation].
+  Future<UserPreferences> saveLocationAccess(
+    LocationAccessAnswer status,
+  ) async {
+    final body = await _client.put<Map<String, dynamic>>(
+      '/users/me/preferences/location-access',
+      body: <String, dynamic>{'status': status.wire},
+    );
+    return UserPreferences.fromJson(Json.asMap(body));
+  }
+
+  /// Records สไตล์เที่ยวของฉัน. Replaces the whole set — a list left out
+  /// comes back empty, so send the lot every time.
+  ///
+  /// An empty [preference] is how "answered, chose nothing" is written, which
+  /// is what stops the page being asked again.
+  Future<UserPreferences> saveTravelStyle(
+    TravelStylePreference preference,
+  ) async {
+    final body = await _client.put<Map<String, dynamic>>(
+      '/users/me/preferences/travel-style',
+      body: preference.toJson(),
+    );
+    return UserPreferences.fromJson(Json.asMap(body));
   }
 
   /// Erases the stored position. Idempotent — a 204 either way, so there is no

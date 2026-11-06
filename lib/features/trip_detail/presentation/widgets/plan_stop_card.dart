@@ -63,8 +63,7 @@ class _PlanStopCardState extends ConsumerState<PlanStopCard> {
     final hasPhone = phone != null && phone.trim().isNotEmpty;
     final hasSite = website != null && website.isNotEmpty;
     final notes = stop.notes?.trim() ?? '';
-    final hasDetails =
-        hours != null || way.isNotEmpty || hasPhone || hasSite;
+    final hasDetails = hours != null || way.isNotEmpty || hasPhone || hasSite;
 
     return Container(
       padding: EdgeInsets.all(screen.pick(compact: 14.0, medium: 18.0)),
@@ -99,7 +98,8 @@ class _PlanStopCardState extends ConsumerState<PlanStopCard> {
                                   ),
                                 ),
                         ),
-                        _StopMenu(title: stop.title, onSelected: widget.onAction),
+                        _StopMenu(
+                            title: stop.title, onSelected: widget.onAction),
                       ],
                     ),
                     Text(
@@ -174,8 +174,8 @@ class _PlanStopCardState extends ConsumerState<PlanStopCard> {
     final week = live?.regularOpeningHours?.weekdayDescriptions ??
         live?.currentOpeningHours?.weekdayDescriptions ??
         const <String>[];
-    final openNow =
-        live?.currentOpeningHours?.openNow ?? live?.regularOpeningHours?.openNow;
+    final openNow = live?.currentOpeningHours?.openNow ??
+        live?.regularOpeningHours?.openNow;
     return weeklyHoursText(week) ??
         switch (openNow) {
           true => 'เปิดอยู่ตอนนี้',
@@ -289,8 +289,8 @@ class _LegChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mode = legParts(stop, segment, withDistance: false, withCost: false);
-    final hasLeg = mode.isNotEmpty &&
-        (stop.travelFromPrevious != null || segment != null);
+    final hasLeg =
+        mode.isNotEmpty && (stop.travelFromPrevious != null || segment != null);
     final icon = hasLeg ? legIcon(stop, segment) : categoryIcon(stop.category);
     // The chip names the mode only; minutes and distance are in the details.
     final label = hasLeg ? mode.first : categoryLabel(stop.category);

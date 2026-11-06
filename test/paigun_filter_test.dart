@@ -267,9 +267,8 @@ void main() {
       );
       const filter = TripFilter(radiusKm: 25);
 
-      final located = filter
-          .toFeedQuery(sort: FeedSort.nearest, origin: origin)
-          .toQuery();
+      final located =
+          filter.toFeedQuery(sort: FeedSort.nearest, origin: origin).toQuery();
       expect(located['radiusKm'], 25);
       expect(located['lat'], 13.7563);
 

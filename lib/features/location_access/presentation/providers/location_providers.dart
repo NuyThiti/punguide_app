@@ -4,6 +4,7 @@ import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../paigun/domain/nearby_trip.dart';
 import '../../data/location_permission_store.dart';
+import '../../../onboarding/data/onboarding_sync.dart';
 import '../../data/location_sync.dart';
 import '../../domain/location_service.dart';
 import '../../domain/picked_location.dart';
@@ -45,19 +46,37 @@ class LocationPermissionController extends Notifier<LocationPermissionStatus?> {
   /// Takes the answer and writes it through, so the page does not come back on
   /// the next launch. Only clearing the app's storage undoes this.
   ///
-  /// A refusal also erases the copy the account holds. Note that
-  /// [LocationPermissionStatus.unavailable] deliberately does not: it means
-  /// the question could not be put — location services switched off, or no
-  /// plugin — and throwing away a good stored position over a momentary
-  /// "could not ask" would lose data the traveller never asked to lose.
+  /// Takes an answer the account already held, without sending it back.
+  ///
+  /// Used once at launch, for a traveller signing in on a new device. It is
+  /// not a fresh answer, so neither the stored place nor the account's copy
+  /// of it is touched.
+  Future<void> adopt(LocationPermissionStatus status) async {
+    state = status;
+    await ref.read(locationPermissionStoreProvider).write(status);
+  }
+
+  /// The answer also goes up to the account, so a second device does not put
+  /// the page up again. Anything that is not
+  /// [LocationPermissionStatus.granted] clears the stored place server-side
+  /// as part of the same call — hence no separate delete.
+  ///
+  /// [LocationPermissionStatus.unavailable] is the exception on both counts:
+  /// it means the question could not be put — location services switched off
+  /// — and throwing away a good stored position over a momentary "could not
+  /// ask" would lose data the traveller never asked to lose. The sync drops
+  /// it too; see [OnboardingSync.pushLocationAccess].
   Future<void> record(LocationPermissionStatus status) async {
     state = status;
     await ref.read(locationPermissionStoreProvider).write(status);
 
-    if (status == LocationPermissionStatus.denied) {
+    if (status == LocationPermissionStatus.denied ||
+        status == LocationPermissionStatus.later) {
       ref.read(locationFixProvider.notifier).forget();
-      await ref.read(locationSyncProvider).forget();
+      // Locally only: the account's copy goes with the status below.
+      ref.read(locationSyncProvider).forgetLocally();
     }
+    await ref.read(onboardingSyncProvider).pushLocationAccess(status);
   }
 }
 
@@ -322,8 +341,7 @@ String? _shortAddress(String? address) {
         .where((word) => word.isNotEmpty)
         .toList();
     if (words.isEmpty) return postcode;
-    final kept =
-        words.length >= 2 ? words.sublist(words.length - 2) : words;
+    final kept = words.length >= 2 ? words.sublist(words.length - 2) : words;
     return '${_city(kept.join(' '))} $postcode';
   }
 

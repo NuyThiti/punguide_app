@@ -73,7 +73,9 @@ Future<void> _pumpScreen(WidgetTester tester,
     {Map<String, dynamic>? trip, List<Map<String, dynamic>>? plans}) async {
   adapter = FakeAdapter({
     'GET /trips/trip-1': [FakeReply(200, trip ?? _postJson())],
-    'GET /trips/mine': [FakeReply(200, plans ?? const <Map<String, dynamic>>[])],
+    'GET /trips/mine': [
+      FakeReply(200, plans ?? const <Map<String, dynamic>>[])
+    ],
     'PUT /trips/posts/trip-1': [FakeReply(200, _postJson())],
   });
   await tester.pumpWidget(_harness());
@@ -136,8 +138,8 @@ void main() {
     await tester.tap(find.text('Share'));
     await tester.pumpAndSettle();
 
-    expect(adapter.bodyOf('PUT /trips/posts/trip-1')!['visibility'],
-        'followers');
+    expect(
+        adapter.bodyOf('PUT /trips/posts/trip-1')!['visibility'], 'followers');
   });
 
   testWidgets('a draft saved with Followers shows Followers, not private',
@@ -156,8 +158,7 @@ void main() {
 
   testWidgets(
       'a shared post taken down by Save Draft shows the dropdown it was '
-      'saved as, not the visibility the takedown forced',
-      (tester) async {
+      'saved as, not the visibility the takedown forced', (tester) async {
     await _pumpScreen(tester, trip: {
       ..._postJson(),
       // Save Draft forces this to private server-side — `draftVisibility`
@@ -186,10 +187,13 @@ void main() {
     expect(find.text('ของกินย่านพระนคร'), findsNothing);
   });
 
-  testWidgets('picking a plan connects it and shows its facts',
-      (tester) async {
+  testWidgets('picking a plan connects it and shows its facts', (tester) async {
     await _pumpScreen(tester, plans: [
-      _plan(id: 'plan-1', title: 'เดินเล่นพระนคร', durationDays: 1, placeCount: 11),
+      _plan(
+          id: 'plan-1',
+          title: 'เดินเล่นพระนคร',
+          durationDays: 1,
+          placeCount: 11),
     ]);
 
     await tester.tap(find.text('เชื่อมแพลนของฉัน'));
@@ -295,11 +299,11 @@ void main() {
     await tester.tap(find.text('เชื่อมแพลนของฉัน'));
     await tester.pumpAndSettle();
 
-    expect(find.text('ยังไม่มีแผนให้เชื่อม สร้างแพลนก่อนได้เลย'), findsOneWidget);
+    expect(
+        find.text('ยังไม่มีแผนให้เชื่อม สร้างแพลนก่อนได้เลย'), findsOneWidget);
   });
 
-  testWidgets(
-      'shows the remix toggle, and the audience options once it is on',
+  testWidgets('shows the remix toggle, and the audience options once it is on',
       (tester) async {
     await _pumpScreen(tester, trip: {..._postJson(), 'remixEnabled': false});
 

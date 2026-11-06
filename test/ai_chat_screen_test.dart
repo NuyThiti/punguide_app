@@ -120,7 +120,8 @@ void main() {
     expect(find.text('สถานที่ใกล้ฉัน'), findsOneWidget);
   });
 
-  testWidgets('the room is opened lazily, on the first message', (tester) async {
+  testWidgets('the room is opened lazily, on the first message',
+      (tester) async {
     final adapter = _adapter();
     await _pumpChat(tester, adapter);
 

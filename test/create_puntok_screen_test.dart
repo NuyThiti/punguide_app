@@ -210,8 +210,7 @@ void main() {
     expect(find.textContaining('ไม่ใช่วิดีโอ'), findsOneWidget);
   });
 
-  testWidgets('the editor totals the cut and offers its tools',
-      (tester) async {
+  testWidgets('the editor totals the cut and offers its tools', (tester) async {
     await _pump(tester);
     await _toEditor(tester);
 

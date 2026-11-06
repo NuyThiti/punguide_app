@@ -138,8 +138,7 @@ void main() {
     expect(find.text('ยังไม่ได้ตั้งตำแหน่ง'), findsOneWidget);
   });
 
-  testWidgets('Save stays off until the name actually changes',
-      (tester) async {
+  testWidgets('Save stays off until the name actually changes', (tester) async {
     _phone(tester);
 
     await tester.pumpWidget(_harness(_adapter(), session: _named));
@@ -169,7 +168,8 @@ void main() {
     expect((save() as InkWell).onTap, isNull);
   });
 
-  testWidgets('an account that never set a name starts empty, not on its username',
+  testWidgets(
+      'an account that never set a name starts empty, not on its username',
       (tester) async {
     _phone(tester);
 

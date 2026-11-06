@@ -21,6 +21,7 @@ import '../../create_trip/domain/plan_labels.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
+import '../../trips/presentation/providers/trip_comment_providers.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 import '../../trips/presentation/trip_like_action.dart';
@@ -32,6 +33,7 @@ import '../../profile/presentation/providers/profile_providers.dart';
 import 'share_trip.dart';
 import 'widgets/add_to_trip_sheet.dart';
 import 'widgets/plan_stop_card.dart';
+import 'widgets/comment_sheet.dart';
 import 'widgets/remix_sheet.dart';
 import 'widgets/trip_content_sections.dart';
 
@@ -182,8 +184,22 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
         wasLiked: liked,
       ),
       onSave: () => _toggleSaved(trip),
+      // Posts take comments; a plan's page does not draw the thread.
+      comments:
+          ref.watch(tripCommentCountProvider)[trip.id] ?? trip.commentCount,
+      onComment: trip.type.isPost ? () => _openComments(trip) : null,
     );
   }
+
+  /// The thread in a sheet. Its posts and deletes move the 💬 count through
+  /// [tripCommentCountProvider] as they land, so nothing is re-read after.
+  Future<void> _openComments(ApiTrip trip) => showCommentSheet(
+        context,
+        tripId: trip.id,
+        ownerId: trip.ownerId,
+        commentCount:
+            ref.read(tripCommentCountProvider)[trip.id] ?? trip.commentCount,
+      );
 
   /// The bar's bookmark, through the app-wide ledger so Home, ไปกัน and the
   /// saved shelf flip with it. Signed out, it asks for an account instead.
@@ -1085,6 +1101,8 @@ class _PostOverview extends StatelessWidget {
     required this.saved,
     required this.onLike,
     required this.onSave,
+    this.onComment,
+    this.comments = 0,
     this.placeCount,
   });
 
@@ -1100,6 +1118,12 @@ class _PostOverview extends StatelessWidget {
   final bool? saved;
   final VoidCallback onLike;
   final VoidCallback onSave;
+
+  /// Null leaves the 💬 chip off — a plan's page.
+  final VoidCallback? onComment;
+
+  /// The 💬 count as it stands now — the session's ledger over the trip's.
+  final int comments;
 
   /// The ledger stores only the bool, so an unsent flip moves the number here
   /// rather than waiting for a re-read of the trip.
@@ -1125,52 +1149,68 @@ class _PostOverview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        // One line when it all fits; when four chips do not, they drop under
+        // the heading rather than squeeze it to "Trip…".
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 10,
           children: [
-            const Expanded(
-              child: Text(
-                'Trip Overview',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppColors.foreground,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
+            const Text(
+              'Trip Overview',
+              style: TextStyle(
+                color: AppColors.foreground,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _CountChip(
+                  icon: Icons.shuffle,
+                  value: trip.remixCount,
                 ),
-              ),
+                const SizedBox(width: 6),
+                _CountChip(
+                  key: const Key('like-chip'),
+                  icon: liked ? Icons.favorite : Icons.favorite_border,
+                  iconColor: liked ? _heartRed : AppColors.muted,
+                  value: _likes,
+                  tooltip: liked ? 'เลิกถูกใจ' : 'ถูกใจ',
+                  onTap: onLike,
+                ),
+                if (onComment != null) ...[
+                  const SizedBox(width: 6),
+                  _CountChip(
+                    key: const Key('comment-chip'),
+                    icon: Icons.chat_bubble_outline,
+                    value: comments,
+                    tooltip: 'ความคิดเห็น',
+                    onTap: onComment,
+                  ),
+                ],
+                if (saved != null) ...[
+                  const SizedBox(width: 6),
+                  _CountChip(
+                    key: const Key('save-chip'),
+                    icon: saved ? Icons.bookmark : Icons.bookmark_border,
+                    iconColor: saved ? AppColors.postPurple : AppColors.muted,
+                    value: _saves,
+                    tooltip: saved ? 'เอาออกจากที่บันทึก' : 'บันทึก',
+                    onTap: onSave,
+                  ),
+                ] else if (_saves > 0) ...[
+                  const SizedBox(width: 6),
+                  _CountChip(
+                    key: const Key('save-chip'),
+                    icon: Icons.bookmark_border,
+                    value: _saves,
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(width: 8),
-            _CountChip(
-              icon: Icons.shuffle,
-              value: trip.remixCount,
-            ),
-            const SizedBox(width: 6),
-            _CountChip(
-              key: const Key('like-chip'),
-              icon: liked ? Icons.favorite : Icons.favorite_border,
-              iconColor: liked ? _heartRed : AppColors.muted,
-              value: _likes,
-              tooltip: liked ? 'เลิกถูกใจ' : 'ถูกใจ',
-              onTap: onLike,
-            ),
-            if (saved != null) ...[
-              const SizedBox(width: 6),
-              _CountChip(
-                key: const Key('save-chip'),
-                icon: saved ? Icons.bookmark : Icons.bookmark_border,
-                iconColor: saved ? AppColors.postPurple : AppColors.muted,
-                value: _saves,
-                tooltip: saved ? 'เอาออกจากที่บันทึก' : 'บันทึก',
-                onTap: onSave,
-              ),
-            ] else if (_saves > 0) ...[
-              const SizedBox(width: 6),
-              _CountChip(
-                key: const Key('save-chip'),
-                icon: Icons.bookmark_border,
-                value: _saves,
-              ),
-            ],
           ],
         ),
         const SizedBox(height: 10),

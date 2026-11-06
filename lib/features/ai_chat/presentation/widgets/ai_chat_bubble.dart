@@ -28,9 +28,8 @@ class AiChatBubble extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         decoration: BoxDecoration(
-          color: assistant
-              ? AppColors.aiBubbleAssistant
-              : AppColors.aiBubbleUser,
+          color:
+              assistant ? AppColors.aiBubbleAssistant : AppColors.aiBubbleUser,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Text(

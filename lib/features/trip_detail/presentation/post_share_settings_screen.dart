@@ -73,7 +73,9 @@ class _PostShareSettingsScreenState
             ? PostAudience.public
             : PostAudience.fromVisibility(trip.visibility));
     final linked = trip.linkedTrip;
-    _trip = linked == null ? null : PostTripLink(id: linked.id, title: linked.title);
+    _trip = linked == null
+        ? null
+        : PostTripLink(id: linked.id, title: linked.title);
     _connectedPreview = linked;
     _title = trip.title;
     _styles = List.of(trip.brief?.styles ?? const <TravelStyle>[]);
@@ -333,7 +335,9 @@ class _ShareHero extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _RoundIcon(icon: Icons.arrow_back, onTap: () => Navigator.of(context).pop()),
+                  _RoundIcon(
+                      icon: Icons.arrow_back,
+                      onTap: () => Navigator.of(context).pop()),
                   // Changing the cover photo is out of scope here — the icon
                   // is shown to match the design but has no behavior yet.
                   const _RoundIcon(icon: Icons.add_photo_alternate_outlined),
@@ -348,7 +352,8 @@ class _ShareHero extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(99),

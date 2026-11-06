@@ -211,8 +211,8 @@ class _CoverMenuButton extends StatelessWidget {
             value: _CoverMenuAction.change,
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading:
-                  Icon(Icons.add_photo_alternate_outlined, color: AppColors.postPurple),
+              leading: Icon(Icons.add_photo_alternate_outlined,
+                  color: AppColors.postPurple),
               title: Text('เปลี่ยนรูปหน้าปก'),
             ),
           ),
@@ -220,7 +220,8 @@ class _CoverMenuButton extends StatelessWidget {
             value: _CoverMenuAction.remove,
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.delete_outline, color: AppColors.brandOrangeDeep),
+              leading:
+                  Icon(Icons.delete_outline, color: AppColors.brandOrangeDeep),
               title: Text('ลบรูปหน้าปก'),
             ),
           ),

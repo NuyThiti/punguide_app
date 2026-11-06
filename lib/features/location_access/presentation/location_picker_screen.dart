@@ -21,7 +21,12 @@ import 'widgets/picked_location_sheet.dart';
 /// traveller who refused the OS dialog still needs a way to say where they
 /// are, and this is it.
 class LocationPickerScreen extends ConsumerStatefulWidget {
-  const LocationPickerScreen({super.key});
+  const LocationPickerScreen({super.key, this.then});
+
+  /// Where confirming leads. Null — which is every entry but the launch
+  /// sequence — means the ไปกัน board, which is where picking a place is
+  /// nearly always for.
+  final String? then;
 
   @override
   ConsumerState<LocationPickerScreen> createState() =>
@@ -231,7 +236,7 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
           latitude: origin.latitude,
           longitude: origin.longitude,
         );
-    context.goNamed(AppRoute.paigun.name);
+    context.go(widget.then ?? '/paigun');
   }
 
   /// Entered from the permission page as well as from the ไปกัน header, so

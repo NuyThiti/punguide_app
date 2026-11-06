@@ -33,8 +33,7 @@ PlunoApi _api(FakeAdapter adapter) => fakeApi(adapter);
 
 void main() {
   group('block parsing', () {
-    test('an unfamiliar block type is kept as unknown, not thrown away',
-        () {
+    test('an unfamiliar block type is kept as unknown, not thrown away', () {
       final blocks = ChatBlock.listFrom(<dynamic>[
         <String, dynamic>{'type': 'trip_results', 'trips': <dynamic>[]},
         <String, dynamic>{'type': 'weather_forecast'},
@@ -127,7 +126,8 @@ void main() {
   });
 
   group('streaming', () {
-    test('decodes records, spans split data lines, skips comments and '
+    test(
+        'decodes records, spans split data lines, skips comments and '
         'unknown events', () async {
       final adapter = FakeAdapter(<String, List<FakeReply>>{
         'POST /chat/conversations/room-1/messages': [
@@ -256,9 +256,8 @@ void main() {
         ],
       });
 
-      final result = await _api(adapter)
-          .chat
-          .saveDraft('room-1', 'draft-7', revision: 2);
+      final result =
+          await _api(adapter).chat.saveDraft('room-1', 'draft-7', revision: 2);
 
       expect(result.tripId, 'trip-3');
       // Saving the same revision twice is a success, not a conflict.

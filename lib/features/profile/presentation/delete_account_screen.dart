@@ -62,7 +62,8 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(authSessionProvider);
     final username = session == null ? '' : _usernameOf(session.handle);
-    final typedMatches = _confirm.text.trim() == username && username.isNotEmpty;
+    final typedMatches =
+        _confirm.text.trim() == username && username.isNotEmpty;
     final needsPassword = session != null && _passwordRequired(session);
     final hasPassword = _password.text.isNotEmpty;
     final armed = typedMatches && (!needsPassword || hasPassword) && !_busy;
@@ -78,7 +79,8 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
           ),
           Expanded(
             child: session == null
-                ? const _DeleteNotice(message: 'เข้าสู่ระบบก่อน จึงจะลบบัญชีได้')
+                ? const _DeleteNotice(
+                    message: 'เข้าสู่ระบบก่อน จึงจะลบบัญชีได้')
                 : ListView(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
@@ -367,7 +369,8 @@ class _DeleteNotice extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(32, 64, 32, 48),
       child: Column(
         children: [
-          const Icon(Icons.lock_outline, size: 34, color: AppColors.navIconMuted),
+          const Icon(Icons.lock_outline,
+              size: 34, color: AppColors.navIconMuted),
           const SizedBox(height: 12),
           Text(
             message,

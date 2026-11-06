@@ -365,7 +365,6 @@ class _RemixSheetState extends ConsumerState<_RemixSheet> {
       });
     }
   }
-
 }
 
 /// The title between an optional back chip and the ✕.

@@ -11,6 +11,8 @@ import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
 import '../../paigun/presentation/providers/paigun_providers.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
+import '../../trip_detail/presentation/widgets/comment_sheet.dart';
+import '../../trips/presentation/providers/trip_comment_providers.dart';
 import '../domain/models/puntok_post.dart';
 import 'providers/puntok_providers.dart';
 import 'widgets/puntok_player_pager.dart';
@@ -61,10 +63,13 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
             )
           else
             PuntokPlayerPager(
-              posts: withFollowState(
-                _posts,
-                ref.watch(followLedgerProvider),
-                myId: ref.watch(authSessionProvider)?.userId,
+              posts: withCommentCounts(
+                withFollowState(
+                  _posts,
+                  ref.watch(followLedgerProvider),
+                  myId: ref.watch(authSessionProvider)?.userId,
+                ),
+                ref.watch(tripCommentCountProvider),
               ),
               initialIndex:
                   (widget.args?.initialIndex ?? 0).clamp(0, _posts.length - 1),
@@ -76,7 +81,12 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
                 AppRoute.tripDetail.name,
                 params: {'tripId': planId},
               ),
-              onComment: () => _notYet('คอมเมนต์'),
+              onComment: (post) => showCommentSheet(
+                context,
+                tripId: post.id,
+                ownerId: post.authorId ?? '',
+                commentCount: post.comments ?? 0,
+              ),
               onShare: () => _notYet('แชร์'),
               onCreator: (post) {
                 final id = post.authorId;

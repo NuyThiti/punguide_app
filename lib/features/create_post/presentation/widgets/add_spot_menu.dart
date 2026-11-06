@@ -27,14 +27,12 @@ Future<AddSpotChoice?> showAddSpotMenu(BuildContext context) {
           _AddSpotMenuTile(
             icon: Icons.post_add,
             label: 'เพิ่มเนื้อหา',
-            onTap: () =>
-                Navigator.of(context).pop(AddSpotChoice.content),
+            onTap: () => Navigator.of(context).pop(AddSpotChoice.content),
           ),
           _AddSpotMenuTile(
             icon: Icons.add_location_alt_outlined,
             label: 'เพิ่มจุดถัดไป',
-            onTap: () =>
-                Navigator.of(context).pop(AddSpotChoice.nextSpot),
+            onTap: () => Navigator.of(context).pop(AddSpotChoice.nextSpot),
           ),
         ],
       ),

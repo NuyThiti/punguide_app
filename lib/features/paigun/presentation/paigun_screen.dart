@@ -95,8 +95,7 @@ class PaigunScreen extends ConsumerWidget {
                         onOpen: (row) => _openTrip(context, row),
                         onSave: (row) => _toggleSaved(context, ref, row),
                         likedOf: (row) => likedNow(liked, row.trip),
-                        onLike: (row) =>
-                            toggleTripLike(context, ref, row.trip),
+                        onLike: (row) => toggleTripLike(context, ref, row.trip),
                         onRetry: () => refreshPaigunFeed(ref),
                       ),
                     ],

@@ -3,6 +3,7 @@ import '../network/api_config.dart';
 import 'services/auth_api.dart';
 import 'services/budget_api.dart';
 import 'services/chat_api.dart';
+import 'services/comments_api.dart';
 import 'services/follow_api.dart';
 import 'services/itinerary_api.dart';
 import 'services/media_api.dart';
@@ -22,6 +23,7 @@ export 'models/activity.dart';
 export 'models/auth_user.dart';
 export 'models/budget.dart';
 export 'models/chat.dart';
+export 'models/comment.dart';
 export 'models/day.dart';
 export 'models/destination_place.dart';
 export 'models/enums.dart';
@@ -39,9 +41,11 @@ export 'models/trip.dart';
 export 'models/trip_draft.dart';
 export 'models/trip_feed_query.dart';
 export 'models/user_location.dart';
+export 'models/user_preferences.dart';
 export 'services/auth_api.dart';
 export 'services/budget_api.dart';
 export 'services/chat_api.dart';
+export 'services/comments_api.dart';
 export 'services/follow_api.dart';
 export 'services/itinerary_api.dart';
 export 'services/media_api.dart';
@@ -66,7 +70,8 @@ class PlunoApi {
         routes = RoutesApi(client),
         media = MediaApi(client),
         share = ShareApi(client),
-        chat = ChatApi(client);
+        chat = ChatApi(client),
+        comments = CommentsApi(client);
 
   /// Reads the host from `PLUNO_API_BASE_URL`, restores the stored access
   /// token, and opens the on-disk cookie jar.
@@ -92,6 +97,9 @@ class PlunoApi {
 
   /// The travel assistant. Token-only — there is no anonymous mode here.
   final ChatApi chat;
+
+  /// Comments and replies under any trip, post or clip.
+  final CommentsApi comments;
 
   /// True once a token has been restored or issued. It says nothing about the
   /// token still being valid — the client refreshes it on first use.

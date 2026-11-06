@@ -3,7 +3,15 @@ import 'package:pluno/shared/formatting/spot_detail_text.dart';
 
 List<String> _week(List<String> hours) => [
       for (var i = 0; i < 7; i++)
-        '${['วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์', 'วันอาทิตย์'][i]}: ${hours[i]}',
+        '${[
+          'วันจันทร์',
+          'วันอังคาร',
+          'วันพุธ',
+          'วันพฤหัสบดี',
+          'วันศุกร์',
+          'วันเสาร์',
+          'วันอาทิตย์'
+        ][i]}: ${hours[i]}',
     ];
 
 void main() {

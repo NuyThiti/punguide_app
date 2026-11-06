@@ -61,6 +61,7 @@ class PuntokPost {
       caption: blurb.isEmpty ? item.title : blurb,
       likes: item.likeCount,
       saves: item.saveCount,
+      comments: item.commentCount,
       liked: item.isLiked,
       saved: item.isSaved,
       linkedTrip: item.linkedTrip,
@@ -88,7 +89,8 @@ class PuntokPost {
 
   final int likes;
 
-  /// Counts the list endpoint does not send — null hides the number.
+  /// `commentCount`; null hides the number. The share count is still one
+  /// the list endpoint does not send.
   final int? comments;
 
   /// `saveCount`. Null only on a clip built without a feed row.
@@ -111,6 +113,7 @@ class PuntokPost {
 
   PuntokPost copyWith({
     int? likes,
+    int? comments,
     int? saves,
     bool? liked,
     bool? saved,
@@ -126,7 +129,7 @@ class PuntokPost {
       authorId: authorId,
       caption: caption,
       likes: likes ?? this.likes,
-      comments: comments,
+      comments: comments ?? this.comments,
       saves: saves ?? this.saves,
       shares: shares,
       liked: liked ?? this.liked,

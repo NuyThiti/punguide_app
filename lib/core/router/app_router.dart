@@ -15,6 +15,7 @@ import '../../features/follow/presentation/follow_list_screen.dart';
 import '../../features/follow/presentation/user_profile_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/launch/presentation/launch_screen.dart';
+import '../../features/trip_style/presentation/trip_style_screen.dart';
 import '../../features/location_access/presentation/location_access_screen.dart';
 import '../../features/location_access/presentation/location_picker_screen.dart';
 import '../../features/location_access/presentation/providers/location_providers.dart';
@@ -37,6 +38,7 @@ import '../../features/trip_detail/presentation/trip_detail_screen.dart';
 
 enum AppRoute {
   launch,
+  tripStyle,
   home,
   aiChat,
   login,
@@ -263,8 +265,10 @@ final appRouter = GoRouter(
       // gate. Arriving from the Location Access page passes it, because that
       // page records the answer before it navigates.
       redirect: _locationGate,
-      pageBuilder: (context, state) =>
-          _instantPage(state, const LocationPickerScreen()),
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        LocationPickerScreen(then: state.queryParams['then']),
+      ),
     ),
     GoRoute(
       path: '/ai-chat',
@@ -273,6 +277,17 @@ final appRouter = GoRouter(
       // conversation lands on the feed the traveller left.
       pageBuilder: (context, state) =>
           _instantPage(state, const AiChatScreen()),
+    ),
+    GoRoute(
+      path: '/trip-style',
+      name: AppRoute.tripStyle.name,
+      // Not gated on location: the question is about what the traveller
+      // likes, not where they are, and it is asked after Location Access has
+      // already had its answer either way.
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        TripStyleScreen(then: state.queryParams['then']),
+      ),
     ),
     GoRoute(
       path: '/login',

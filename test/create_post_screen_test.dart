@@ -178,8 +178,6 @@ final _located = [
       .overrideWithValue(LocationPermissionStatus.granted),
 ];
 
-
-
 Future<void> _pumpComposer(WidgetTester tester,
     {FakeAdapter? adapter,
     ApiTrip? initialTrip,
@@ -213,8 +211,11 @@ Future<void> _pumpComposer(WidgetTester tester,
   // sees it publish public), unless a test wants something richer. Applies
   // whether the draft is freshly created here or reopening an existing one
   // (`initialTrip`), so it is unconditional.
-  client.replies.putIfAbsent('GET /trips/trip-new',
-      () => [FakeReply(200, {...createdTripJson(), 'visibility': 'public'})]);
+  client.replies.putIfAbsent(
+      'GET /trips/trip-new',
+      () => [
+            FakeReply(200, {...createdTripJson(), 'visibility': 'public'})
+          ]);
   await tester.pumpWidget(
       _harness(adapter: client, initialTrip: initialTrip, extra: extra));
   await tester.pumpAndSettle();
@@ -415,8 +416,7 @@ Future<void> _finishPublish(WidgetTester tester) async {
 void main() {
   testWidgets(
       'an uncertain upload from import is retried plainly at Save/Share, '
-      'not reconciled against a gallery',
-      (tester) async {
+      'not reconciled against a gallery', (tester) async {
     // Unattached media has no gallery to reconcile an ambiguous failure
     // against the way a trip's own did, so the only recovery left is a plain
     // retry — this is the behaviour change from the old gallery-picker flow.
@@ -462,8 +462,7 @@ void main() {
     // Save retried the one that never finished — through the bare endpoint,
     // since that is the only one `_uploadPhoto` ever uses now.
     expect(adapter.paths.where((p) => p == 'POST /media'), hasLength(1));
-    final body =
-        adapter.requests.firstWhere((r) => r.method == 'PUT').data;
+    final body = adapter.requests.firstWhere((r) => r.method == 'PUT').data;
     expect(body['contents'][0]['mediaIds'], [_a, _b]);
   });
 
@@ -547,8 +546,7 @@ void main() {
     expect(firstItem.details.opensAt, const TimeOfDay(hour: 9, minute: 0));
     expect(firstItem.details.closesAt, const TimeOfDay(hour: 20, minute: 0));
     expect(firstItem.details.tripHack, 'ไปช่วงเช้า');
-    expect(
-        firstItem.bodyController.text, 'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
+    expect(firstItem.bodyController.text, 'เช้าวันแรกเดินขึ้นไปดูเจดีย์เก่า');
     expect(firstBlock.imagePaths, ['assets/images/puntok_osaka.jpg']);
 
     // Its warnings have to be on screen, and its place stays unconfirmed.
@@ -581,8 +579,7 @@ void main() {
 
   testWidgets(
       'photos taken at the same time and place merge into one spot even '
-      'though the assistant answered with a section each',
-      (tester) async {
+      'though the assistant answered with a section each', (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
       _LocatedPhoto('assets/images/puntok_osaka.jpg'),
@@ -700,8 +697,7 @@ void main() {
         'เริ่มต้นที่ร้านขนมหวานเจ้าดังย่านเสาชิงช้า');
   });
 
-  testWidgets(
-      'library photos with no EXIF GPS fall back to the account fix',
+  testWidgets('library photos with no EXIF GPS fall back to the account fix',
       (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
@@ -741,7 +737,10 @@ void main() {
     await _pumpComposer(
       tester,
       adapter: adapter,
-      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      extra: [
+        authSessionProvider
+            .overrideWith((ref) => AuthController(AuthSession.demo))
+      ],
     );
     // The account fix seeds the identity card too — irrelevant here, and left
     // unstubbed on purpose: a failed lookup must not stop the draft below.
@@ -754,8 +753,7 @@ void main() {
 
   testWidgets(
       "the suggested place's contact info fills the spot's own chip and "
-      'shows in its picker sheet',
-      (tester) async {
+      'shows in its picker sheet', (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
       _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
@@ -1013,8 +1011,7 @@ void main() {
     expect(request.data['selectedPlaceId'], hintId);
     expect(
         find.descendant(
-            of: find.byType(PostIdentityCard),
-            matching: find.text('สนามหลวง')),
+            of: find.byType(PostIdentityCard), matching: find.text('สนามหลวง')),
         findsNothing);
     expect(
         find.descendant(
@@ -1023,7 +1020,8 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('selected nearby UUID survives 409 retry without another lookup', (tester) async {
+  testWidgets('selected nearby UUID survives 409 retry without another lookup',
+      (tester) async {
     const selectedId = 'c541e08c-32c4-417d-bba8-a2373e48a696';
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
@@ -1031,19 +1029,45 @@ void main() {
     ]));
     addTearDown(() => ImagePickerPlatform.instance = previous);
     final adapter = FakeAdapter({
-      'GET /places/suggest': [const FakeReply(200, [
-        {'id': selectedId, 'name': 'สนามหลวง', 'latitude': 13.75, 'longitude': 100.49},
-      ])],
+      'GET /places/suggest': [
+        const FakeReply(200, [
+          {
+            'id': selectedId,
+            'name': 'สนามหลวง',
+            'latitude': 13.75,
+            'longitude': 100.49
+          },
+        ])
+      ],
       'POST /trips': [FakeReply(201, createdTripJson())],
-      'POST /trips/trip-new/media': [FakeReply(201, _image(_a, 'https://example.com/a.jpg'))],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg'))
+      ],
       'POST /trips/trip-new/contents/generate': [
         const FakeReply(409, {'message': 'still running'}),
         const FakeReply(200, {
           'title': 'สนามหลวง',
-          'contents': [{'content': 'เดินเล่น', 'mediaIds': [_a],
-            'location': {'status': 'suggested', 'name': 'สนามหลวง', 'placeId': 'ChIJ-selected'}}],
-          'locationOptions': [{'sectionIndex': 0, 'source': 'confirmedPlace', 'confidence': 'high',
-            'options': [{'name': 'สนามหลวง', 'placeId': 'ChIJ-selected'}]}],
+          'contents': [
+            {
+              'content': 'เดินเล่น',
+              'mediaIds': [_a],
+              'location': {
+                'status': 'suggested',
+                'name': 'สนามหลวง',
+                'placeId': 'ChIJ-selected'
+              }
+            }
+          ],
+          'locationOptions': [
+            {
+              'sectionIndex': 0,
+              'source': 'confirmedPlace',
+              'confidence': 'high',
+              'options': [
+                {'name': 'สนามหลวง', 'placeId': 'ChIJ-selected'}
+              ]
+            }
+          ],
           'currentArea': null,
         }),
       ],
@@ -1068,25 +1092,32 @@ void main() {
     await tester.pumpAndSettle();
     await _settleImport(tester);
     await _settleImport(tester);
-    final requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
+    final requests = adapter.requests
+        .where((r) => r.path.endsWith('/contents/generate'))
+        .toList();
     expect(requests, hasLength(2));
     expect(requests[0].data['selectedPlaceId'], selectedId);
     expect(requests[1].data, requests[0].data);
-    expect(requests[1].headers['Idempotency-Key'], requests[0].headers['Idempotency-Key']);
+    expect(requests[1].headers['Idempotency-Key'],
+        requests[0].headers['Idempotency-Key']);
     expect(requests[0].data.containsKey('currentLocation'), isFalse);
     expect(requests[0].data.containsKey('locationName'), isFalse);
-    expect(adapter.paths.where((p) => p.startsWith('GET /places/suggest')), hasLength(1));
+    expect(adapter.paths.where((p) => p.startsWith('GET /places/suggest')),
+        hasLength(1));
     final block = tester.widget<PostBlock>(find.byType(PostBlock));
     expect(block.items!.first.location!.placeId, 'ChIJ-selected');
-    expect(block.items!.first.location!.status, ContentLocationStatus.suggested);
+    expect(
+        block.items!.first.location!.status, ContentLocationStatus.suggested);
     block.onPickPlace();
     await tester.pumpAndSettle();
     expect(find.text('จากสถานที่ที่คุณเลือก'), findsOneWidget);
-    expect(adapter.paths.where((p) => p.startsWith('GET /places/suggest')), hasLength(1));
+    expect(adapter.paths.where((p) => p.startsWith('GET /places/suggest')),
+        hasLength(1));
     expect(adapter.paths.any((p) => p.contains('/details')), isFalse);
   });
 
-  testWidgets('manual retry freezes the body and a new import gets a new key', (tester) async {
+  testWidgets('manual retry freezes the body and a new import gets a new key',
+      (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
       _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
@@ -1094,34 +1125,54 @@ void main() {
     addTearDown(() => ImagePickerPlatform.instance = previous);
     final adapter = FakeAdapter({
       'POST /trips': [FakeReply(201, createdTripJson())],
-      'POST /trips/trip-new/media': [FakeReply(201, _image(_a, 'https://example.com/a.jpg'))],
+      'POST /trips/trip-new/media': [
+        FakeReply(201, _image(_a, 'https://example.com/a.jpg'))
+      ],
       'POST /trips/trip-new/contents/generate': [
         const FakeReply(500, {'message': 'temporary failure'}),
-        const FakeReply(200, {'contents': [{'content': 'ร่างสำเร็จ', 'mediaIds': [_a]}]}),
+        const FakeReply(200, {
+          'contents': [
+            {
+              'content': 'ร่างสำเร็จ',
+              'mediaIds': [_a]
+            }
+          ]
+        }),
       ],
     });
     await _pumpComposer(tester, adapter: adapter);
     await _tapImport(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('สร้างโพสเลย'));
-    for (var i = 0; i < 60 && find.text('ลองอีกครั้ง').evaluate().isEmpty; i++) {
+    for (var i = 0;
+        i < 60 && find.text('ลองอีกครั้ง').evaluate().isEmpty;
+        i++) {
       await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
     }
     expect(find.text('ลองอีกครั้ง'), findsOneWidget);
-    expect(adapter.requests.where((r) => r.path.endsWith('/contents/generate')), hasLength(1));
+    expect(adapter.requests.where((r) => r.path.endsWith('/contents/generate')),
+        hasLength(1));
     await tester.tap(find.text('ลองอีกครั้ง'));
     await _settleImport(tester);
-    var requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
+    var requests = adapter.requests
+        .where((r) => r.path.endsWith('/contents/generate'))
+        .toList();
     expect(requests, hasLength(2));
     expect(requests[1].data, requests[0].data);
-    expect(requests[1].headers['Idempotency-Key'], requests[0].headers['Idempotency-Key']);
-    expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'), hasLength(1));
+    expect(requests[1].headers['Idempotency-Key'],
+        requests[0].headers['Idempotency-Key']);
+    expect(adapter.paths.where((p) => p == 'POST /trips/trip-new/media'),
+        hasLength(1));
     await _tapImport(tester);
     await _settleImport(tester);
-    requests = adapter.requests.where((r) => r.path.endsWith('/contents/generate')).toList();
+    requests = adapter.requests
+        .where((r) => r.path.endsWith('/contents/generate'))
+        .toList();
     expect(requests, hasLength(3));
-    expect(requests.last.headers['Idempotency-Key'], isNot(requests.first.headers['Idempotency-Key']));
+    expect(requests.last.headers['Idempotency-Key'],
+        isNot(requests.first.headers['Idempotency-Key']));
     expect(requests.last.data.containsKey('selectedPlaceId'), isFalse);
   });
 
@@ -1333,8 +1384,7 @@ void main() {
     expect(find.text('1 / 2'), findsOneWidget);
   });
 
-  testWidgets(
-      'tapping a content item\'s single photo opens it full screen too',
+  testWidgets('tapping a content item\'s single photo opens it full screen too',
       (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(
@@ -1427,13 +1477,14 @@ void main() {
     // Confirmed only because a person tapped it, and it carries the id and
     // coordinates the suggestion came with.
     expect(
-        adapter.bodyOf('PUT /trips/posts/trip-new')!['contents'][0]['location'], {
-      'status': 'confirmed',
-      'name': 'วัดเจดีย์หลวง',
-      'placeId': 'ChIJ-wat',
-      'latitude': 18.787,
-      'longitude': 98.9867,
-    });
+        adapter.bodyOf('PUT /trips/posts/trip-new')!['contents'][0]['location'],
+        {
+          'status': 'confirmed',
+          'name': 'วัดเจดีย์หลวง',
+          'placeId': 'ChIJ-wat',
+          'latitude': 18.787,
+          'longitude': 98.9867,
+        });
   });
 
   testWidgets('save retry after a failed first attempt reuses the same key',
@@ -1704,8 +1755,9 @@ void main() {
     // callback — the same thing a tap on a dot would do — sidesteps any
     // flakiness from hit-testing coordinates while a route transition's
     // IgnorePointer is still settling from `_settleImport`'s page pop.
-    final onSelectPage =
-        tester.widget<TripSpotPagination>(find.byType(TripSpotPagination)).onSelect;
+    final onSelectPage = tester
+        .widget<TripSpotPagination>(find.byType(TripSpotPagination))
+        .onSelect;
 
     onSelectPage(1);
     await tester.pumpAndSettle();
@@ -1729,7 +1781,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('photo setup previews images without changing the draft', (tester) async {
+  testWidgets('photo setup previews images without changing the draft',
+      (tester) async {
     final previous = ImagePickerPlatform.instance;
     ImagePickerPlatform.instance = _TripPicker(Future.value([
       _UnreadablePhoto('assets/images/puntok_osaka.jpg'),
@@ -1742,8 +1795,7 @@ void main() {
     expect(find.text('Add Location'), findsOneWidget);
     expect(adapter.paths, isNot(contains('POST /trips')));
     Opacity ctaOpacity() => tester.widget<Opacity>(find
-        .ancestor(
-            of: find.text('สร้างโพสเลย'), matching: find.byType(Opacity))
+        .ancestor(of: find.text('สร้างโพสเลย'), matching: find.byType(Opacity))
         .first);
     expect(ctaOpacity().opacity, 1);
     await tester.tap(find.byTooltip('ลบรูปที่ 1'));
@@ -1759,7 +1811,8 @@ void main() {
     // draft underneath was never reachable to assert on until it is the only
     // thing left on screen again — but that silence is exactly the point:
     // nothing about the picked-then-removed photo should have touched it.
-    expect(tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
+    expect(
+        tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -1887,7 +1940,8 @@ void main() {
 
     // One call does it all now — content, cover and identity together — so
     // the first-ever save is the create itself, not a create-then-patch pair.
-    expect(adapter.paths.where((p) => p.contains('/trips')), ['POST /trips/posts']);
+    expect(adapter.paths.where((p) => p.contains('/trips')),
+        ['POST /trips/posts']);
     // Synced and closed — landed back on the host app, not left open.
     expect(find.text('home'), findsOneWidget);
   });
@@ -2014,7 +2068,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
         'assets/images/puntok_london.jpg');
-    if (adapter.replies.containsKey('POST /trips/posts')) await _confirmPlace(tester);
+    if (adapter.replies.containsKey('POST /trips/posts'))
+      await _confirmPlace(tester);
     await _tapNext(tester);
     for (var i = 0;
         i < 100 && !adapter.paths.contains('POST /trips/posts');
@@ -2100,8 +2155,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
-    expect(tester.widget<PostBlock>(find.byType(PostBlock)).coverPath,
-        isNotNull);
+    expect(
+        tester.widget<PostBlock>(find.byType(PostBlock)).coverPath, isNotNull);
 
     // The round action now opens a menu rather than acting on a long press —
     // "ลบรูปหน้าปก" is the explicit way off.
@@ -2134,7 +2189,8 @@ void main() {
     // painted line regardless of there being a recognizer on it).
     await tester.tap(
         find.descendant(
-            of: find.byType(CreatePostHeader), matching: find.byType(CoverImage)),
+            of: find.byType(CreatePostHeader),
+            matching: find.byType(CoverImage)),
         warnIfMissed: false);
     await tester.pumpAndSettle();
 
@@ -2185,7 +2241,8 @@ void main() {
     tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text =
         'เรื่องราว';
     await tester.pumpAndSettle();
-    if (adapter.replies.containsKey('POST /trips/posts')) await _confirmPlace(tester);
+    if (adapter.replies.containsKey('POST /trips/posts'))
+      await _confirmPlace(tester);
     await _tapNext(tester);
     expect(find.byType(AlertDialog), findsNothing);
     final body = adapter.bodyOf('POST /trips/posts')!;
@@ -2383,8 +2440,10 @@ void main() {
     await tester.tap(find.text('Title..'));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.descendant(
-            of: find.byType(BottomSheet), matching: find.byType(TextField)).first,
+        find
+            .descendant(
+                of: find.byType(BottomSheet), matching: find.byType(TextField))
+            .first,
         'San Francisco Trip');
     await tester.tap(find.text('ตกลง'));
     await tester.pumpAndSettle();
@@ -2402,8 +2461,7 @@ void main() {
     expect(body['contents'][0]['title'], 'Hotel Zelos');
   });
 
-  testWidgets(
-      'Post Location fallback follows content #1 after a reorder',
+  testWidgets('Post Location fallback follows content #1 after a reorder',
       (tester) async {
     final adapter = FakeAdapter({
       'POST /trips/posts': [FakeReply(201, createdTripJson())],
@@ -2463,8 +2521,7 @@ void main() {
     expect(find.text('home'), findsOneWidget);
   });
 
-  testWidgets('เพิ่มจุดต่อไป appends a spot and lands on it',
-      (tester) async {
+  testWidgets('เพิ่มจุดต่อไป appends a spot and lands on it', (tester) async {
     await _pumpComposer(tester, adapter: _placesAdapter());
 
     expect(find.byType(PostBlock), findsOneWidget);
@@ -2516,7 +2573,9 @@ void main() {
       (tester) async {
     final adapter = _placesAdapter();
     adapter.replies['POST /trips/posts'] = [FakeReply(201, createdTripJson())];
-    adapter.replies['PUT /trips/posts/trip-new'] = [FakeReply(200, createdTripJson())];
+    adapter.replies['PUT /trips/posts/trip-new'] = [
+      FakeReply(200, createdTripJson())
+    ];
     await _pumpComposer(tester, adapter: adapter);
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await _confirmPlace(tester);
@@ -2700,8 +2759,8 @@ void main() {
       'a photo added by hand offers a nearby place when its GPS says where',
       (tester) async {
     final previousPicker = ImagePickerPlatform.instance;
-    ImagePickerPlatform.instance = _SinglePhotoPicker(
-        _LocatedPhoto('assets/images/puntok_osaka.jpg'));
+    ImagePickerPlatform.instance =
+        _SinglePhotoPicker(_LocatedPhoto('assets/images/puntok_osaka.jpg'));
     addTearDown(() => ImagePickerPlatform.instance = previousPicker);
     final adapter = FakeAdapter({
       'GET /places/suggest': [
@@ -2731,8 +2790,8 @@ void main() {
     expect(request.queryParameters['radius'], 150);
     expect(request.queryParameters['limit'], 1);
     final updated = tester.widget<PostBlock>(find.byType(PostBlock));
-    expect(updated.items!.first.location?.status,
-        ContentLocationStatus.suggested);
+    expect(
+        updated.items!.first.location?.status, ContentLocationStatus.suggested);
     expect(updated.items!.first.location?.name, 'ร้านกาแฟริมนา');
     expect(find.text('ร้านกาแฟริมนา'), findsOneWidget);
     expect(find.text('ผู้ช่วยแนะนำ ยังไม่ยืนยัน'), findsOneWidget);
@@ -3029,7 +3088,10 @@ void main() {
     await _pumpComposer(
       tester,
       adapter: adapter,
-      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      extra: [
+        authSessionProvider
+            .overrideWith((ref) => AuthController(AuthSession.demo))
+      ],
     );
     await _settleNearby(tester);
 
@@ -3042,8 +3104,7 @@ void main() {
     expect(adapter.paths, isNot(contains('GET /places/suggest')));
   });
 
-  testWidgets(
-      'a trip reopened for editing never adopts the account place',
+  testWidgets('a trip reopened for editing never adopts the account place',
       (tester) async {
     // Already has a destination, so nothing about "where is this post about"
     // is left to guess — the fix is still read (every open reads it), but
@@ -3064,7 +3125,10 @@ void main() {
     await _pumpComposer(
       tester,
       adapter: adapter,
-      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      extra: [
+        authSessionProvider
+            .overrideWith((ref) => AuthController(AuthSession.demo))
+      ],
       initialTrip: ApiTrip.fromJson(
           {...createdTripJson(), 'destination': 'ดานัง, เวียดนาม'}),
     );
@@ -3096,7 +3160,10 @@ void main() {
     await _pumpComposer(
       tester,
       adapter: adapter,
-      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      extra: [
+        authSessionProvider
+            .overrideWith((ref) => AuthController(AuthSession.demo))
+      ],
       initialTrip: ApiTrip.fromJson(
           {...createdTripJson(), 'destination': 'ดานัง, เวียดนาม'}),
     );
@@ -3172,8 +3239,8 @@ void main() {
     await _finishPublish(tester);
 
     // The locality of the post's own place, not the spot's pin.
-    expect(adapter.bodyOf('POST /trips/posts')!['destination'],
-        'กรุงเทพมหานคร');
+    expect(
+        adapter.bodyOf('POST /trips/posts')!['destination'], 'กรุงเทพมหานคร');
   });
 
   testWidgets(
@@ -3200,7 +3267,10 @@ void main() {
     await _pumpComposer(
       tester,
       adapter: adapter,
-      extra: [authSessionProvider.overrideWith((ref) => AuthController(AuthSession.demo))],
+      extra: [
+        authSessionProvider
+            .overrideWith((ref) => AuthController(AuthSession.demo))
+      ],
       // Reopened with its own destination, so the stored place is not
       // adopted as the pin — this is where the hint is left to say it.
       initialTrip: ApiTrip.fromJson({
@@ -3216,8 +3286,8 @@ void main() {
 
     // A hint, never a value: it says "your position now" rather than
     // claiming to be the post's place.
-    expect(find.textContaining('ตำแหน่งของคุณตอนนี้: สนามหลวง'),
-        findsOneWidget);
+    expect(
+        find.textContaining('ตำแหน่งของคุณตอนนี้: สนามหลวง'), findsOneWidget);
 
     final sheetAddLocation = find.descendant(
         of: find.byType(BottomSheet), matching: find.text('Add Location'));
@@ -3346,7 +3416,8 @@ void main() {
     expect(adapter.paths, contains('POST /trips/posts'));
   });
 
-  testWidgets('backing out of the Post Share Settings screen leaves it unpublished',
+  testWidgets(
+      'backing out of the Post Share Settings screen leaves it unpublished',
       (tester) async {
     final adapter = FakeAdapter({
       'POST /trips/posts': [FakeReply(201, createdTripJson())],
@@ -3363,8 +3434,7 @@ void main() {
     // Back on the composer — the content sync already happened (same as any
     // other draft autosave), but nothing was shared.
     expect(find.text('Next'), findsOneWidget);
-    expect(adapter.paths.where((p) => p == 'POST /trips/posts'),
-        hasLength(1));
+    expect(adapter.paths.where((p) => p == 'POST /trips/posts'), hasLength(1));
   });
 
   testWidgets('each content item keeps its own Trip Hack independently',
@@ -3550,8 +3620,7 @@ void main() {
     expect(find.text('18:00'), findsOneWidget);
   });
 
-  testWidgets('the google tab can pick a day other than today',
-      (tester) async {
+  testWidgets('the google tab can pick a day other than today', (tester) async {
     const placeUuid = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
     const weekdayNames = [
       'วันจันทร์',
@@ -3576,7 +3645,10 @@ void main() {
         FakeReply(200, {
           'externalRef': 'ext-2',
           'name': 'เชียงใหม่',
-          'currentOpeningHours': {'openNow': true, 'weekdayDescriptions': labels},
+          'currentOpeningHours': {
+            'openNow': true,
+            'weekdayDescriptions': labels
+          },
         }),
       ],
     });
@@ -3600,8 +3672,8 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('เวลาเปิด / ปิด · ${hoursRangeText(
-        '${pad(6 + altIndex)}:00', '${pad(10 + altIndex)}:00')!}'));
+    await tester.tap(find.text(
+        'เวลาเปิด / ปิด · ${hoursRangeText('${pad(6 + altIndex)}:00', '${pad(10 + altIndex)}:00')!}'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('เวลาเปิด - ปิด'));
     await tester.pumpAndSettle();
@@ -3619,8 +3691,7 @@ void main() {
         ])
       ],
       'GET /places/$placeUuid': [
-        const FakeReply(
-            200, {'externalRef': 'ext-3', 'name': 'เชียงใหม่'}),
+        const FakeReply(200, {'externalRef': 'ext-3', 'name': 'เชียงใหม่'}),
       ],
     });
     await _pumpComposer(tester, adapter: adapter);
@@ -3664,9 +3735,8 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    final section =
-        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
-            as Map;
+    final section = (adapter.bodyOf('POST /trips/posts')!['contents'] as List)
+        .single as Map;
     expect(section['tripHack'], 'ไปเช้าคนน้อยกว่า');
   });
 
@@ -3695,9 +3765,8 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    final section =
-        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
-            as Map;
+    final section = (adapter.bodyOf('POST /trips/posts')!['contents'] as List)
+        .single as Map;
     // Wall clock, not a timestamp — the post says "we went at six".
     expect(section['visitedAt'], '06:00');
     expect(section['transportModes'], ['MRT']);
@@ -3736,11 +3805,10 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    final section =
-        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
-            as Map;
-    expect(section['contactInfo'],
-        '081-234-5678 · https://facebook.com/onlokyun');
+    final section = (adapter.bodyOf('POST /trips/posts')!['contents'] as List)
+        .single as Map;
+    expect(
+        section['contactInfo'], '081-234-5678 · https://facebook.com/onlokyun');
   });
 
   testWidgets(
@@ -3774,9 +3842,8 @@ void main() {
     await _tapShare(tester);
     await _finishPublish(tester);
 
-    final section =
-        (adapter.bodyOf('POST /trips/posts')!['contents'] as List).single
-            as Map;
+    final section = (adapter.bodyOf('POST /trips/posts')!['contents'] as List)
+        .single as Map;
     for (final key in [
       'visitedAt',
       'opensAt',

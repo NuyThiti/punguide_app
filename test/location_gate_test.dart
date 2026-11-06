@@ -95,7 +95,7 @@ void main() {
     expect(find.byType(LocationPickerScreen), findsOneWidget);
     expect(
       container.read(locationPermissionProvider),
-      LocationPermissionStatus.denied,
+      LocationPermissionStatus.later,
     );
   });
 

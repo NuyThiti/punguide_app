@@ -55,8 +55,9 @@ class AiChatState {
         messages: messages ?? this.messages,
         stage: clearStage ? null : (stage ?? this.stage),
         sending: sending ?? this.sending,
-        transportError:
-            clearTransportError ? null : (transportError ?? this.transportError),
+        transportError: clearTransportError
+            ? null
+            : (transportError ?? this.transportError),
       );
 }
 
@@ -137,23 +138,23 @@ class AiChatController extends AutoDisposeNotifier<AiChatState> {
 
     _turn = api.chat
         .streamMessage(
-          conversationId,
-          text: text,
-          requestId: requestId,
-          origin: origin,
-        )
+      conversationId,
+      text: text,
+      requestId: requestId,
+      origin: origin,
+    )
         .listen(
-          (event) => _onEvent(event, pendingRow.id),
-          onError: (Object error) {
-            _onTransportError(error, pendingRow.id);
-            if (!completer.isCompleted) completer.complete();
-          },
-          onDone: () {
-            state = state.copyWith(sending: false, clearStage: true);
-            if (!completer.isCompleted) completer.complete();
-          },
-          cancelOnError: true,
-        );
+      (event) => _onEvent(event, pendingRow.id),
+      onError: (Object error) {
+        _onTransportError(error, pendingRow.id);
+        if (!completer.isCompleted) completer.complete();
+      },
+      onDone: () {
+        state = state.copyWith(sending: false, clearStage: true);
+        if (!completer.isCompleted) completer.complete();
+      },
+      cancelOnError: true,
+    );
 
     await completer.future;
   }

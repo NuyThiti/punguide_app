@@ -161,6 +161,24 @@ List<PuntokPost> withFollowState(
   ];
 }
 
+/// The clips with any 💬 count this session has moved — a comment posted from
+/// one clip's sheet shows on the rail at once. Untouched rows come back as the
+/// same objects.
+List<PuntokPost> withCommentCounts(
+  List<PuntokPost> posts,
+  Map<String, int> counts,
+) {
+  if (counts.isEmpty) return posts;
+  return [
+    for (final post in posts)
+      switch (counts[post.id]) {
+        final int count when count != post.comments =>
+          post.copyWith(comments: count),
+        _ => post,
+      },
+  ];
+}
+
 /// A clip's save count after the viewer's own tap: up one on a save, down one
 /// (never below zero) on an unsave. Null stays null — nothing to move.
 int? movedSaveCount(int? saves, {required bool saved}) {

@@ -144,4 +144,3 @@ PostPlace _toPostPlace(Place place, ({double lat, double lng})? origin) {
         : null,
   );
 }
-

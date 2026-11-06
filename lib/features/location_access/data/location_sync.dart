@@ -87,8 +87,7 @@ class LocationSync {
 
     try {
       final api = await _ref.read(plunoApiProvider.future);
-      final id =
-          placeId ?? (await _nearestPlace(api, latitude, longitude))?.id;
+      final id = placeId ?? (await _nearestPlace(api, latitude, longitude))?.id;
       if (id == null) return false;
       await api.users.saveLocation(id);
       // Counts as the last thing sent, so the next device reading has to have
@@ -115,11 +114,18 @@ class LocationSync {
     }
   }
 
+  /// Forgets what was last sent, without telling the account.
+  ///
+  /// For the case where something else has already cleared the server copy —
+  /// `PUT /users/me/preferences/location-access` does it for any answer but
+  /// granted — and a second delete would be a wasted request.
+  void forgetLocally() => _lastPushed = null;
+
   /// Erases the stored position, for a traveller who has taken the permission
   /// back. Withdrawing it is a request for the data to be gone, not for one
   /// response to stop mentioning it.
   Future<void> forget() async {
-    _lastPushed = null;
+    forgetLocally();
     if (!_ref.read(isSignedInProvider)) return;
     try {
       await (await _ref.read(plunoApiProvider.future)).users.deleteLocation();

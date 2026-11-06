@@ -232,7 +232,8 @@ class _ComposerTool extends StatelessWidget {
           child: Icon(
             icon,
             size: 19,
-            color: onTap == null ? AppColors.postFieldHint : AppColors.foreground,
+            color:
+                onTap == null ? AppColors.postFieldHint : AppColors.foreground,
           ),
         ),
       ),

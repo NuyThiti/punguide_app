@@ -5,15 +5,21 @@ import 'package:pluno/core/api/services/upload_form.dart';
 void main() {
   test('assistant preserves opening hours and daily descriptions', () {
     final draft = GeneratedPostDraft.fromJson({
-      'locationOptions': [{
-        'sectionIndex': 0, 'confidence': 'high', 'source': 'locationName',
-        'options': [],
-        'openingHours': {
-          'opensAt': '09:00', 'closesAt': '20:00',
-          'openAllDay': false, 'closedToday': false,
-          'weekdayDescriptions': ['วันจันทร์: 9:00–20:00'],
-        },
-      }],
+      'locationOptions': [
+        {
+          'sectionIndex': 0,
+          'confidence': 'high',
+          'source': 'locationName',
+          'options': [],
+          'openingHours': {
+            'opensAt': '09:00',
+            'closesAt': '20:00',
+            'openAllDay': false,
+            'closedToday': false,
+            'weekdayDescriptions': ['วันจันทร์: 9:00–20:00'],
+          },
+        }
+      ],
     });
     final hours = draft.optionsFor(0)!.openingHours!;
     expect(hours.opensAt, '09:00');

@@ -255,6 +255,38 @@ void main() {
     expect(find.textContaining('เข้าสู่ระบบก่อน'), findsOneWidget);
   });
 
+  testWidgets("💬 opens the clip's comment thread", (tester) async {
+    await _pumpPuntok(tester, extra: {
+      'GET /trips/a/comments': [
+        const FakeReply(200, {
+          'items': [
+            {
+              'id': 'c1',
+              'tripId': 'a',
+              'body': 'คลิปสวยมาก',
+              'author': {'id': 'u9', 'username': 'mint'},
+              'replyCount': 0,
+              'createdAt': '2026-11-05T07:12:00.000Z',
+            },
+          ],
+          'total': 1,
+          'limit': 20,
+          'offset': 0,
+          'hasMore': false,
+        }),
+      ],
+    });
+
+    await tester.tap(find.byIcon(Icons.chat_bubble_outline));
+    await _settle(tester);
+
+    expect(find.text('Comment'), findsOneWidget);
+    expect(find.text('คลิปสวยมาก'), findsOneWidget);
+    expect(_adapter.paths, contains('GET /trips/a/comments'));
+    // Not the old placeholder.
+    expect(find.textContaining('เร็วๆ นี้'), findsNothing);
+  });
+
   testWidgets('saving sends the save and fills the bookmark', (tester) async {
     await _pumpPuntok(tester, extra: {
       'POST /trips/a/save': [const FakeReply(201, <String, dynamic>{})],
