@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +13,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/formatting/compact_count.dart';
 import '../../../shared/layout/screen_class.dart';
+import '../../../shared/widgets/glass_circle_button.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../../shared/widgets/action_sheet.dart';
 import '../../../shared/widgets/full_image_viewer.dart';
@@ -599,7 +599,7 @@ class _StickyTopBarState extends State<_StickyTopBar> {
               height: _topBarHeight - 2,
               child: Row(
                 children: [
-                  _RoundGlassButton(
+                  GlassCircleButton(
                     icon: Icons.arrow_back_ios_new,
                     tooltip: 'ย้อนกลับ',
                     onTap: widget.onBack,
@@ -1026,63 +1026,8 @@ class _TripMenu extends StatelessWidget {
       child: GestureDetector(
         onTap: () => _open(context),
         behavior: HitTestBehavior.opaque,
-        child: const _GlassCircle(
+        child: const GlassCircle(
           child: Icon(Icons.menu, size: 18, color: AppColors.postHeader),
-        ),
-      ),
-    );
-  }
-}
-
-/// The bar's round button face: frosted, see-through glass rather than a
-/// solid white disc, so the cover reads through it — a light wash, the
-/// picture blurred behind, and a thin bright rim to hold the edge.
-class _GlassCircle extends StatelessWidget {
-  const _GlassCircle({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          width: 34,
-          height: 34,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.38),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _RoundGlassButton extends StatelessWidget {
-  const _RoundGlassButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: _GlassCircle(
-          child: Icon(icon, size: 16, color: AppColors.postHeader),
         ),
       ),
     );

@@ -15,8 +15,8 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/widgets/cover_image.dart';
+import '../../../shared/widgets/glass_circle_button.dart';
 import '../../../shared/widgets/full_image_viewer.dart';
-import '../../auth/presentation/providers/auth_providers.dart';
 import '../../trips/presentation/itinerary_display.dart';
 import '../../trips/presentation/providers/trip_providers.dart';
 import '../domain/plan_labels.dart';
@@ -26,6 +26,7 @@ import 'widgets/budget_sheets.dart';
 import 'widgets/photo_choice_sheet.dart';
 import 'widgets/plan_budget_tab.dart';
 import 'widgets/suggest_places_sheet.dart';
+import 'widgets/trip_identity_sheet.dart';
 import 'widgets/travel_leg_sheet.dart';
 import '../../create_post/domain/models/post_draft.dart';
 import '../../create_post/presentation/widgets/post_audience_chip.dart';
@@ -155,6 +156,10 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     // No cover set: the plan's first photo stands in, before the default.
     final heroCover = plan.coverImage ??
         (covers.isEmpty ? AppConstants.defaultCoverImage : covers.first.url);
+    // What the top bar's menu acts on, as of this build.
+    _menuTrip = trip;
+    _menuCovers = covers;
+    _menuCover = heroCover;
 
     final topInset = MediaQuery.paddingOf(context).top;
 
@@ -181,7 +186,7 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                     // Only จัดแผน has a hero; elsewhere the bar is never over one.
                     t: _tab == 0 ? t : 1,
                     topInset: topInset,
-                    avatarImage: ref.watch(authSessionProvider)?.avatarImage,
+                    onMenu: _openScheduleMenu,
                     onBack: _back,
                   ),
                 ),
@@ -196,7 +201,6 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
                   coverImage: heroCover,
                   lodgingCount: lodging.length,
                   savingCover: _savingCover,
-                  onChangeCover: () => _changeCover(covers, heroCover),
                 ),
               ),
             SliverPersistentHeader(
@@ -342,11 +346,11 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
           //   tooltip: 'จัดเรียงวัน',
           //   onTap: () => _todo('จัดเรียงวันยังไม่เปิดใช้งาน'),
           // ),
-          _MiniIconButton(
-            icon: Icons.more_vert,
-            tooltip: 'ตัวเลือกเพิ่มเติม',
-            onTap: _openScheduleMenu,
-          ),
+          // _MiniIconButton(
+          //   icon: Icons.more_vert,
+          //   tooltip: 'ตัวเลือกเพิ่มเติม',
+          //   onTap: _openScheduleMenu,
+          // ),
         ],
         child: _ScheduleList(
           days: plan.days,
@@ -467,7 +471,14 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     );
   }
 
+  /// The trip, cover photos and cover as last built — the menu opens from
+  /// the top bar, outside the build that has them.
+  ApiTrip? _menuTrip;
+  List<CoverCandidate> _menuCovers = const <CoverCandidate>[];
+  String? _menuCover;
+
   void _openScheduleMenu() {
+    final trip = _menuTrip;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
@@ -479,6 +490,36 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (trip != null) ...[
+              ListTile(
+                key: editIdentityButtonKey,
+                leading: const Icon(Icons.edit_outlined, color: primaryColor),
+                title: const Text(
+                  'แก้ไขข้อมูลทริป',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _editIdentity(trip);
+                },
+              ),
+              ListTile(
+                key: changeCoverButtonKey,
+                enabled: !_savingCover,
+                leading: const Icon(
+                  Icons.photo_camera_outlined,
+                  color: primaryColor,
+                ),
+                title: const Text(
+                  'เปลี่ยนรูปปก',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _changeCover(_menuCovers, _menuCover ?? '');
+                },
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.shuffle, color: primaryColor),
               title: const Text(
@@ -1045,6 +1086,18 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     await _saveCover(choice);
   }
 
+  /// แก้ไขข้อมูลทริป. The name and dates show on the trip's cards too, so the
+  /// traveller's own lists are re-read along with the trip.
+  Future<void> _editIdentity(ApiTrip trip) async {
+    final saved = await showTripIdentitySheet(context, trip);
+    if (saved != true || !mounted) return;
+    ref.invalidate(apiTripProvider(widget.tripId));
+    refreshOwnTripLists(ref);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('บันทึกข้อมูลทริปแล้ว')),
+    );
+  }
+
   /// Makes [choice] the trip's cover. [quiet] is for the automatic one,
   /// which nobody asked for and so has nothing to say when it fails.
   Future<void> _saveCover(CoverChoice choice, {bool quiet = false}) async {
@@ -1176,7 +1229,6 @@ class _PlanHero extends StatelessWidget {
     required this.plan,
     required this.coverImage,
     required this.lodgingCount,
-    required this.onChangeCover,
     this.savingCover = false,
   });
 
@@ -1185,7 +1237,7 @@ class _PlanHero extends StatelessWidget {
   /// The trip's cover, or the photo standing in for it.
   final String coverImage;
   final int lodgingCount;
-  final VoidCallback onChangeCover;
+
   final bool savingCover;
 
   @override
@@ -1237,11 +1289,18 @@ class _PlanHero extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    _ChangeCoverButton(
-                      saving: savingCover,
-                      onTap: onChangeCover,
-                    ),
+                    // The cover is changed from the menu now; this only says
+                    // a new one is on its way.
+                    if (savingCover) ...[
+                      const SizedBox(width: 8),
+                      const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -1267,58 +1326,9 @@ class _PlanHero extends StatelessWidget {
   }
 }
 
+/// เปลี่ยนรูปปก and แก้ไขข้อมูลทริป in the top bar's menu.
 const changeCoverButtonKey = Key('change-cover-button');
-
-/// The glass pill on the hero that opens the cover picker.
-class _ChangeCoverButton extends StatelessWidget {
-  const _ChangeCoverButton({required this.saving, required this.onTap});
-
-  final bool saving;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      key: changeCoverButtonKey,
-      color: Colors.white.withValues(alpha: 0.2),
-      shape: StadiumBorder(
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
-      ),
-      child: InkWell(
-        onTap: saving ? null : onTap,
-        customBorder: const StadiumBorder(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (saving)
-                const SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              else
-                const Icon(Icons.photo_camera_outlined,
-                    size: 15, color: Colors.white),
-              const SizedBox(width: 5),
-              const Text(
-                'เปลี่ยนปก',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+const editIdentityButtonKey = Key('edit-identity-button');
 
 /// A sliver header of fixed height, so `pinned: true` makes it stick. Two of
 /// these stack: the nav bar holds the top, the tabs come to rest beneath it.
@@ -1354,14 +1364,14 @@ class _StickyNavBar extends StatelessWidget {
   const _StickyNavBar({
     required this.t,
     required this.topInset,
-    required this.avatarImage,
     required this.onBack,
+    required this.onMenu,
   });
 
   final double t;
   final double topInset;
-  final String? avatarImage;
   final VoidCallback onBack;
+  final VoidCallback onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -1383,11 +1393,7 @@ class _StickyNavBar extends StatelessWidget {
             ),
           ),
         ),
-        child: _HeroNavRow(
-          t: t,
-          avatarImage: avatarImage,
-          onBack: onBack,
-        ),
+        child: _HeroNavRow(t: t, onBack: onBack, onMenu: onMenu),
       ),
     );
   }
@@ -1396,20 +1402,23 @@ class _StickyNavBar extends StatelessWidget {
 class _HeroNavRow extends StatelessWidget {
   const _HeroNavRow({
     required this.t,
-    required this.avatarImage,
     required this.onBack,
+    required this.onMenu,
   });
 
   /// 0 over the hero, 1 over the page background.
   final double t;
-  final String? avatarImage;
   final VoidCallback onBack;
+
+  /// The plan's own menu: Remix, แก้ไขรายละเอียดทริป and the rest.
+  final VoidCallback onMenu;
 
   @override
   Widget build(BuildContext context) {
+    // The plan page's glass buttons, so the two faces of a trip share a bar.
     return Row(
       children: [
-        _GlassCircleButton(
+        GlassCircleButton(
           icon: Icons.arrow_back_ios_new,
           tooltip: 'ย้อนกลับ',
           onTap: onBack,
@@ -1425,38 +1434,20 @@ class _HeroNavRow extends StatelessWidget {
             ),
           ),
         ),
-        Container(
-          width: 40,
-          height: 40,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: Color.lerp(
-                Colors.white.withValues(alpha: 0.8),
-                AppColors.chipBorder,
-                t,
-              )!,
-              width: 2,
-            ),
-            color: Color.lerp(
-              Colors.white.withValues(alpha: 0.24),
-              AppColors.line,
-              t,
-            ),
-          ),
-          child: avatarImage == null
-              ? Icon(
-                  Icons.person,
-                  size: 20,
-                  color: Color.lerp(Colors.white, AppColors.muted, t),
-                )
-              : CoverImage(source: avatarImage!, fit: BoxFit.cover),
+        GlassCircleButton(
+          key: planMenuButtonKey,
+          icon: Icons.menu,
+          iconSize: 18,
+          tooltip: 'เมนู',
+          onTap: onMenu,
         ),
       ],
     );
   }
 }
+
+/// The hamburger on the editor's top bar.
+const planMenuButtonKey = Key('plan-menu-button');
 
 class _HeroDateRow extends StatelessWidget {
   const _HeroDateRow({required this.plan});
@@ -1475,13 +1466,28 @@ class _HeroDateRow extends StatelessWidget {
         const Icon(Icons.calendar_today_outlined,
             size: 14, color: Colors.white),
         const SizedBox(width: 7),
-        Flexible(child: Text(plan.dateLine, style: style, maxLines: 1)),
+        // It shares its line with แก้ไขข้อมูล, so both halves give way.
+        Flexible(
+          child: Text(
+            plan.dateLine,
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         if (plan.durationLine.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text('•', style: style),
           ),
-          Text(plan.durationLine, style: style),
+          Flexible(
+            child: Text(
+              plan.durationLine,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ],
     );
@@ -1575,37 +1581,6 @@ class _StatTile extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _GlassCircleButton extends StatelessWidget {
-  const _GlassCircleButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, size: 17, color: AppColors.foreground),
-        ),
       ),
     );
   }
@@ -1842,7 +1817,9 @@ class _CollapsibleSection extends StatelessWidget {
           ),
           if (expanded)
             Padding(
-              padding: const EdgeInsets.all(12),
+              // Thin at the sides: the cards inside have their own padding,
+              // and a second full gutter squeezed them.
+              padding: const EdgeInsets.fromLTRB(6, 10, 6, 12),
               child: child,
             ),
         ],
@@ -2159,7 +2136,7 @@ class _DayCard extends StatelessWidget {
             if (day.dateLabel.isNotEmpty)
               const Divider(height: 1, color: _cardEdge),
             Padding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -3397,6 +3374,8 @@ class _PlanView {
       ...brief.customTransport,
       ...brief.styles.map(styleLabel).whereType<String>(),
       ...brief.customStyles,
+      ...brief.constraints.map(constraintLabel).whereType<String>(),
+      ...brief.customConstraints,
     ];
   }
 

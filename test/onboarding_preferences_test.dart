@@ -120,15 +120,13 @@ void main() {
         isFalse,
       );
       expect(await sync.pushTravelStyle(TripStylePreference.skipped), isFalse);
-      expect(await sync.pull(), isNull);
       expect(adapter.paths, isEmpty);
     });
 
     test('a brand new account reads as nothing answered', () async {
-      final preferences =
-          await _container(_adapter()).read(onboardingSyncProvider).pull();
+      final preferences = await fakeApi(_adapter()).users.preferences();
 
-      expect(preferences!.locationAccess, isNull);
+      expect(preferences.locationAccess, isNull);
       expect(preferences.travelStyle, isNull);
     });
 
@@ -145,10 +143,9 @@ void main() {
         ),
       );
 
-      final preferences =
-          await _container(adapter).read(onboardingSyncProvider).pull();
+      final preferences = await fakeApi(adapter).users.preferences();
 
-      expect(preferences!.locationAccess!.status, LocationAccessAnswer.later);
+      expect(preferences.locationAccess!.status, LocationAccessAnswer.later);
       expect(tripStyleFrom(preferences.travelStyle!).styles, ['ธรรมชาติ']);
       expect(tripStyleFrom(preferences.travelStyle!).constraints, ['อิสลาม']);
     });

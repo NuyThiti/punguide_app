@@ -156,10 +156,10 @@ void main() {
     expect(find.byType(LocationAccessScreen), findsNothing);
   });
 
-  testWidgets('answers given on another device skip both pages',
+  testWidgets('an account that answered does not speak for a wiped device',
       (tester) async {
-    // Nothing stored on this phone, but the account has been through the
-    // sequence before — which is the whole reason it is kept there.
+    // The answers are mirrored onto the account, but the sequence reads the
+    // device — so clearing the app's data gives the whole flow back.
     await _launch(
       tester,
       session: AuthSession.demo,
@@ -174,24 +174,7 @@ void main() {
       },
     );
 
-    expect(find.byType(HomeScreen), findsOneWidget);
-    expect(find.byType(LocationAccessScreen), findsNothing);
-    expect(find.byType(TripStyleScreen), findsNothing);
-  });
-
-  testWidgets('an account half way through is asked only what is left',
-      (tester) async {
-    await _launch(
-      tester,
-      session: AuthSession.demo,
-      accountAnswers: <String, dynamic>{
-        'locationAccess': <String, dynamic>{'status': 'later'},
-        'travelStyle': null,
-      },
-    );
-
-    expect(find.byType(TripStyleScreen), findsOneWidget);
-    expect(find.byType(LocationAccessScreen), findsNothing);
+    expect(find.byType(LocationAccessScreen), findsOneWidget);
   });
 
   testWidgets('signed in with both answered, the app opens on Home',

@@ -141,13 +141,13 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       .whereType<TripConstraint>()
       .toList(growable: false);
 
-  /// The constraint chips with no enum behind them, kept as free text so the
-  /// traveller's answer is not silently dropped on the way to the server.
-  String? get _specialNotes {
-    final extra =
-        _constraints.where((label) => !constraintByLabel.containsKey(label));
-    return extra.isEmpty ? null : extra.join(', ');
-  }
+  /// The constraint chips with no enum behind them — dietary rather than
+  /// accessibility. They go up as `customConstraints`, which the brief keeps
+  /// and echoes back, so the plan editor can show and edit them; sent as
+  /// `constraints` they would 400.
+  List<String> get _customConstraints => _constraints
+      .where((label) => !constraintByLabel.containsKey(label))
+      .toList(growable: false);
 
   /// Days the trip runs, counted inclusively: three nights is four days, and
   /// a single date is one. Null while no length has been chosen — a new trip
@@ -326,8 +326,8 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   /// Step one: how the traveller likes to travel.
   List<Widget> _preferenceStep() {
     return [
-      const _ThaiSectionTitle(title: 'สไตล์การเที่ยว'),
-      _ChoiceWrap(
+      const TripSectionTitle(title: 'สไตล์การเที่ยว'),
+      TripChoiceWrap(
         // One list, shared with the composer's Trip Activity sheet.
         items: [
           for (final entry in styleByLabel.entries)
@@ -338,26 +338,20 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         showMore: true,
       ),
       const SizedBox(height: 22),
-      const _ThaiSectionTitle(
+      const TripSectionTitle(
         title: 'ความเข้มข้นของทริป',
         subtitle: '*จำนวนจุดท่องเที่ยว / วัน',
       ),
-      _TierGrid(
+      TripTierGrid(
         // Keyed by the wire value of TripIntensity, so the selection goes
         // straight up as `pace` with nothing to translate.
-        items: const [
-          ['slow_life', 'Slow Life', '3 - 4 สถานที่/วัน'],
-          ['chill', 'Chill', '5 - 6 สถานที่/วัน'],
-          ['balance', 'Balance', '8 สถานที่/วัน'],
-          ['active', 'Active', '9 - 11 สถานที่/วัน'],
-          ['hardcore', 'Hardcore', '12+ สถานที่/วัน'],
-        ],
+        items: tripPaceTiers,
         selected: _paceTier,
         onTap: _setPace,
       ),
       const SizedBox(height: 22),
-      const _ThaiSectionTitle(title: 'การเดินทาง'),
-      _ChoiceWrap(
+      const TripSectionTitle(title: 'การเดินทาง'),
+      TripChoiceWrap(
         items: const [
           ['เครื่องบิน', Icons.flight_outlined],
           ['รถส่วนตัว', Icons.directions_car_outlined],
@@ -383,11 +377,11 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
         ),
       ),
       const SizedBox(height: 20),
-      const _ThaiSectionTitle(
+      const TripSectionTitle(
         title: 'งบต่อคน / วัน',
         subtitle: '* ยังไม่รวมค่าที่พัก',
       ),
-      _TierGrid(
+      TripTierGrid(
         items: const [
           ['economy', 'Economy', '<1,000฿'],
           ['comfort', 'Comfort', '฿1,000 - ฿5,000'],
@@ -400,18 +394,13 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       const SizedBox(height: 10),
       _CustomBudgetCard(controller: _budgetController),
       const SizedBox(height: 22),
-      const _ThaiSectionTitle(title: 'ที่พัก / โรงแรม'),
+      const TripSectionTitle(title: 'ที่พัก / โรงแรม'),
       _LodgingChoice(selected: _lodging, onTap: _setLodging),
       const SizedBox(height: 22),
-      const _ThaiSectionTitle(title: 'เงื่อนไข / ข้อจำกัด'),
-      _ChoiceWrap(
-        items: const [
-          ['มีผู้สูงอายุ'],
-          ['ผู้ใช้รถเข็น'],
-          ['อิสลาม'],
-          ['มังสวิรัติ'],
-          ['เดินเยอะไม่ได้'],
-          ['มีเด็กเล็ก'],
+      const TripSectionTitle(title: 'เงื่อนไข / ข้อจำกัด'),
+      TripChoiceWrap(
+        items: [
+          for (final label in tripConstraintChips) [label]
         ],
         selected: _constraints,
         onTap: _toggleConstraint,
@@ -496,16 +485,11 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   }
 
   Future<void> _showDatesDialog() async {
-    final picked = await showModalBottomSheet<_TripDates>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.42),
-      builder: (_) => _TripDatesSheet(
-        start: _startDate,
-        end: _endDate,
-        nights: _nights,
-      ),
+    final picked = await pickTripDates(
+      context,
+      start: _startDate,
+      end: _endDate,
+      nights: _nights,
     );
     if (picked == null || !mounted) return;
 
@@ -517,9 +501,7 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   }
 
   Future<void> _showDestinationSearch() async {
-    final selected = await Navigator.of(context).push<DestinationOption>(
-      MaterialPageRoute(builder: (_) => const _DestinationSearchPage()),
-    );
+    final selected = await pickTripDestination(context);
     if (selected == null || !mounted) return;
 
     setState(() {
@@ -529,15 +511,10 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
   }
 
   Future<void> _showGuestSheet() async {
-    final result = await showModalBottomSheet<(int, int)>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.42),
-      builder: (context) => _GuestPickerSheet(
-        initialAdults: _travelers,
-        initialChildren: _children,
-      ),
+    final result = await pickTripGuests(
+      context,
+      adults: _travelers,
+      children: _children,
     );
 
     if (result != null && mounted) {
@@ -617,7 +594,8 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
           constraints: _wireConstraints,
           budgetLimit: _budgetToSave > 0 ? _budgetToSave : null,
           budgetTier: _tierToSave,
-          specialNotes: _specialNotes,
+          customConstraints:
+              _customConstraints.isEmpty ? null : _customConstraints,
         );
         createdTripId = created.id;
         // The new draft belongs in the feed the rest of the app reads.
@@ -983,8 +961,68 @@ class _GuestStepperButton extends StatelessWidget {
 
 /// What the date dialog hands back: either an exact range, or a night count
 /// with no dates attached.
-class _TripDates {
-  const _TripDates({this.start, this.end, required this.nights});
+/// ความเข้มข้นของทริป, as `[TripIntensity wire value, title, subtitle]` —
+/// keyed by the wire value so a pick goes up as `pace` untranslated.
+const tripPaceTiers = <List<String>>[
+  ['slow_life', 'Slow Life', '3 - 4 สถานที่/วัน'],
+  ['chill', 'Chill', '5 - 6 สถานที่/วัน'],
+  ['balance', 'Balance', '8 สถานที่/วัน'],
+  ['active', 'Active', '9 - 11 สถานที่/วัน'],
+  ['hardcore', 'Hardcore', '12+ สถานที่/วัน'],
+];
+
+/// เงื่อนไข / ข้อจำกัด, in the order the design lists them. Four have a
+/// `TripConstraint`; the dietary two do not and go up as `customConstraints`.
+const tripConstraintChips = <String>[
+  'มีผู้สูงอายุ',
+  'ผู้ใช้รถเข็น',
+  'อิสลาม',
+  'มังสวิรัติ',
+  'เดินเยอะไม่ได้',
+  'มีเด็กเล็ก',
+];
+
+/// The pickers behind the wizard's header, for any page that edits the same
+/// facts — the plan editor's ข้อมูลทริป sheet opens these very ones.
+Future<DestinationOption?> pickTripDestination(BuildContext context) =>
+    Navigator.of(context).push<DestinationOption>(
+      MaterialPageRoute(builder: (_) => const _DestinationSearchPage()),
+    );
+
+Future<TripDates?> pickTripDates(
+  BuildContext context, {
+  DateTime? start,
+  DateTime? end,
+  int nights = 0,
+}) =>
+    showModalBottomSheet<TripDates>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (_) => _TripDatesSheet(start: start, end: end, nights: nights),
+    );
+
+/// Adults and children, in that order.
+Future<(int, int)?> pickTripGuests(
+  BuildContext context, {
+  required int adults,
+  int children = 0,
+}) =>
+    showModalBottomSheet<(int, int)>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (_) => _GuestPickerSheet(
+        initialAdults: adults,
+        initialChildren: children,
+      ),
+    );
+
+/// What the dates sheet answers: a range, or a length with no dates.
+class TripDates {
+  const TripDates({this.start, this.end, required this.nights});
 
   final DateTime? start;
   final DateTime? end;
@@ -1084,7 +1122,7 @@ class _TripDatesSheetState extends State<_TripDatesSheet> {
       final start = _start!;
       final end = _end ?? start;
       Navigator.of(context).pop(
-        _TripDates(
+        TripDates(
           start: start,
           end: end,
           nights: end.difference(start).inDays,
@@ -1093,7 +1131,7 @@ class _TripDatesSheetState extends State<_TripDatesSheet> {
       return;
     }
     // Nights only: the traveller has not committed to dates yet.
-    Navigator.of(context).pop(_TripDates(nights: _nights));
+    Navigator.of(context).pop(TripDates(nights: _nights));
   }
 
   @override
@@ -2054,7 +2092,7 @@ class _CreateTripHeader extends StatelessWidget {
             ),
             child: Column(
               children: [
-                _HeaderInput(
+                TripHeaderInput(
                   icon: 'assets/icons/field_location.svg',
                   child: TextFormField(
                     controller: destinationController,
@@ -2073,14 +2111,14 @@ class _CreateTripHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                _HeaderInput(
+                TripHeaderInput(
                   icon: 'assets/icons/field_calendar.svg',
                   label: dateText,
                   filled: hasDate,
                   onTap: onPickDate,
                 ),
                 const SizedBox(height: 10),
-                _HeaderInput(
+                TripHeaderInput(
                   icon: 'assets/icons/field_guests.svg',
                   label: children == 0
                       ? 'ผู้ใหญ่, $travelers คน'
@@ -2178,18 +2216,24 @@ class _StickyTopBar extends StatelessWidget {
   }
 }
 
-class _HeaderInput extends StatelessWidget {
-  const _HeaderInput({
-    required this.icon,
+/// One row of the header's panel: a round icon, then a value or a field.
+class TripHeaderInput extends StatelessWidget {
+  const TripHeaderInput({
+    super.key,
+    this.icon,
+    this.iconData,
     this.label,
     this.child,
     this.onTap,
     this.filled = false,
-  });
+  }) : assert(icon != null || iconData != null);
 
   /// An `assets/icons` path. The design's own strokes, which already carry
   /// their colour, so they are drawn as-is rather than tinted.
-  final String icon;
+  final String? icon;
+
+  /// For a row the design has no stroke for, drawn in the strokes' orange.
+  final IconData? iconData;
   final String? label;
   final Widget? child;
   final VoidCallback? onTap;
@@ -2219,7 +2263,9 @@ class _HeaderInput extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: Center(
-                  child: SvgPicture.asset(icon, width: 16, height: 16),
+                  child: icon != null
+                      ? SvgPicture.asset(icon!, width: 16, height: 16)
+                      : Icon(iconData, size: 16, color: AppColors.brandOrange),
                 ),
               ),
               const SizedBox(width: 12),
@@ -2570,8 +2616,8 @@ class _DashedBorderPainter extends CustomPainter {
       old.color != color || old.radius != radius;
 }
 
-class _ThaiSectionTitle extends StatelessWidget {
-  const _ThaiSectionTitle({required this.title, this.subtitle});
+class TripSectionTitle extends StatelessWidget {
+  const TripSectionTitle({super.key, required this.title, this.subtitle});
   final String title;
   final String? subtitle;
 
@@ -2594,12 +2640,13 @@ class _ThaiSectionTitle extends StatelessWidget {
   }
 }
 
-class _ChoiceWrap extends StatelessWidget {
-  const _ChoiceWrap({
+class TripChoiceWrap extends StatelessWidget {
+  const TripChoiceWrap({
+    super.key,
     required this.items,
     required this.selected,
     required this.onTap,
-    required this.showMore,
+    this.showMore = false,
     this.moreLabel = '+ เพิ่ม',
   });
 
@@ -2690,8 +2737,9 @@ class _OutlineChip extends StatelessWidget {
 }
 
 /// The two-column card grid shared by "ความเข้มข้นของทริป" and "งบต่อคน / วัน".
-class _TierGrid extends StatelessWidget {
-  const _TierGrid({
+class TripTierGrid extends StatelessWidget {
+  const TripTierGrid({
+    super.key,
     required this.items,
     required this.selected,
     required this.onTap,

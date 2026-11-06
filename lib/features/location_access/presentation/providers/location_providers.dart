@@ -46,16 +46,6 @@ class LocationPermissionController extends Notifier<LocationPermissionStatus?> {
   /// Takes the answer and writes it through, so the page does not come back on
   /// the next launch. Only clearing the app's storage undoes this.
   ///
-  /// Takes an answer the account already held, without sending it back.
-  ///
-  /// Used once at launch, for a traveller signing in on a new device. It is
-  /// not a fresh answer, so neither the stored place nor the account's copy
-  /// of it is touched.
-  Future<void> adopt(LocationPermissionStatus status) async {
-    state = status;
-    await ref.read(locationPermissionStoreProvider).write(status);
-  }
-
   /// The answer also goes up to the account, so a second device does not put
   /// the page up again. Anything that is not
   /// [LocationPermissionStatus.granted] clears the stored place server-side

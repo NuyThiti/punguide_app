@@ -503,7 +503,7 @@ void main() {
       expect(adapter.bodyOf('POST /trips')!.containsKey('status'), isFalse);
     });
 
-    testWidgets('constraints with no enum ride in specialNotes, not the array',
+    testWidgets('constraints with no enum go up as customConstraints',
         (tester) async {
       await fillAndSubmit(
         tester,
@@ -513,7 +513,9 @@ void main() {
       final body = adapter.bodyOf('POST /trips')!;
       // Sending the dietary ones as constraints would be a 400.
       expect(body['constraints'], ['limited_walking']);
-      expect(body['specialNotes'], 'อิสลาม, มังสวิรัติ');
+      expect(body['customConstraints'], ['อิสลาม', 'มังสวิรัติ']);
+      // Not the owner's private note, which is where they used to hide.
+      expect(body.containsKey('specialNotes'), isFalse);
     });
 
     testWidgets('an amount typed with no bracket still lands in one',

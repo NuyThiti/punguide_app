@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'core/network/fresh_install.dart';
 import 'features/auth/data/firebase_google_authenticator.dart';
 import 'features/auth/presentation/providers/auth_providers.dart';
 import 'features/location_access/data/geolocator_location_service.dart';
@@ -18,6 +19,9 @@ export 'app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final firebaseReady = await _initialiseFirebase();
+  // Before anything reads the session: an install on top of a deleted one
+  // still has the old token in the keychain, and Login has to come back.
+  await signOutIfFreshInstall();
   // Read before the first frame so the route gate — which has to answer
   // synchronously — already knows whether the traveller has been asked.
   final locationPermission = await const PrefsLocationPermissionStore().read();

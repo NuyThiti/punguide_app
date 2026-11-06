@@ -40,14 +40,6 @@ class TripStyleController extends Notifier<TripStylePreference?> {
     await ref.read(onboardingSyncProvider).pushTravelStyle(preference);
   }
 
-  /// Takes an answer the account already held, without sending it back.
-  ///
-  /// Used once at launch, for a traveller signing in on a new device.
-  Future<void> adopt(TripStylePreference preference) async {
-    state = preference;
-    await ref.read(tripStyleStoreProvider).write(preference);
-  }
-
   /// Forgets the answer, so สไตล์เที่ยวของฉัน is asked again.
   Future<void> clear() async {
     state = null;

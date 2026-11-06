@@ -11,10 +11,11 @@ import '../../trip_style/domain/trip_style_preference.dart';
 /// Mirrors the two onboarding answers onto the account, through
 /// `/users/me/preferences`.
 ///
-/// The device keeps its own copy and the launch sequence reads that, because
-/// the gate has to answer on the frame it is asked. This is what makes the
-/// answers follow a traveller to a second device — and what stops the app
-/// putting the same two pages up again there.
+/// One direction only. The device keeps its own copy and the launch sequence
+/// reads that and nothing else, so wiping the app's data gives the whole
+/// sequence back; this is what puts the answers somewhere a report or another
+/// client can see them. `UsersApi.preferences()` is the read half, if the app
+/// ever wants it.
 ///
 /// Every route is behind the auth guard, so all of it is skipped while signed
 /// out; the local copies carry the app on their own.
@@ -22,19 +23,6 @@ class OnboardingSync {
   OnboardingSync(this._ref);
 
   final Ref _ref;
-
-  /// What the account has answered, or null when there is nobody to ask.
-  Future<UserPreferences?> pull() async {
-    if (!_ref.read(isSignedInProvider)) return null;
-    try {
-      return await (await _ref.read(plunoApiProvider.future))
-          .users
-          .preferences();
-    } on ApiException catch (failure) {
-      debugPrint('preferences pull failed: ${failure.statusCode} $failure');
-      return null;
-    }
-  }
 
   /// Records what was tapped on the Location Access page.
   ///

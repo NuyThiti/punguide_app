@@ -22,6 +22,8 @@ import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/create_trip/presentation/edit_trip_screen.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/add_place_sheet.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/photo_choice_sheet.dart';
+import 'package:pluno/features/create_trip/presentation/widgets/trip_identity_sheet.dart';
+import 'package:pluno/features/create_trip/presentation/create_trip_screen.dart';
 import 'package:pluno/features/create_trip/presentation/widgets/plan_budget_tab.dart';
 
 import 'support/fake_api.dart';
@@ -503,7 +505,7 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.tap(find.byKey(planMenuButtonKey));
     await tester.pumpAndSettle();
     await tester.tap(find.text('แก้ไขรายละเอียดทริป'));
     await tester.pumpAndSettle();
@@ -515,9 +517,9 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Remix moved into the schedule's ⋮ menu.
+    // Remix lives in the plan menu, behind the top bar's hamburger.
     expect(find.text('Remix Trip'), findsNothing);
-    await tester.tap(find.byTooltip('ตัวเลือกเพิ่มเติม'));
+    await tester.tap(find.byTooltip('เมนู'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remix Trip'));
     await tester.pumpAndSettle();
@@ -1131,6 +1133,156 @@ void main() {
     });
   });
 
+  group('แก้ไขข้อมูลทริป', () {
+    Finder inSheet(Finder matching) => find.descendant(
+          of: find.byKey(tripIdentitySheetKey),
+          matching: matching,
+        );
+
+    Future<void> openSheet(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson()..['guestCount'] = 2)
+      ];
+      adapter.replies['PATCH /trips/trip-1'] = [FakeReply(200, _tripJson())];
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      // Both live in the top bar's menu.
+      await tester.tap(find.byKey(planMenuButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(editIdentityButtonKey));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('opens on the trip as it is, in the create page rows',
+        (tester) async {
+      await openSheet(tester);
+
+      expect(inSheet(find.text('แก้ไขข้อมูลทริป')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(inSheet(find.byType(TextField)))
+            .controller!
+            .text,
+        'หลวงพระบาง, ลาว',
+      );
+      expect(inSheet(find.text('20/08/2026 - 22/08/2026')), findsOneWidget);
+      expect(inSheet(find.text('ผู้ใหญ่, 2 คน')), findsOneWidget);
+      expect(inSheet(find.byType(TripHeaderInput)), findsNWidgets(4));
+    });
+
+    testWidgets('saves only what changed, then reloads the trip',
+        (tester) async {
+      await openSheet(tester);
+
+      await tester.enterText(inSheet(find.byType(TextField)), 'ทริปหลวงพระบาง');
+      await tester.pump();
+      await tester.tap(inSheet(find.byKey(tripIdentityGuestsKey)));
+      await tester.pumpAndSettle();
+      // The guest sheet's last + is its children row.
+      await tester.tap(find.byIcon(Icons.add).last);
+      await tester.pump();
+      await tester.tap(find.text('ยืนยัน'));
+      await tester.pumpAndSettle();
+      expect(inSheet(find.text('ผู้ใหญ่ 2, เด็ก 1 คน')), findsOneWidget);
+
+      final reloadsBefore =
+          adapter.paths.where((p) => p == 'GET /trips/trip-1').length;
+      await tester.tap(inSheet(find.byKey(tripIdentitySaveKey)));
+      await tester.pumpAndSettle();
+
+      expect(adapter.bodyOf('PATCH /trips/trip-1'), {
+        'title': 'ทริปหลวงพระบาง',
+        'guestCount': 3,
+      });
+      expect(find.byKey(tripIdentitySheetKey), findsNothing);
+      expect(find.text('บันทึกข้อมูลทริปแล้ว'), findsOneWidget);
+      expect(
+        adapter.paths.where((p) => p == 'GET /trips/trip-1').length,
+        greaterThan(reloadsBefore),
+      );
+    });
+
+    testWidgets('styles and pace go up as the brief, only when touched',
+        (tester) async {
+      await openSheet(tester);
+
+      Future<void> tapInSheet(String text) async {
+        final target = inSheet(find.text(text));
+        await tester.ensureVisible(target);
+        await tester.pumpAndSettle();
+        await tester.tap(target);
+        await tester.pump();
+      }
+
+      // The trip's brief is culture, food, nightlife at an active pace.
+      await tapInSheet('อาหาร');
+      await tapInSheet('ทะเล');
+      await tapInSheet('Chill');
+      await tester.tap(inSheet(find.byKey(tripIdentitySaveKey)));
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('PATCH /trips/trip-1')!;
+      expect(body['travelStyles'], ['culture', 'nightlife', 'beach']);
+      expect(body['customStyles'], isEmpty);
+      expect(body['pace'], 'chill');
+      // Nothing else was touched, so nothing else goes up.
+      expect(
+          body.keys, unorderedEquals(['travelStyles', 'customStyles', 'pace']));
+    });
+
+    testWidgets('constraints show on the hero and are edited with the rest',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final trip = _tripJson();
+      (trip['brief'] as Map)['constraints'] = ['seniors'];
+      (trip['brief'] as Map)['customConstraints'] = ['อิสลาม'];
+      adapter.replies['GET /trips/trip-1'] = [FakeReply(200, trip)];
+      adapter.replies['PATCH /trips/trip-1'] = [FakeReply(200, trip)];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      // The enum one by its Thai name, the dietary one as it was typed.
+      expect(find.text('มีผู้สูงอายุ'), findsOneWidget);
+      expect(find.text('อิสลาม'), findsOneWidget);
+
+      // Both live in the top bar's menu.
+      await tester.tap(find.byKey(planMenuButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(editIdentityButtonKey));
+      await tester.pumpAndSettle();
+      for (final label in ['อิสลาม', 'มีเด็กเล็ก']) {
+        final chip = inSheet(find.text(label));
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pump();
+      }
+      await tester.tap(inSheet(find.byKey(tripIdentitySaveKey)));
+      await tester.pumpAndSettle();
+
+      final body = adapter.bodyOf('PATCH /trips/trip-1')!;
+      expect(body['constraints'], ['seniors', 'young_children']);
+      expect(body['customConstraints'], isEmpty);
+      expect(body.keys, unorderedEquals(['constraints', 'customConstraints']));
+    });
+
+    testWidgets('an empty name cannot be saved', (tester) async {
+      await openSheet(tester);
+
+      await tester.enterText(inSheet(find.byType(TextField)), '   ');
+      await tester.pump();
+
+      final save =
+          tester.widget<FilledButton>(inSheet(find.byKey(tripIdentitySaveKey)));
+      expect(save.onPressed, isNull);
+    });
+  });
+
   group('หลายรูปต่อสถานที่', () {
     Map<String, dynamic> galleryOf(List<String> ids) => {
           'tripId': 'trip-1',
@@ -1477,6 +1629,9 @@ void main() {
       await tester.pumpAndSettle();
       // The automatic cover goes out once the gallery is in.
       await tester.pumpAndSettle();
+      // Both live in the top bar's menu.
+      await tester.tap(find.byKey(planMenuButtonKey));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(changeCoverButtonKey));
       await tester.pumpAndSettle();
 
@@ -1530,6 +1685,9 @@ void main() {
           .where((p) => p == 'POST /trips/trip-1/media/from-place')
           .length;
       final before = fromPlaceCalls();
+      // Both live in the top bar's menu.
+      await tester.tap(find.byKey(planMenuButtonKey));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(changeCoverButtonKey));
       await tester.pumpAndSettle();
 
