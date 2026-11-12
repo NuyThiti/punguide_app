@@ -380,4 +380,72 @@ void main() {
     expect(body['linkedTripId'], isNull);
     expect(body.containsKey('linkedTripId'), isTrue);
   });
+
+  testWidgets(
+      'a post still being moderated after Share says so instead of reading '
+      'as a normal, silent success', (tester) async {
+    adapter = FakeAdapter({
+      'GET /trips/trip-1': [FakeReply(200, _postJson())],
+      'GET /trips/mine': [const FakeReply(200, <Map<String, dynamic>>[])],
+      'PUT /trips/posts/trip-1': [
+        FakeReply(200, {
+          ..._postJson(),
+          'visibility': 'private',
+          'moderation': {
+            'status': 'PENDING',
+            'reasonCode': 'UNDER_REVIEW',
+            'requestedVisibility': 'public',
+            'canAppeal': false,
+          },
+        })
+      ],
+    });
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Share'));
+    // Not `pumpAndSettle`: the screen also pops itself right after showing
+    // this — settling would run that transition to completion too, past the
+    // point of being able to see the snack bar it is checking for.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('กำลังตรวจสอบโพสต์ของคุณ'), findsOneWidget);
+  });
+
+  testWidgets(
+      'content the inline check rejects outright still reads as saved, not '
+      'as a failed Share', (tester) async {
+    adapter = FakeAdapter({
+      'GET /trips/trip-1': [FakeReply(200, _postJson())],
+      'GET /trips/mine': [const FakeReply(200, <Map<String, dynamic>>[])],
+      'PUT /trips/posts/trip-1': [
+        FakeReply(422, {
+          'statusCode': 422,
+          'error': 'CONTENT_REJECTED',
+          'message': 'Your content was not approved.',
+          'tripId': 'trip-1',
+          'moderation': {
+            'status': 'REJECTED',
+            'reasonCode': 'NOT_TRAVEL_RELATED',
+            'canAppeal': true,
+          },
+        })
+      ],
+    });
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Share'));
+    // Same reason as the PENDING test above: this also pops itself right
+    // after, so a full settle would run past the snack bar being checked.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+        find.text(
+            'PunGuide เป็นพื้นที่แชร์ประสบการณ์ท่องเที่ยว โพสต์นี้ดูไม่เกี่ยวกับการท่องเที่ยว'),
+        findsOneWidget);
+    expect(find.text('แชร์โพสต์ไม่สำเร็จ ลองอีกครั้ง'), findsNothing);
+  });
 }

@@ -204,3 +204,89 @@ class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
     return withoutClips(page);
   }
 }
+
+/// How many pictures one page of an album asks for. The gallery is the only
+/// paginated list in the API and answers with `page` / `limit` / `total`.
+const albumGalleryPageSize = 30;
+
+/// Every picture filed under one trip, from `GET /trips/:id/media`.
+///
+/// **Not `trip.contents`.** Those are only the pictures embedded in a post's
+/// sections: media uploaded to the trip but attached to no section never
+/// appears there, and a plan trip keeps its pictures against its stops rather
+/// than in sections at all. `mediaSummary` on the trip says so outright — it
+/// carries `totalImages`, a `hasMore`, and the `galleryEndpoint` this reads.
+final albumGalleryProvider = AsyncNotifierProvider.autoDispose
+    .family<AlbumGalleryNotifier, List<GalleryImage>, String>(
+  AlbumGalleryNotifier.new,
+);
+
+class AlbumGalleryNotifier
+    extends AutoDisposeFamilyAsyncNotifier<List<GalleryImage>, String> {
+  int _page = 0;
+  bool _exhausted = false;
+  int _total = 0;
+
+  bool get hasMore => !_exhausted;
+
+  /// How many pictures the trip holds in all — the server's own count, which
+  /// is what the header should print rather than how many are loaded so far.
+  int get total => _total;
+
+  @override
+  Future<List<GalleryImage>> build(String tripId) async {
+    _page = 0;
+    _exhausted = false;
+    _total = 0;
+    final api = await ref.watch(plunoApiProvider.future);
+    return _append(api, const <GalleryImage>[]);
+  }
+
+  /// Appends the next page; a no-op while one is in flight or the gallery is
+  /// spent, so a tap that fires twice cannot double-read.
+  Future<void> loadMore() async {
+    final current = state.valueOrNull;
+    if (current == null || _exhausted || state.isLoading) return;
+
+    state = AsyncLoading<List<GalleryImage>>()
+        .copyWithPrevious(AsyncData<List<GalleryImage>>(current));
+    state = await AsyncValue.guard(() async {
+      final api = await ref.read(plunoApiProvider.future);
+      return _append(api, current);
+    });
+  }
+
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(() async {
+      _page = 0;
+      _exhausted = false;
+      final api = await ref.read(plunoApiProvider.future);
+      return _append(api, const <GalleryImage>[]);
+    });
+  }
+
+  /// Reads the page after the last one held and adds what is new.
+  ///
+  /// Paging is by page number here, not offset, and the server reports
+  /// `total`, so the end is `hasNextPage` rather than a short page.
+  Future<List<GalleryImage>> _append(
+    PlunoApi api,
+    List<GalleryImage> current,
+  ) async {
+    final gallery = await api.media.gallery(
+      arg,
+      page: _page + 1,
+      limit: albumGalleryPageSize,
+    );
+    _page = gallery.page;
+    _total = gallery.total;
+    _exhausted = !gallery.hasNextPage;
+
+    // An upload mid-walk shifts the window, so never print one twice.
+    final seen = {for (final image in current) image.id};
+    return <GalleryImage>[
+      ...current,
+      ...gallery.items.where((image) => !seen.contains(image.id)),
+    ];
+  }
+}

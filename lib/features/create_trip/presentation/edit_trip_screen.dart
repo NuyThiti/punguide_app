@@ -14,6 +14,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
+import '../../../shared/formatting/moderation_text.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../../shared/widgets/glass_circle_button.dart';
 import '../../../shared/widgets/full_image_viewer.dart';
@@ -435,11 +436,15 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
 
     final previous = _visibility;
     setState(() => _visibility = picked.visibility);
+    ApiTrip saved;
     try {
       final api = await ref.read(plunoApiProvider.future);
       // The first switch to public stamps publishedAt server-side; going
-      // private again does not clear it.
-      await api.trips.update(widget.tripId, visibility: picked.visibility);
+      // private again does not clear it. Switching to public/followers also
+      // submits the plan for content moderation — `saved.moderation` says
+      // whether it actually took effect yet.
+      saved =
+          await api.trips.update(widget.tripId, visibility: picked.visibility);
     } on ApiException catch (failure) {
       if (!mounted) return;
       setState(() => _visibility = previous);
@@ -455,7 +460,13 @@ class _EditTripScreenState extends ConsumerState<EditTripScreen> {
     }
     if (!mounted) return;
     ref.invalidate(apiTripProvider(widget.tripId));
-    _todo('ตั้งค่าเป็น ${picked.label} แล้ว');
+    // Going private needs no check, so there is no `moderation` to read;
+    // going public/followers usually clears it within this very request —
+    // only say something different when it has not.
+    final moderation = saved.moderation;
+    _todo(moderation != null && moderation.status != ModerationStatus.approved
+        ? moderationMessage(moderation)
+        : 'ตั้งค่าเป็น ${picked.label} แล้ว');
   }
 
   /// Back to wherever the editor was opened from, falling back to the trip

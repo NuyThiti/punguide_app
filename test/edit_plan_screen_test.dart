@@ -501,16 +501,16 @@ void main() {
     expect(find.text('ที่พัก'), findsOneWidget);
   });
 
-  testWidgets('the overflow menu reaches the brief wizard', (tester) async {
+  testWidgets('the overflow menu no longer offers the brief wizard',
+      (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(planMenuButtonKey));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('แก้ไขรายละเอียดทริป'));
-    await tester.pumpAndSettle();
 
-    expect(find.text('brief page'), findsOneWidget);
+    expect(find.text('Remix Trip'), findsOneWidget);
+    expect(find.text('แก้ไขรายละเอียดทริป'), findsNothing);
   });
 
   testWidgets('Remix Trip leaves for the remix route', (tester) async {

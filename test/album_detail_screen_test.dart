@@ -3,19 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pluno/core/api/api_providers.dart';
-import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/profile/presentation/album_detail_screen.dart';
+import 'package:pluno/shared/widgets/cover_image.dart';
+import 'package:pluno/features/profile/presentation/providers/profile_providers.dart';
 
 import 'support/fake_api.dart';
 
-/// A post as `GET /trips/:id` hands it over: two sections, four pictures, one
-/// of them withdrawn.
-Map<String, dynamic> _albumJson({
-  List<Map<String, dynamic>>? contents,
-}) =>
+/// The trip itself. Its `contents` carry a single embedded picture on
+/// purpose: the gallery holds more, and the grid must follow the gallery.
+Map<String, dynamic> _tripJson({int totalImages = 4, bool hasMore = true}) =>
     <String, dynamic>{
       'id': 'album-1',
       'ownerId': 'u1',
@@ -28,51 +27,69 @@ Map<String, dynamic> _albumJson({
       'tags': <String>[],
       'visibility': 'public',
       'remixCount': 0,
-      'mediaSummary': <String, dynamic>{},
+      'mediaSummary': <String, dynamic>{
+        'totalImages': totalImages,
+        'hasMore': hasMore,
+        'galleryEndpoint': '/trips/album-1/media',
+      },
       'isSaved': false,
       'isLiked': false,
       'likeCount': 0,
       'days': <dynamic>[],
-      'coverImage': <String, dynamic>{
-        'mediaId': 'm-cover',
-        'urls': <String, dynamic>{
-          'large': 'https://cdn.test/cover-large.jpg',
-          'thumbnail': 'https://cdn.test/cover-thumb.jpg',
-        },
-      },
-      'contents': contents ??
-          <Map<String, dynamic>>[
+      'contents': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'title': 'เช้า',
+          'content': 'กาแฟร้านแรก',
+          'images': <Map<String, dynamic>>[
             <String, dynamic>{
-              'title': 'เช้า',
-              'content': 'กาแฟร้านแรก',
-              'images': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'mediaId': 'm-1',
-                  'urls': <String, dynamic>{
-                    'large': 'https://cdn.test/1-large.jpg',
-                    'thumbnail': 'https://cdn.test/1-thumb.jpg',
-                  },
-                },
-                <String, dynamic>{'mediaId': 'm-gone', 'unavailable': true},
-              ],
-            },
-            <String, dynamic>{
-              'title': 'บ่าย',
-              'content': 'ขนมปังปิ้ง',
-              'images': <Map<String, dynamic>>[
-                <String, dynamic>{
-                  'mediaId': 'm-2',
-                  'urls': <String, dynamic>{
-                    'large': 'https://cdn.test/2-large.jpg',
-                    'thumbnail': 'https://cdn.test/2-thumb.jpg',
-                  },
-                },
-              ],
+              'mediaId': 'm-1',
+              'urls': <String, dynamic>{
+                'large': 'https://cdn.test/1-large.jpg',
+                'thumbnail': 'https://cdn.test/1-thumb.jpg',
+              },
             },
           ],
+        },
+      ],
       'createdAt': '2026-10-12T00:00:00.000Z',
       'updatedAt': '2026-10-12T00:00:00.000Z',
     };
+
+Map<String, dynamic> _galleryPage({
+  required int page,
+  required List<String> ids,
+  int total = 4,
+  int limit = 30,
+}) =>
+    <String, dynamic>{
+      'tripId': 'album-1',
+      'total': total,
+      'page': page,
+      'limit': limit,
+      'items': <Map<String, dynamic>>[
+        for (final id in ids)
+          <String, dynamic>{
+            'id': id,
+            'isCover': false,
+            'urls': <String, dynamic>{
+              'large': 'https://cdn.test/$id-large.jpg',
+              'thumbnail': 'https://cdn.test/$id-thumb.jpg',
+            },
+          },
+      ],
+    };
+
+FakeAdapter _adapter({
+  List<FakeReply>? gallery,
+  Map<String, dynamic>? trip,
+}) =>
+    FakeAdapter(<String, List<FakeReply>>{
+      'GET /trips/album-1': <FakeReply>[FakeReply(200, trip ?? _tripJson())],
+      'GET /trips/album-1/media': gallery ??
+          <FakeReply>[
+            FakeReply(200, _galleryPage(page: 1, ids: <String>['a', 'b'])),
+          ],
+    });
 
 Widget _harness(FakeAdapter adapter) {
   return ProviderScope(
@@ -100,84 +117,96 @@ Widget _harness(FakeAdapter adapter) {
   );
 }
 
-FakeAdapter _adapter({Object? body, int status = 200}) =>
-    FakeAdapter(<String, List<FakeReply>>{
-      'GET /trips/album-1': <FakeReply>[
-        FakeReply(status, body ?? _albumJson()),
-      ],
-    });
-
 void _phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(393 * 3, 852 * 3);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
 }
 
+List<String> _paths(FakeAdapter adapter) =>
+    adapter.requests.map((r) => '${r.method} ${r.path}').toList();
+
 void main() {
-  testWidgets('the header prints the album title, date and photo count',
+  testWidgets('the pictures come from the gallery, not from contents',
+      (tester) async {
+    _phone(tester);
+    final adapter = _adapter();
+
+    await tester.pumpWidget(_harness(adapter));
+    await tester.pumpAndSettle();
+
+    expect(_paths(adapter), contains('GET /trips/album-1/media'));
+
+    // Two tiles from the gallery — the single picture embedded in `contents`
+    // is not what the grid is built from.
+    expect(find.byType(CoverImage), findsWidgets);
+    final gallery = adapter.requests
+        .firstWhere((r) => r.path == '/trips/album-1/media');
+    expect(gallery.queryParameters['page'], 1);
+    expect(gallery.queryParameters['limit'], albumGalleryPageSize);
+  });
+
+  testWidgets('the header counts every picture the trip holds, not the page',
       (tester) async {
     _phone(tester);
 
+    // Four in all, two on this page.
     await tester.pumpWidget(_harness(_adapter()));
     await tester.pumpAndSettle();
 
-    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsOneWidget);
-    // Two sections, three pictures listed, one of them withdrawn.
-    expect(find.text('12 Oct 2026 • 2 รูป'), findsOneWidget);
-    expect(find.text('Select'), findsOneWidget);
-    expect(find.text('Share Album'), findsOneWidget);
+    expect(find.text('12 Oct 2026 • 4 รูป'), findsOneWidget);
   });
 
-  testWidgets('the grid skips a picture the server withdrew', (tester) async {
+  testWidgets('more pages are offered and append', (tester) async {
     _phone(tester);
+    final adapter = _adapter(gallery: <FakeReply>[
+      FakeReply(200, _galleryPage(page: 1, ids: <String>['a', 'b'], limit: 2)),
+      FakeReply(200, _galleryPage(page: 2, ids: <String>['c', 'd'], limit: 2)),
+    ]);
 
-    await tester.pumpWidget(_harness(_adapter()));
+    await tester.pumpWidget(_harness(adapter));
     await tester.pumpAndSettle();
 
-    final trip = ApiTrip.fromJson(_albumJson());
-    expect(
-      albumPhotos(trip).map((photo) => photo.full),
-      <String>['https://cdn.test/1-large.jpg', 'https://cdn.test/2-large.jpg'],
-    );
-  });
+    // page 1 of 2 with limit 2 and total 4: there is more.
+    expect(find.text('โหลดรูปเพิ่ม'), findsOneWidget);
 
-  test('raw links stand in only for a section with nothing resolved', () {
-    final trip = ApiTrip.fromJson(_albumJson(
-      contents: <Map<String, dynamic>>[
-        <String, dynamic>{
-          'title': 'ยังไม่ resolve',
-          'content': 'ร่าง',
-          'imageUrls': <String>['https://cdn.test/raw.jpg'],
-        },
-        <String, dynamic>{
-          'title': 'resolve แล้ว',
-          'content': 'จริง',
-          'images': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'mediaId': 'm-9',
-              'urls': <String, dynamic>{
-                'large': 'https://cdn.test/9-large.jpg',
-                'thumbnail': 'https://cdn.test/9-thumb.jpg',
-              },
-            },
-          ],
-          // Ignored: the resolved list wins where it exists.
-          'imageUrls': <String>['https://cdn.test/ignored.jpg'],
-        },
-      ],
-    ));
+    await tester.tap(find.text('โหลดรูปเพิ่ม'));
+    await tester.pumpAndSettle();
 
     expect(
-      albumPhotos(trip).map((photo) => photo.full),
-      <String>['https://cdn.test/raw.jpg', 'https://cdn.test/9-large.jpg'],
+      adapter.requests.where((r) => r.path == '/trips/album-1/media').length,
+      2,
     );
+    // The walk is spent, so the button goes.
+    expect(find.text('โหลดรูปเพิ่ม'), findsNothing);
   });
 
-  testWidgets('an album with no pictures says so', (tester) async {
+  testWidgets('a single full page offers nothing more', (tester) async {
     _phone(tester);
 
     await tester.pumpWidget(_harness(
-      _adapter(body: _albumJson(contents: const <Map<String, dynamic>>[])),
+      _adapter(gallery: <FakeReply>[
+        FakeReply(
+          200,
+          _galleryPage(page: 1, ids: <String>['a', 'b'], total: 2),
+        ),
+      ]),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('โหลดรูปเพิ่ม'), findsNothing);
+  });
+
+  testWidgets('an empty gallery says so', (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(_harness(
+      _adapter(
+        trip: _tripJson(totalImages: 0, hasMore: false),
+        gallery: <FakeReply>[
+          FakeReply(200, _galleryPage(page: 1, ids: <String>[], total: 0)),
+        ],
+      ),
     ));
     await tester.pumpAndSettle();
 
@@ -185,14 +214,31 @@ void main() {
     expect(find.text('12 Oct 2026 • 0 รูป'), findsOneWidget);
   });
 
-  testWidgets('a failed read offers to try again', (tester) async {
+  testWidgets('a failed gallery offers to try again without losing the header',
+      (tester) async {
     _phone(tester);
 
-    await tester.pumpWidget(_harness(_adapter(status: 500, body: const {})));
+    await tester.pumpWidget(_harness(
+      _adapter(gallery: <FakeReply>[const FakeReply(500, <String, dynamic>{})]),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('โหลดรูปไม่สำเร็จ'), findsOneWidget);
+    expect(find.text('ลองอีกครั้ง'), findsOneWidget);
+    // The trip loaded, so its title and summary count still show.
+    expect(find.text('รวมคาเฟ่ลับย่านพระนคร'), findsOneWidget);
+    expect(find.text('12 Oct 2026 • 4 รูป'), findsOneWidget);
+  });
+
+  testWidgets('a failed trip read offers to try again', (tester) async {
+    _phone(tester);
+
+    await tester.pumpWidget(_harness(FakeAdapter(<String, List<FakeReply>>{
+      'GET /trips/album-1': <FakeReply>[const FakeReply(500, <String, dynamic>{})],
+    })));
     await tester.pumpAndSettle();
 
     expect(find.text('เปิดอัลบั้มไม่สำเร็จ'), findsOneWidget);
-    expect(find.text('ลองอีกครั้ง'), findsOneWidget);
   });
 
   testWidgets('the actions with no API behind them say so', (tester) async {

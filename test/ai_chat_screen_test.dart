@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pluno/core/api/api_providers.dart';
+import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/ai_chat/presentation/providers/ai_chat_context.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
@@ -78,10 +80,56 @@ Future<void> _pumpChat(
           authSessionProvider
               .overrideWith((ref) => AuthController(AuthSession.demo)),
       ],
-      child: const MaterialApp(home: AiChatScreen()),
+      child: MaterialApp.router(routerConfig: _router()),
     ),
   );
   await tester.pumpAndSettle();
+}
+
+/// The chat plus the pages its cards and its สร้างทริป button lead to, each a
+/// bare marker — this suite asserts *where* a tap goes, not what is drawn
+/// when it lands.
+GoRouter _router() => GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          name: AppRoute.aiChat.name,
+          builder: (_, __) => const AiChatScreen(),
+        ),
+        // Before the `:tripId` pattern, exactly as the real router orders
+        // them: go_router matches in declaration order, and below the pattern
+        // this would open a trip whose id is "mine".
+        GoRoute(
+          path: '/trips/mine',
+          name: AppRoute.myTrips.name,
+          builder: (_, __) => const _Marker('planner'),
+        ),
+        GoRoute(
+          path: '/trips/:tripId/edit',
+          name: AppRoute.editTrip.name,
+          builder: (_, state) =>
+              _Marker('edit:${state.params['tripId']}'),
+        ),
+        GoRoute(
+          path: '/trips/:tripId',
+          name: AppRoute.tripDetail.name,
+          builder: (_, state) =>
+              _Marker('detail:${state.params['tripId']}'),
+        ),
+      ],
+    );
+
+class _Marker extends StatelessWidget {
+  const _Marker(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        // An app bar purely so `pageBack()` has a back button to press.
+        appBar: AppBar(),
+        body: Center(child: Text(label)),
+      );
 }
 
 /// What `GET /users/me/location` answers once a place has been stored.
@@ -168,31 +216,73 @@ void main() {
     expect(find.text('เชียงใหม่ 3 วัน'), findsOneWidget);
   });
 
-  testWidgets('saving sends the revision on screen, once', (tester) async {
-    final adapter = _adapter(
-      stream: _planStream(revision: 2),
-      extra: <String, List<FakeReply>>{
-        'POST /chat/conversations/room-1/drafts/draft-7/save': [
-          const FakeReply(201, <String, dynamic>{
-            'tripId': 'trip-3',
-            'alreadySaved': false,
-          }),
-        ],
-      },
-    );
+  FakeAdapter _saveAdapter({bool alreadySaved = false}) => _adapter(
+        stream: _planStream(revision: 2),
+        extra: <String, List<FakeReply>>{
+          'POST /chat/conversations/room-1/drafts/draft-7/save': [
+            FakeReply(201, <String, dynamic>{
+              'tripId': 'trip-3',
+              'alreadySaved': alreadySaved,
+            }),
+          ],
+        },
+      );
+
+  testWidgets('สร้างทริป writes the revision on screen and opens the editor',
+      (tester) async {
+    final adapter = _saveAdapter();
     await _pumpChat(tester, adapter);
     await _send(tester, 'จัดแผนเชียงใหม่ 3 วัน');
 
-    await tester.tap(find.text('บันทึกลง Trip Planner'));
+    await tester.tap(find.text('สร้างทริป'));
     await tester.pumpAndSettle();
 
     expect(
       adapter.bodyOf('POST /chat/conversations/room-1/drafts/draft-7/save'),
       <String, dynamic>{'revision': 2},
     );
-    // The button latches, so a second tap cannot write a second trip.
-    expect(find.text('บันทึกแล้ว'), findsOneWidget);
-    expect(find.text('บันทึกลง Trip Planner'), findsNothing);
+    // Straight into the editor, the way the create-trip wizard hands off.
+    expect(find.text('edit:trip-3'), findsOneWidget);
+  });
+
+  testWidgets('a revision already turned into a trip opens the same one',
+      (tester) async {
+    // alreadySaved is a success, not a conflict — the road is the same.
+    await _pumpChat(tester, _saveAdapter(alreadySaved: true));
+    await _send(tester, 'จัดแผนเชียงใหม่ 3 วัน');
+
+    await tester.tap(find.text('สร้างทริป'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('edit:trip-3'), findsOneWidget);
+  });
+
+  testWidgets('once created, the button leads back instead of going dead',
+      (tester) async {
+    final adapter = _saveAdapter();
+    await _pumpChat(tester, adapter);
+    await _send(tester, 'จัดแผนเชียงใหม่ 3 วัน');
+
+    await tester.tap(find.text('สร้างทริป'));
+    await tester.pumpAndSettle();
+
+    // Back out of the editor, onto the card that made it.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.text('สร้างทริป'), findsNothing);
+    expect(find.text('เปิดทริปที่สร้างไว้'), findsOneWidget);
+
+    await tester.tap(find.text('เปิดทริปที่สร้างไว้'));
+    await tester.pumpAndSettle();
+    expect(find.text('detail:trip-3'), findsOneWidget);
+
+    // And no second trip was written along the way.
+    expect(
+      adapter.paths
+          .where((p) => p.endsWith('/drafts/draft-7/save')),
+      hasLength(1),
+    );
   });
 
   testWidgets('a failed turn offers a retry under the same request id',
@@ -266,6 +356,36 @@ void main() {
     // Straight-line, and captioned as such. Only the trip that carried a
     // distance shows one — the other has nothing to measure from.
     expect(find.text('2.3 กม. (ตรง)'), findsOneWidget);
+  });
+
+  testWidgets('a card follows the destination the server named', (tester) async {
+    await _pumpChat(tester, _adapter(stream: _placesTurn));
+    await _send(tester, 'หาคาเฟ่ใกล้ ๆ หน่อย');
+
+    await tester.tap(find.text('เชียงใหม่ชิล ๆ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('detail:t1'), findsOneWidget);
+  });
+
+  testWidgets('an open_trip_planner action lands on ทริปฉัน', (tester) async {
+    const plannerTurn = ''
+        'event: complete\n'
+        'data: {"schemaVersion":1,"conversationId":"room-1","messageId":"msg-2",'
+        '"status":"complete","text":"ดูได้ที่ทริปของคุณเลยครับ","blocks":['
+        '{"type":"trip_results","trips":[{"tripId":"t9","title":"ทริปของฉัน",'
+        '"action":{"type":"open_trip_planner"}}]}],'
+        '"suggestedReplies":[],"warnings":[],"error":null}\n';
+
+    await _pumpChat(tester, _adapter(stream: plannerTurn));
+    await _send(tester, 'ทริปที่ฉันเก็บไว้');
+
+    await tester.tap(find.text('ทริปของฉัน'));
+    await tester.pumpAndSettle();
+
+    // Routed rather than silently swallowed, even though no card type sends
+    // this one today.
+    expect(find.text('planner'), findsOneWidget);
   });
 
   testWidgets('a trips turn that found nothing shows no empty rail',

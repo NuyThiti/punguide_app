@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../api/models/trip.dart';
+
 /// A failed API call, already unpacked from Nest's error envelope.
 ///
 /// `message` on the wire is a `String` for business errors and a `List<String>`
@@ -14,6 +16,7 @@ class ApiException implements Exception {
     this.error,
     this.method,
     this.path,
+    this.moderation,
   });
 
   /// Builds an [ApiException] from a Dio failure, whatever its cause.
@@ -47,6 +50,11 @@ class ApiException implements Exception {
       error: map['error'] is String ? map['error'] as String : null,
       method: method,
       path: path,
+      // Only `POST/PUT /trips/posts` with `action: "share"` sends this: a
+      // 422 whose content was checked within the inline wait and rejected.
+      // The trip itself is still saved (shared, private, REJECTED) — this is
+      // just the same `Moderation` a successful save would have carried.
+      moderation: Moderation.maybeFromJson(map['moderation']),
     );
   }
 
@@ -60,6 +68,11 @@ class ApiException implements Exception {
   final String? error;
   final String? method;
   final String? path;
+
+  /// Only set on the one 422 `CONTENT_REJECTED` response — see
+  /// [isContentRejected]. The trip id it names (`tripId` on the wire) is not
+  /// kept here since the caller already has it: it is the id it just saved.
+  final Moderation? moderation;
 
   /// The whole reason, newline-joined — validation failures list several.
   String get message => messages.join('\n');
@@ -80,6 +93,14 @@ class ApiException implements Exception {
   bool get isConflict => statusCode == 409;
 
   bool get isRateLimited => statusCode == 429;
+
+  /// Sharing a post whose content the inline check rejected outright — the
+  /// post is saved (shared, private, [ModerationStatus.rejected]), just not
+  /// published. [moderation] carries the reason; checked on [error] rather
+  /// than on the status code alone, since 422 means something unrelated on
+  /// `remixItemsInto`.
+  bool get isContentRejected =>
+      statusCode == 422 && error == 'CONTENT_REJECTED';
 
   /// Validation rejected the payload, including an unknown field —
   /// `forbidNonWhitelisted` is on, so echoing a response back is a 400.

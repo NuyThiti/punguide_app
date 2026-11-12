@@ -48,11 +48,15 @@ class AiChatTripResults extends StatelessWidget {
   const AiChatTripResults({
     super.key,
     required this.block,
-    required this.onOpenTrip,
+    required this.onOpen,
   });
 
   final TripResultsBlock block;
-  final ValueChanged<String> onOpenTrip;
+
+  /// Takes the server's own `action` rather than a bare id: it is built from
+  /// the row that was just read, so it is the thing that knows where a card
+  /// leads. The fallback below only covers a card that arrived without one.
+  final ValueChanged<ChatAction> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +78,13 @@ class AiChatTripResults extends StatelessWidget {
             return SizedBox(
               width: 210,
               child: _ChatCard(
-                onTap: () => onOpenTrip(trip.tripId),
+                onTap: () => onOpen(
+                  trip.action ??
+                      ChatAction(
+                        type: ChatActionType.openTrip,
+                        entityId: trip.tripId,
+                      ),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -211,11 +221,11 @@ class AiChatPlaceResults extends StatelessWidget {
   const AiChatPlaceResults({
     super.key,
     required this.block,
-    required this.onOpenPlace,
+    required this.onOpen,
   });
 
   final PlaceResultsBlock block;
-  final ValueChanged<String> onOpenPlace;
+  final ValueChanged<ChatAction> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -230,7 +240,13 @@ class AiChatPlaceResults extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _ChatCard(
-                onTap: () => onOpenPlace(place.placeId),
+                onTap: () => onOpen(
+                  place.action ??
+                      ChatAction(
+                        type: ChatActionType.openPlace,
+                        entityId: place.placeId,
+                      ),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(10),
                   child: Row(
@@ -290,22 +306,30 @@ class AiChatPlaceResults extends StatelessWidget {
       ];
 }
 
-/// A plan the assistant wrote. Not a trip until it is saved, and the card says
-/// so in three places: the badge, the unverified notice, and the button.
+/// A plan the assistant wrote. Not a trip until the traveller makes it one,
+/// and the card says so in three places: the badge, the unverified notice, and
+/// the button.
 class AiChatItineraryPreview extends StatelessWidget {
   const AiChatItineraryPreview({
     super.key,
     required this.block,
     required this.onSave,
+    required this.onOpenSaved,
     this.saving = false,
     this.savedTripId,
   });
 
   final ItineraryPreviewBlock block;
   final VoidCallback onSave;
+
+  /// Reopens the trip this revision already became. Coming back to an older
+  /// turn should lead somewhere, rather than leaving a dead "created" button
+  /// on a card whose trip is one tap away.
+  final VoidCallback onOpenSaved;
+
   final bool saving;
 
-  /// Set once this revision has been written to the planner.
+  /// Set once this revision has been turned into a trip.
   final String? savedTripId;
 
   @override
@@ -346,7 +370,15 @@ class AiChatItineraryPreview extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: saving || savedTripId != null ? null : onSave,
+                  // Held only while the write is in flight. Once the trip
+                  // exists the button stays live and changes job, because a
+                  // created trip is somewhere to go rather than a finished
+                  // state to grey out.
+                  onPressed: saving
+                      ? null
+                      : savedTripId != null
+                          ? onOpenSaved
+                          : onSave,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.sheetConfirm,
                     disabledBackgroundColor: AppColors.postActionIdle,
@@ -357,10 +389,10 @@ class AiChatItineraryPreview extends StatelessWidget {
                   ),
                   child: Text(
                     savedTripId != null
-                        ? 'บันทึกแล้ว'
+                        ? 'เปิดทริปที่สร้างไว้'
                         : saving
-                            ? 'กำลังบันทึก…'
-                            : 'บันทึกลง Trip Planner',
+                            ? 'กำลังสร้างทริป…'
+                            : 'สร้างทริป',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,

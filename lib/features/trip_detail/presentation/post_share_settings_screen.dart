@@ -6,6 +6,7 @@ import '../../../core/api/pluno_api.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
+import '../../../shared/formatting/moderation_text.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../auth/domain/auth_session.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
@@ -155,7 +156,7 @@ class _PostShareSettingsScreenState
       final api = await ref.read(plunoApiProvider.future);
       // No `contents`/`coverMediaId` here — this screen never touches
       // either, and leaving them out keeps whatever the composer last saved.
-      await api.trips.savePost(
+      final saved = await api.trips.savePost(
         postId: widget.tripId,
         action: PostSaveAction.share,
         title: _title,
@@ -171,7 +172,38 @@ class _PostShareSettingsScreenState
         remixEnabled: _remixEnabled,
         remixAudience: _remixAudience,
       );
-      if (mounted) Navigator.of(context).pop(true);
+      if (!mounted) return;
+      // Most posts clear content moderation within this very request, so
+      // `moderation` is usually already `approved` here and there is nothing
+      // to say — the post is simply live. `pending`/`reviewRequired` means
+      // the picked audience (`moderation.requestedVisibility`) has not taken
+      // effect yet; the trip detail screen reads `moderation` itself once it
+      // reloads, this is just the one-time heads-up for *this* save.
+      final moderation = saved.moderation;
+      if (moderation != null && moderation.status != ModerationStatus.approved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(moderationMessage(moderation))),
+        );
+      }
+      Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _sharing = false);
+      // The inline check rejected it outright — still saved (shared,
+      // private, rejected), just not published; the same `moderation` a
+      // successful save would have carried, so this reads identically to
+      // the PENDING/REVIEW_REQUIRED branch above, not as a failure to save.
+      final rejected = error.moderation;
+      if (error.isContentRejected && rejected != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(moderationMessage(rejected))),
+        );
+        Navigator.of(context).pop(true);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('แชร์โพสต์ไม่สำเร็จ ลองอีกครั้ง')),
+      );
     } catch (_) {
       if (mounted) {
         setState(() => _sharing = false);

@@ -11,47 +11,13 @@ import '../../../shared/widgets/full_image_viewer.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../trips/presentation/itinerary_display.dart' show dayMonthYear;
 import '../../trips/presentation/providers/trip_providers.dart';
-
-/// One photo of an album, at both the sizes the page needs.
-typedef AlbumPhoto = ({String thumbnail, String full});
-
-/// Every photo filed under a post, in the order the server sent them.
-///
-/// A section carries its pictures twice over: [TripContent.images] are the
-/// ones the server resolved, and [TripContent.imageUrls] are the raw links a
-/// draft was written with. The resolved list wins where it exists — the model
-/// says to display those and never the gallery order — and the raw links only
-/// stand in for a section the server has not resolved yet.
-List<AlbumPhoto> albumPhotos(ApiTrip trip) {
-  final photos = <AlbumPhoto>[];
-  final seen = <String>{};
-
-  void add(String thumbnail, String full) {
-    if (seen.add(full)) photos.add((thumbnail: thumbnail, full: full));
-  }
-
-  for (final section in trip.contents) {
-    final resolved = section.images.where((image) => !image.unavailable);
-    if (resolved.isNotEmpty) {
-      for (final image in resolved) {
-        final urls = image.urls;
-        if (urls == null) continue;
-        add(urls.thumbnail, urls.large);
-      }
-      continue;
-    }
-    for (final url in section.imageUrls) {
-      add(url, url);
-    }
-  }
-
-  return List<AlbumPhoto>.unmodifiable(photos);
-}
+import 'providers/profile_providers.dart';
 
 /// An album opened from the profile's อัลบั้ม tab.
 ///
-/// An album *is* a post, so this reads the same `GET /trips/:id` the post page
-/// does — the cover and title off the trip, the grid out of its sections.
+/// The trip gives the cover, the title and the date; the pictures come from
+/// the trip's **gallery**, not from `contents` — see [albumGalleryProvider]
+/// for why that distinction matters.
 class AlbumDetailScreen extends ConsumerWidget {
   const AlbumDetailScreen({super.key, required this.albumId});
 
@@ -71,7 +37,7 @@ class AlbumDetailScreen extends ConsumerWidget {
           onAction: () => ref.invalidate(apiTripProvider(albumId)),
           onBack: () => _close(context),
         ),
-        data: (trip) => _AlbumBody(trip: trip, photos: albumPhotos(trip)),
+        data: (trip) => _AlbumBody(trip: trip),
       ),
     );
   }
@@ -86,14 +52,21 @@ class AlbumDetailScreen extends ConsumerWidget {
 }
 
 class _AlbumBody extends ConsumerWidget {
-  const _AlbumBody({required this.trip, required this.photos});
+  const _AlbumBody({required this.trip});
 
   final ApiTrip trip;
-  final List<AlbumPhoto> photos;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final avatar = ref.watch(authSessionProvider)?.avatarImage;
+    final gallery = ref.watch(albumGalleryProvider(trip.id));
+    final notifier = ref.read(albumGalleryProvider(trip.id).notifier);
+    final photos = gallery.valueOrNull ?? const <GalleryImage>[];
+
+    // The server's own count, so the header is right even while only the
+    // first page is on screen. The trip's summary stands in until then.
+    final count =
+        gallery.hasValue ? notifier.total : trip.mediaSummary.totalImages;
 
     void unavailable(String message) => ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -108,14 +81,29 @@ class _AlbumBody extends ConsumerWidget {
               SliverToBoxAdapter(
                 child: _AlbumHeader(
                   trip: trip,
-                  photoCount: photos.length,
+                  photoCount: count,
                   avatar: avatar,
                   onBack: () => AlbumDetailScreen._close(context),
                   onMore: () => unavailable('ตัวเลือกอัลบั้มยังไม่เปิดใช้งาน'),
                   onSelect: () => unavailable('เลือกรูปยังไม่เปิดใช้งาน'),
                 ),
               ),
-              if (photos.isEmpty)
+              if (gallery.isLoading && photos.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                )
+              else if (gallery.hasError && photos.isEmpty)
+                SliverToBoxAdapter(
+                  child: _AlbumMessage(
+                    message: 'โหลดรูปไม่สำเร็จ',
+                    actionLabel: 'ลองอีกครั้ง',
+                    onAction: notifier.refresh,
+                  ),
+                )
+              else if (photos.isEmpty)
                 const SliverToBoxAdapter(
                   child: _AlbumMessage(message: 'อัลบั้มนี้ยังไม่มีรูป'),
                 )
@@ -131,11 +119,25 @@ class _AlbumBody extends ConsumerWidget {
                       photo: photos[index],
                       onTap: () => showFullImages(
                         context,
-                        urls: [for (final photo in photos) photo.full],
+                        urls: [for (final photo in photos) photo.urls.large],
                         initialIndex: index,
                       ),
                     ),
                     childCount: photos.length,
+                  ),
+                ),
+              if (photos.isNotEmpty && notifier.hasMore)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Center(
+                      child: TextButton(
+                        onPressed: gallery.isLoading ? null : notifier.loadMore,
+                        child: Text(
+                          gallery.isLoading ? 'กำลังโหลด…' : 'โหลดรูปเพิ่ม',
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -282,14 +284,14 @@ class _AlbumHeader extends StatelessWidget {
 class _PhotoTile extends StatelessWidget {
   const _PhotoTile({required this.photo, required this.onTap});
 
-  final AlbumPhoto photo;
+  final GalleryImage photo;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: CoverImage(source: photo.thumbnail, fit: BoxFit.cover),
+      child: CoverImage(source: photo.urls.thumbnail, fit: BoxFit.cover),
     );
   }
 }

@@ -637,33 +637,32 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
       return;
     }
 
-    final request = buildPlanRequest(
-      destination: _destinationController.text.trim(),
-      destinationPlace: _destinationPlace,
-      startDate: _startDate,
-      endDate: _endDate,
-      nights: _nights,
-      adults: _travelers,
-      children: _children,
-      styleLabels: _selectedVibes,
-      paceTier: _paceTier,
-      transportLabel: _transport,
-      budgetTier: _tierToSave,
-      perPersonPerDay: _perPersonPerDay,
-      lodging: _lodging,
-      constraintLabels: _constraints,
-    );
-    // The same ask retried keeps its key; anything changed mints a new one.
-    final ask = jsonEncode(request.toJson());
-    if (ask != _generateAsk) {
-      _generateAsk = ask;
-      _generateKey = uuidV4();
-    }
-
     setState(() => _generating = true);
     final PlanGenerationResult result;
     try {
       final api = await ref.read(plunoApiProvider.future);
+      final request = buildPlanRequest(
+        destination: _destinationController.text.trim(),
+        destinationPlace: await _plannerDestinationPlace(api),
+        startDate: _startDate,
+        endDate: _endDate,
+        nights: _nights,
+        adults: _travelers,
+        children: _children,
+        styleLabels: _selectedVibes,
+        paceTier: _paceTier,
+        transportLabel: _transport,
+        budgetTier: _tierToSave,
+        perPersonPerDay: _perPersonPerDay,
+        lodging: _lodging,
+        constraintLabels: _constraints,
+      );
+      // The same ask retried keeps its key; anything changed mints a new one.
+      final ask = jsonEncode(request.toJson());
+      if (ask != _generateAsk) {
+        _generateAsk = ask;
+        _generateKey = uuidV4();
+      }
       result = await api.trips.generatePlan(
         request,
         idempotencyKey: _generateKey,
@@ -693,6 +692,38 @@ class _CreateTripScreenState extends ConsumerState<CreateTripScreen> {
     }
     if (!mounted) return;
     await _savePlan(result.draft);
+  }
+
+  /// The destination as `POST /trips/plan/generate` will take it.
+  ///
+  /// Unlike `POST /trips`, the planner rejects a `destinationPlace` without
+  /// coordinates, and an autocomplete pick carries only its place id — so the
+  /// coordinates are looked up once and kept on [_destinationPlace]. When the
+  /// lookup fails or finds none, the place is left out: the free-text
+  /// `destination` alone is a valid ask, a half-filled place is a 400.
+  Future<DestinationPlace?> _plannerDestinationPlace(PlunoApi api) async {
+    final place = _destinationPlace;
+    if (place == null || place.hasCoordinates) return place;
+    final placeId = place.placeId;
+    if (placeId == null) return null;
+    try {
+      final lookup = await api.places.details(placeId);
+      if (!lookup.hasCoordinates) return null;
+      final resolved = DestinationPlace(
+        name: place.name,
+        placeId: placeId,
+        country: place.country,
+        countryCode: place.countryCode,
+        latitude: lookup.latitude,
+        longitude: lookup.longitude,
+      );
+      // Only if the traveller has not picked somewhere else meanwhile.
+      if (identical(_destinationPlace, place)) _destinationPlace = resolved;
+      return resolved;
+    } catch (error) {
+      debugPrint('Destination lookup failed: $error');
+      return null;
+    }
   }
 
   /// `POST /trips/create` — the only call in this flow that writes anything.

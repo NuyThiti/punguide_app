@@ -109,6 +109,26 @@ List<Map<String, dynamic>> _spots() => [
       },
     ];
 
+/// The same post, turned down by the content check. `moderation` is nested on
+/// the trip and is sent to the owner only.
+Map<String, dynamic> _rejectedJson({
+  String status = 'REJECTED',
+  String? reasonCode = 'UNSAFE_CONTENT',
+  bool canAppeal = false,
+}) =>
+    <String, dynamic>{
+      ..._postJson(),
+      'visibility': 'private',
+      'moderation': <String, dynamic>{
+        'status': status,
+        if (reasonCode != null) 'reasonCode': reasonCode,
+        'message': 'This post violates our community guidelines.',
+        'requestedVisibility': 'public',
+        'canAppeal': canAppeal,
+        'moderatedAt': '2026-11-12T00:00:00.000Z',
+      },
+    };
+
 Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
     ProviderScope(
       overrides: [
@@ -1411,5 +1431,121 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '$size after scrolling');
     }
+  });
+
+  group('a post the content check turned down', () {
+    testWidgets('tells its owner why, in the reason code\'s own words',
+        (tester) async {
+      await _pumpPost(tester, trip: _rejectedJson(), viewer: _owner);
+
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsOneWidget);
+      expect(find.text('โพสต์นี้ขัดกับแนวทางของชุมชน'), findsOneWidget);
+      expect(
+        find.text('โพสต์นี้ยังไม่ถูกเผยแพร่ ตอนนี้มีเพียงคุณที่เห็น'),
+        findsOneWidget,
+      );
+      // The server's own English copy is never put in front of the traveller.
+      expect(
+        find.text('This post violates our community guidelines.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('falls back on a reason code this build has never seen',
+        (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(reasonCode: 'SOMETHING_NEW'),
+        viewer: _owner,
+      );
+
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsOneWidget);
+      expect(find.text('ไม่สามารถเผยแพร่ได้'), findsOneWidget);
+    });
+
+    testWidgets('says nothing to anyone but the owner', (tester) async {
+      await _pumpPost(tester, trip: _rejectedJson(), viewer: _visitor);
+
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
+    });
+
+    testWidgets('says nothing while the viewer is still unknown',
+        (tester) async {
+      await _pumpPost(tester, trip: _rejectedJson(), viewerPending: true);
+
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
+    });
+
+    testWidgets('leaves a post that is only waiting alone', (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(status: 'PENDING', reasonCode: 'UNDER_REVIEW'),
+        viewer: _owner,
+      );
+
+      // PENDING and REVIEW_REQUIRED may still come good on their own; only
+      // REJECTED earns the notice.
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
+      expect(find.text('กำลังตรวจสอบโพสต์ของคุณ'), findsNothing);
+    });
+
+    testWidgets('offers no appeal when the server does not allow one',
+        (tester) async {
+      await _pumpPost(tester, trip: _rejectedJson(), viewer: _owner);
+
+      expect(find.text('ขออุทธรณ์'), findsNothing);
+    });
+
+    testWidgets('appeals once, and says so', (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(canAppeal: true),
+        viewer: _owner,
+        extra: <String, List<FakeReply>>{
+          'POST /trips/trip-1/moderation/appeal': <FakeReply>[
+            const FakeReply(200, <String, dynamic>{
+              'status': 'REVIEW_REQUIRED',
+              'reasonCode': 'APPEAL_SUBMITTED',
+              'canAppeal': false,
+            }),
+          ],
+        },
+      );
+
+      expect(find.text('ขออุทธรณ์'), findsOneWidget);
+      await tester.tap(find.text('ขออุทธรณ์'));
+      await tester.pumpAndSettle();
+
+      expect(
+        adapter.requests
+            .where((r) => r.path == '/trips/trip-1/moderation/appeal')
+            .length,
+        1,
+      );
+      expect(
+        find.text('ส่งคำอุทธรณ์แล้ว ทีมงานจะตรวจสอบอีกครั้ง'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('names the one refusal worth naming', (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(canAppeal: true),
+        viewer: _owner,
+        extra: <String, List<FakeReply>>{
+          'POST /trips/trip-1/moderation/appeal': <FakeReply>[
+            const FakeReply(409, <String, dynamic>{'message': 'already'}),
+          ],
+        },
+      );
+
+      await tester.tap(find.text('ขออุทธรณ์'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('โพสต์นี้ขออุทธรณ์ไปแล้ว'), findsOneWidget);
+      // Refused, so the notice stays and the post is still unpublished.
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsOneWidget);
+    });
   });
 }

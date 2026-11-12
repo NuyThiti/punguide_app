@@ -269,6 +269,35 @@ class TripsApi {
     return BudgetSummary.fromJson(Json.asMap(body));
   }
 
+  /// This post's own content-check state. Owner only — a 404 means either
+  /// the trip is not yours or it does not exist.
+  ///
+  /// Poll this every 3–5s while [Moderation.status] is
+  /// [ModerationStatus.pending], then stop; polling is also what restarts a
+  /// retry the server left due. Nothing to poll for once it is
+  /// [ModerationStatus.reviewRequired] — that one waits on a person, so
+  /// checking again only when the traveller reopens the post is enough.
+  Future<Moderation> moderation(String tripId) async {
+    final body =
+        await _client.get<Map<String, dynamic>>('/trips/$tripId/moderation');
+    return Moderation.fromJson(Json.asMap(body));
+  }
+
+  /// Asks a moderator to look again at a post [ModerationStatus.rejected]
+  /// post — moves it to [ModerationStatus.reviewRequired]. [message] is the
+  /// traveller's own note, optional, ≤ 1000 characters.
+  ///
+  /// 409 when the post is not rejected, or was already appealed — one appeal
+  /// per revision; editing and resharing needs no appeal at all, it is
+  /// simply checked again as new content.
+  Future<Moderation> submitAppeal(String tripId, {String? message}) async {
+    final body = await _client.post<Map<String, dynamic>>(
+      '/trips/$tripId/moderation/appeal',
+      body: Json.compact(<String, dynamic>{'message': message}),
+    );
+    return Moderation.fromJson(Json.asMap(body));
+  }
+
   /// Autosave. Every field is optional and only what you pass is touched.
   ///
   /// Two traps this signature cannot hide:

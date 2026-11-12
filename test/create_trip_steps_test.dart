@@ -774,6 +774,76 @@ void main() {
         findsOneWidget,
       );
     });
+
+    Future<void> runWizardWithSuggestion(WidgetTester tester) async {
+      suggestions = [
+        PlaceSuggestion.fromJson(<String, dynamic>{
+          'description': 'ดานัง, เวียดนาม',
+          'mainText': 'ดานัง',
+          'secondaryText': 'เวียดนาม',
+          'externalRef': 'ChIJ-place-ref',
+        }),
+      ];
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextFormField, 'Destination').first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'ดานัง');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('เวียดนาม'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('AI จัดแผนให้'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ถัดไป'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('สร้างแผน'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+        'a picked suggestion asks the planner with its looked-up coordinates',
+        (tester) async {
+      adapter.replies['GET /places/details'] = [
+        const FakeReply(200, <String, dynamic>{
+          'name': 'ดานัง',
+          'externalRef': 'ChIJ-place-ref',
+          'lat': 16.0544,
+          'lng': 108.2022,
+        }),
+      ];
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(200, planResponse()),
+      ];
+      await runWizardWithSuggestion(tester);
+
+      expect(
+        adapter.queriesOf('GET /places/details').single['externalRef'],
+        'ChIJ-place-ref',
+      );
+      final place = adapter.bodyOf('POST /trips/plan/generate')!['trip']
+          ['destinationPlace'] as Map<String, dynamic>;
+      expect(place['placeId'], 'ChIJ-place-ref');
+      expect(place['name'], 'ดานัง');
+      // The planner 400s on a destinationPlace without these.
+      expect(place['latitude'], 16.0544);
+      expect(place['longitude'], 108.2022);
+    });
+
+    testWidgets('a failed lookup still asks the planner, by name only',
+        (tester) async {
+      adapter.replies['GET /places/details'] = [
+        const FakeReply(502, <String, dynamic>{'message': 'upstream'}),
+      ];
+      adapter.replies['POST /trips/plan/generate'] = [
+        FakeReply(200, planResponse()),
+      ];
+      await runWizardWithSuggestion(tester);
+
+      final trip = adapter.bodyOf('POST /trips/plan/generate')!['trip']
+          as Map<String, dynamic>;
+      expect(trip['destination'], isNotEmpty);
+      expect(trip.containsKey('destinationPlace'), isFalse);
+    });
   });
 
   testWidgets('ข้ามไปก่อน skips step one instead of leaving the wizard',

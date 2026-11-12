@@ -331,6 +331,78 @@ class TripListItem {
       );
 }
 
+/// Where a shared post or plan sits in the three-stage content check that
+/// runs after Share (or any visibility-changing PATCH) — rules, AI safety,
+/// then AI travel relevance. Owner-only: nobody else ever receives this, and
+/// nobody else can see the content at all until [status] is [approved].
+///
+/// The same shape answers three places: nested as `ApiTrip.moderation`
+/// (then [contentId] and [visibility] are null — the trip already carries
+/// its own), `GET /trips/:id/moderation` and `POST .../appeal` (both carry
+/// every field), and the `moderation` key of a `422 CONTENT_REJECTED` error
+/// body from `POST/PUT /trips/posts` — see [ApiException.moderation].
+@immutable
+class Moderation {
+  const Moderation({
+    required this.status,
+    this.reasonCode,
+    this.message,
+    this.requestedVisibility,
+    this.canAppeal = false,
+    this.moderatedAt,
+    this.contentId,
+    this.visibility,
+  });
+
+  factory Moderation.fromJson(Map<String, dynamic> json) => Moderation(
+        status:
+            ModerationStatus.from(json['status']) ?? ModerationStatus.pending,
+        reasonCode: Json.string(json, 'reasonCode'),
+        // English fallback copy — the app translates [reasonCode] instead
+        // wherever it can, falling back to this only for a code it does not
+        // yet recognise.
+        message: Json.string(json, 'message'),
+        requestedVisibility: TripVisibility.from(json['requestedVisibility']),
+        canAppeal: Json.boolean(json, 'canAppeal'),
+        moderatedAt: Json.timestamp(json, 'moderatedAt'),
+        contentId: Json.string(json, 'contentId'),
+        visibility: TripVisibility.from(json['visibility']),
+      );
+
+  static Moderation? maybeFromJson(Object? value) {
+    if (value is! Map) return null;
+    final json = Json.asMap(value);
+    if (json.isEmpty) return null;
+    return Moderation.fromJson(json);
+  }
+
+  final ModerationStatus status;
+  final String? reasonCode;
+  final String? message;
+
+  /// The audience the owner actually picked, held here until [status] turns
+  /// [ModerationStatus.approved] — the trip's own `visibility` stays private
+  /// until then regardless of what was sent.
+  final TripVisibility? requestedVisibility;
+
+  /// Whether a **rejected** post may still be appealed — true only once, and
+  /// only while [status] is [ModerationStatus.rejected]; a post already
+  /// appealed moves to [ModerationStatus.reviewRequired], where this is
+  /// meaningless.
+  final bool canAppeal;
+
+  /// When the current [status] was decided. Null while [pending].
+  final DateTime? moderatedAt;
+
+  /// Only set by `GET /trips/:id/moderation` and the appeal response.
+  final String? contentId;
+
+  /// The trip's *actual* visibility right now — only set by
+  /// `GET /trips/:id/moderation` and the appeal response, since the nested
+  /// `ApiTrip.moderation` already sits beside `ApiTrip.visibility`.
+  final TripVisibility? visibility;
+}
+
 /// A full trip, including its itinerary.
 ///
 /// Accommodations and expenses are *not* here — read them from
@@ -379,6 +451,7 @@ class ApiTrip {
     this.remixAudience = RemixAudience.everyone,
     this.canRemix,
     this.draftVisibility,
+    this.moderation,
   });
 
   factory ApiTrip.fromJson(Map<String, dynamic> json) => ApiTrip(
@@ -421,6 +494,10 @@ class ApiTrip {
         // Owner-only, and only ever set once a shared post has been saved as
         // a draft again — absent means "never" either way.
         draftVisibility: TripVisibility.from(json['draftVisibility']),
+        // Owner-only, and only present once the content has actually been
+        // submitted (Share, or a visibility-changing PATCH) — absent on a
+        // draft that has never been shared.
+        moderation: Moderation.maybeFromJson(json['moderation']),
         mediaSummary: MediaSummary.fromJson(Json.asMap(json['mediaSummary'])),
         isSaved: Json.boolean(json, 'isSaved'),
         isLiked: Json.boolean(json, 'isLiked'),
@@ -493,6 +570,10 @@ class ApiTrip {
   /// never been saved as a draft after being shared, including one that was
   /// never shared at all.
   final TripVisibility? draftVisibility;
+
+  /// The post's own content-check state — owner-only, and absent on a draft
+  /// that has never been submitted. See [Moderation].
+  final Moderation? moderation;
 
   final double totalBudget;
   final BudgetTier? budgetTier;

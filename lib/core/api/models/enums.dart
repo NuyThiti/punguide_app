@@ -498,6 +498,22 @@ enum BudgetItemSource {
   static BudgetItemSource? from(Object? value) => _lookup(values, value);
 }
 
+/// Where a shared post or plan sits in content moderation. Owner-only, and
+/// absent entirely on a draft that has never been submitted (Share, or a
+/// visibility-changing PATCH) — see `Moderation`.
+enum ModerationStatus {
+  pending('PENDING'),
+  approved('APPROVED'),
+  reviewRequired('REVIEW_REQUIRED'),
+  rejected('REJECTED');
+
+  const ModerationStatus(this.wire);
+
+  final String wire;
+
+  static ModerationStatus? from(Object? value) => _lookup(values, value);
+}
+
 /// Severity of a plan-generation violation.
 enum ViolationSeverity {
   error('error'),

@@ -151,14 +151,15 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   /// than breaking the turn around it — new kinds ship without an app release.
   Widget _block(ChatBlock block) => switch (block) {
         TripResultsBlock() =>
-          AiChatTripResults(block: block, onOpenTrip: _openTrip),
+          AiChatTripResults(block: block, onOpen: _openAction),
         PlaceResultsBlock() =>
-          AiChatPlaceResults(block: block, onOpenPlace: _openPlace),
+          AiChatPlaceResults(block: block, onOpen: _openAction),
         ItineraryPreviewBlock() => AiChatItineraryPreview(
             block: block,
             saving: _savingKey == _draftKey(block),
             savedTripId: _savedDrafts[_draftKey(block)],
             onSave: () => _saveDraft(block),
+            onOpenSaved: () => _openTrip(_savedDrafts[_draftKey(block)]!),
           ),
         ClarificationBlock() =>
           AiChatClarification(block: block, onAnswer: _sendText),
@@ -192,13 +193,31 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     ref.invalidate(aiChatContextProvider);
   }
 
+  /// Every card tap lands here, so a destination the server names has exactly
+  /// one place to be understood — and a kind this build does not handle says
+  /// so instead of doing nothing.
+  void _openAction(ChatAction action) {
+    final entityId = action.entityId;
+    switch (action.type) {
+      case ChatActionType.openTrip:
+        if (entityId != null) _openTrip(entityId);
+      case ChatActionType.openPlace:
+        // The API hands back a place id, but the app has no place page to
+        // spend it on yet.
+        _showMessage('หน้ารายละเอียดสถานที่ยังไม่เปิดใช้งาน');
+      case ChatActionType.openTripPlanner:
+        context.pushNamed(AppRoute.myTrips.name);
+      case ChatActionType.openDraft:
+        // Self-referential: the draft is the card that was tapped, and it has
+        // no page of its own until it is made into a trip.
+        break;
+      case ChatActionType.unknown:
+        break;
+    }
+  }
+
   void _openTrip(String tripId) =>
       context.pushNamed(AppRoute.tripDetail.name, params: {'tripId': tripId});
-
-  /// The API hands back a place id, but the app has no place page to spend it
-  /// on yet — so it says so rather than swallowing the tap.
-  void _openPlace(String placeId) =>
-      _showMessage('หน้ารายละเอียดสถานที่ยังไม่เปิดใช้งาน');
 
   Future<void> _saveDraft(ItineraryPreviewBlock block) async {
     final key = _draftKey(block);
@@ -216,14 +235,19 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     });
     if (result == null) return;
 
-    // A revision saved twice is a success, not a conflict — either way the
-    // trip exists and that is where the traveller wants to go.
+    // Straight into the editor, the way the create-trip wizard hands off a
+    // plan it has just written: the trip exists now, and the next thing the
+    // traveller wants is to shape it. Pushed, so backing out returns to the
+    // conversation it came from.
+    //
+    // `alreadySaved` takes the same road — a revision written twice is a
+    // success, not a conflict, and the trip is the same one either way.
     _showMessage(
-      result.alreadySaved ? 'บันทึกไว้แล้ว' : 'บันทึกลง Trip Planner แล้ว',
-      onOpen: () => context.pushNamed(
-        AppRoute.tripDetail.name,
-        params: {'tripId': result.tripId},
-      ),
+      result.alreadySaved ? 'สร้างไว้แล้ว' : 'สร้างทริปแล้ว',
+    );
+    await context.pushNamed(
+      AppRoute.editTrip.name,
+      params: {'tripId': result.tripId},
     );
   }
 

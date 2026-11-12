@@ -12,6 +12,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/formatting/compact_count.dart';
+import '../../../shared/formatting/moderation_text.dart';
 import '../../../shared/layout/screen_class.dart';
 import '../../../shared/widgets/glass_circle_button.dart';
 import '../../../shared/widgets/cover_image.dart';
@@ -83,6 +84,10 @@ const _topBarHeight = 44.0;
 
 class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   int _selectedDay = 0;
+
+  /// True while an appeal is in flight, so the notice's button can spin and
+  /// a second tap cannot send a second appeal — the server allows only one.
+  bool _appealing = false;
 
   /// Shared with the sticky bar so it can fade its background in as the
   /// cover scrolls out from under it. Both faces use it; only one is ever up.
@@ -160,6 +165,57 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     final viewer = ref.watch(currentUserProvider);
     if (viewer.isLoading) return null;
     return viewer.valueOrNull?.id == trip.ownerId;
+  }
+
+  /// The owner's own notice that the content check turned this post down,
+  /// or null when there is nothing to say.
+  ///
+  /// **Owner-only, and `REJECTED` only.** Nobody else is ever sent
+  /// `moderation` at all — a rejected post is private, so a visitor cannot
+  /// reach this page in the first place. `PENDING` and `REVIEW_REQUIRED` are
+  /// states a post may still come back from on its own and are deliberately
+  /// silent here; Share already says so in a snack as it happens.
+  Widget? _moderationNotice(ApiTrip trip) {
+    final moderation = trip.moderation;
+    if (moderation == null ||
+        moderation.status != ModerationStatus.rejected ||
+        _owns(trip) != true) {
+      return null;
+    }
+    return _RejectedNotice(
+      // The real reason, translated from `reasonCode` — the server's own
+      // English `message` is never shown to the traveller.
+      reason: moderationMessage(moderation),
+      busy: _appealing,
+      onAppeal: moderation.canAppeal ? () => _appeal(trip) : null,
+    );
+  }
+
+  /// Asks a moderator to look again. The post moves to `REVIEW_REQUIRED`, so
+  /// re-reading the trip takes this notice away by itself.
+  Future<void> _appeal(ApiTrip trip) async {
+    if (_appealing) return;
+    setState(() => _appealing = true);
+    try {
+      final api = await ref.read(plunoApiProvider.future);
+      await api.trips.submitAppeal(trip.id);
+      if (!mounted) return;
+      _snack('ส่งคำอุทธรณ์แล้ว ทีมงานจะตรวจสอบอีกครั้ง');
+      ref.invalidate(apiTripProvider(trip.id));
+    } on ApiException catch (failure) {
+      if (!mounted) return;
+      // 409 is the one worth naming: the post was already appealed, or is no
+      // longer rejected, and one appeal is all there is.
+      _snack(
+        failure.statusCode == 409
+            ? 'โพสต์นี้ขออุทธรณ์ไปแล้ว'
+            : failure.isNetworkFailure
+                ? 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง'
+                : 'ส่งคำอุทธรณ์ไม่สำเร็จ',
+      );
+    } finally {
+      if (mounted) setState(() => _appealing = false);
+    }
   }
 
   /// Trip Overview with the viewer's own heart and bookmark read through the
@@ -283,6 +339,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   /// A post: the cover hero, Trip Overview, then the spots.
   Widget _contentScroll(ApiTrip trip) {
     final blurb = trip.description?.trim() ?? '';
+    final notice = _moderationNotice(trip);
 
     return CustomScrollView(
       controller: _scroll,
@@ -295,6 +352,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             onRemix: () => _remixStops(trip),
           ),
         ),
+        if (notice != null)
+          SliverPadding(
+            padding:
+                EdgeInsets.fromLTRB(_gutter(context), 16, _gutter(context), 0),
+            sliver: SliverToBoxAdapter(child: notice),
+          ),
         SliverPadding(
           padding:
               EdgeInsets.fromLTRB(_gutter(context), 20, _gutter(context), 0),
@@ -330,6 +393,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     final stops = day?.activities ?? const <Activity>[];
     final description = trip.description?.trim() ?? '';
     final gutter = _gutter(context);
+    final notice = _moderationNotice(trip);
 
     return CustomScrollView(
       controller: _scroll,
@@ -342,6 +406,11 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             onRemix: () => _remixStops(trip),
           ),
         ),
+        if (notice != null)
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 0),
+            sliver: SliverToBoxAdapter(child: notice),
+          ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(gutter, 20, gutter, 22),
           sliver: SliverToBoxAdapter(
@@ -1217,6 +1286,130 @@ class _ErrorBody extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The owner-only "turned down" notice. There is no danger colour in the
+/// palette yet, so these three live here beside [_heartRed], the page's only
+/// other red.
+const _rejectRed = Color(0xFFB42318);
+const _rejectWell = Color(0xFFFEF3F2);
+const _rejectLine = Color(0xFFFBD5D2);
+
+/// What the owner sees on a post the content check refused: the headline, the
+/// real reason, a reminder that nobody else can see it, and — once, while the
+/// server still allows it — a way to ask a person to look again.
+class _RejectedNotice extends StatelessWidget {
+  const _RejectedNotice({
+    required this.reason,
+    required this.busy,
+    this.onAppeal,
+  });
+
+  final String reason;
+  final bool busy;
+
+  /// Null when the post may not be appealed — already appealed, or appeals
+  /// are closed for it. The button is then absent rather than inert.
+  final VoidCallback? onAppeal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: _rejectWell,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _rejectLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.report_gmailerrorred_rounded,
+                size: 20,
+                color: _rejectRed,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'เนื้อหาไม่เหมาะสม',
+                      style: TextStyle(
+                        color: _rejectRed,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      reason,
+                      style: const TextStyle(
+                        color: AppColors.foreground,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'โพสต์นี้ยังไม่ถูกเผยแพร่ ตอนนี้มีเพียงคุณที่เห็น',
+                      style: TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (onAppeal != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: busy ? null : onAppeal,
+                style: TextButton.styleFrom(
+                  foregroundColor: _rejectRed,
+                  backgroundColor: AppColors.screen,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                    side: const BorderSide(color: _rejectLine),
+                  ),
+                ),
+                child: busy
+                    ? const SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(_rejectRed),
+                        ),
+                      )
+                    : const Text(
+                        'ขออุทธรณ์',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
