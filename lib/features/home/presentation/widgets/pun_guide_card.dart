@@ -30,6 +30,7 @@ class PunGuideCard extends StatelessWidget {
     this.saved,
     this.liked,
     this.onDelete,
+    this.onMore,
     this.isMine = false,
   });
 
@@ -68,6 +69,11 @@ class PunGuideCard extends StatelessWidget {
   /// slot is better spent on the one action that belongs there.
   final VoidCallback? onDelete;
 
+  /// ⋯ in the corner (and a long press anywhere on the card): report the
+  /// post or block its creator. Walls of other people's trips pass it; it
+  /// gives way to [onDelete] on a wall of the traveller's own.
+  final VoidCallback? onMore;
+
   /// Whether this row belongs to the traveller looking at it.
   ///
   /// A wall of their own trips says so once, for the whole wall. Two things
@@ -93,6 +99,14 @@ class PunGuideCard extends StatelessWidget {
         onTap: onDelete,
       );
     }
+    if (onMore case final onMore?) {
+      return _CornerButton(
+        icon: Icons.more_horiz,
+        tooltip: 'ตัวเลือกเพิ่มเติม',
+        color: AppColors.foreground,
+        onTap: onMore,
+      );
+    }
     return null;
   }
 
@@ -106,6 +120,7 @@ class PunGuideCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onDelete == null ? onMore : null,
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
@@ -140,7 +155,7 @@ class PunGuideCard extends StatelessWidget {
                       left: 10,
                       child: _FeaturedBadge(),
                     ),
-                  // Delete is the only thing the corner carries now.
+                  // Delete on the traveller's own wall, ⋯ on anyone else's.
                   if (_corner(context) case final corner?)
                     Positioned(top: 10, right: 10, child: corner),
                   Positioned(

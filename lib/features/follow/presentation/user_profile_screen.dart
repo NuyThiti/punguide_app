@@ -6,6 +6,7 @@ import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/formatting/compact_count.dart';
+import '../../../shared/widgets/action_sheet.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../home/presentation/providers/home_feed_providers.dart';
@@ -13,6 +14,9 @@ import '../../home/presentation/widgets/pun_guide_grid.dart';
 import '../../profile/presentation/profile_screen.dart' show profileCoverImage;
 import '../../profile/presentation/widgets/profile_hero.dart';
 import '../../profile/presentation/widgets/profile_top_bar.dart';
+import '../../safety/presentation/providers/safety_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
+import '../../safety/presentation/widgets/report_sheet.dart' show safetyRed;
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/trip_like_action.dart';
 import 'follow_actions.dart';
@@ -59,11 +63,82 @@ class UserProfileScreen extends ConsumerWidget {
               progress: profile.hasValue ? 0 : 1,
               title: profile.valueOrNull?.displayName ?? '',
               onBack: back,
+              // ⋯ — report and block — on anyone's profile but your own.
+              onMenu: switch (profile.valueOrNull) {
+                final shown? when !shown.isMe => () =>
+                    _openMenu(context, ref, shown),
+                _ => null,
+              },
+              menuIcon: Icons.more_horiz,
+              menuTooltip: 'ตัวเลือกเพิ่มเติม',
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+/// Whether the viewer has [profile] blocked: their own latest tap, else the
+/// profile's `isBlocked`.
+bool _blocked(WidgetRef ref, PublicUserProfile profile) =>
+    ref.watch(contentFilterProvider).blockOf(profile.id) ?? profile.isBlocked;
+
+String _handleOf(PublicUserProfile profile) =>
+    userHandle(username: profile.username, name: profile.displayName);
+
+enum _ProfileAction { report, block, unblock }
+
+/// The ⋯ in the top bar: รายงานผู้ใช้, then บล็อก or เลิกบล็อก.
+Future<void> _openMenu(
+  BuildContext context,
+  WidgetRef ref,
+  PublicUserProfile profile,
+) async {
+  final blocked =
+      ref.read(contentFilterProvider).blockOf(profile.id) ?? profile.isBlocked;
+  final handle = _handleOf(profile);
+  final action = await showActionSheet<_ProfileAction>(
+    context,
+    cancelLabel: 'ยกเลิก',
+    items: [
+      const ActionSheetItem(
+        value: _ProfileAction.report,
+        icon: Icons.report_gmailerrorred_outlined,
+        label: 'รายงานผู้ใช้',
+        destructive: true,
+      ),
+      blocked
+          ? ActionSheetItem(
+              value: _ProfileAction.unblock,
+              icon: Icons.lock_open,
+              label: 'เลิกบล็อก $handle',
+            )
+          : ActionSheetItem(
+              value: _ProfileAction.block,
+              icon: Icons.block,
+              label: 'บล็อก $handle',
+              destructive: true,
+            ),
+    ],
+  );
+  if (action == null || !context.mounted) return;
+  switch (action) {
+    case _ProfileAction.report:
+      await reportContent(
+        context,
+        ref,
+        ReportSubject(
+          type: ReportTargetType.user,
+          id: profile.id,
+          ownerId: profile.id,
+          ownerLabel: handle,
+        ),
+      );
+    case _ProfileAction.block:
+      await blockUser(context, ref, userId: profile.id, label: handle);
+    case _ProfileAction.unblock:
+      await unblockUser(context, ref, userId: profile.id, label: handle);
   }
 }
 
@@ -74,8 +149,18 @@ class _Body extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final feed = ref.watch(homeFeedProvider);
+    final feed = ref.watch(visibleHomeFeedProvider);
     final bottom = MediaQuery.of(context).padding.bottom + 24;
+
+    if (!profile.isMe && _blocked(ref, profile)) {
+      return CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(child: _UserHero(profile: profile)),
+          SliverToBoxAdapter(child: _BlockedBanner(profile: profile)),
+        ],
+      );
+    }
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
@@ -125,6 +210,7 @@ class _Body extends ConsumerWidget {
                   onLike: profile.isMe
                       ? null
                       : (trip) => toggleTripLike(context, ref, trip),
+                  moreOf: profile.isMe ? null : tripMoreOf(context, ref),
                   onOpen: (trip) => context.pushNamed(
                     AppRoute.tripDetail.name,
                     params: {'tripId': trip.id},
@@ -247,38 +333,106 @@ class _UserHero extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: 220,
-                  child: profile.isMe
-                      ? OutlinedButton(
-                          onPressed: () =>
-                              context.pushNamed(AppRoute.profileEdit.name),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white70),
-                            minimumSize: const Size.fromHeight(40),
-                            shape: const StadiumBorder(),
-                          ),
-                          child: const Text(
-                            'แก้ไขโปรไฟล์',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        )
-                      : FollowButton(
-                          following: following,
-                          followsYou: profile.followsYou,
-                          onPressed: () => toggleFollow(
-                            context,
-                            ref,
-                            userId: profile.id,
+                // Blocked: no follow button — the banner below says why.
+                if (!profile.isMe && _blocked(ref, profile))
+                  const SizedBox.shrink()
+                else
+                  SizedBox(
+                    width: 220,
+                    child: profile.isMe
+                        ? OutlinedButton(
+                            onPressed: () =>
+                                context.pushNamed(AppRoute.profileEdit.name),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white70),
+                              minimumSize: const Size.fromHeight(40),
+                              shape: const StadiumBorder(),
+                            ),
+                            child: const Text(
+                              'แก้ไขโปรไฟล์',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          )
+                        : FollowButton(
                             following: following,
+                            followsYou: profile.followsYou,
+                            onPressed: () => toggleFollow(
+                              context,
+                              ref,
+                              userId: profile.id,
+                              following: following,
+                              label: _handleOf(profile),
+                            ),
                           ),
-                        ),
-                ),
+                  ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "คุณบล็อกผู้ใช้นี้อยู่" + เลิกบล็อก, where the wall would be.
+class _BlockedBanner extends ConsumerWidget {
+  const _BlockedBanner({required this.profile});
+
+  final PublicUserProfile profile;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final handle = _handleOf(profile);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+        decoration: BoxDecoration(
+          color: AppColors.softScreen,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.block, size: 30, color: safetyRed),
+            const SizedBox(height: 10),
+            const Text(
+              'คุณบล็อกผู้ใช้นี้อยู่',
+              style: TextStyle(
+                color: AppColors.foreground,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'คุณจะไม่เห็นโพสต์ คลิป และความคิดเห็นของ $handle',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton(
+              key: const Key('profile-unblock'),
+              onPressed: () => unblockUser(
+                context,
+                ref,
+                userId: profile.id,
+                label: handle,
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.foreground,
+                side: const BorderSide(color: AppColors.foreground),
+                minimumSize: const Size(160, 40),
+                shape: const StadiumBorder(),
+              ),
+              child: const Text(
+                'เลิกบล็อก',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

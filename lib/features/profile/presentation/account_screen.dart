@@ -127,6 +127,16 @@ class AccountScreen extends ConsumerWidget {
                   onTap: () => unavailable('บุ๊คมาร์คสถานที่ยังไม่เปิดใช้งาน'),
                 ),
                 const _RowDivider(),
+                // Privacy: the accounts this one has blocked. App Review
+                // notes point here.
+                if (signedIn) ...[
+                  AccountRow(
+                    icon: Icons.block,
+                    label: 'ผู้ใช้ที่ถูกบล็อก',
+                    onTap: () => context.pushNamed(AppRoute.blockedUsers.name),
+                  ),
+                  const _RowDivider(),
+                ],
                 AccountRow(
                   icon: Icons.settings_outlined,
                   label: 'ตั้งค่าระบบ',

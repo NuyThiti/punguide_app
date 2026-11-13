@@ -22,6 +22,7 @@ class PuntokPlayerPager extends StatefulWidget {
     required this.onCreator,
     required this.onFollow,
     required this.onOpenPlan,
+    this.moreOf,
     this.controller,
     this.initialIndex = 0,
     this.onIndexChanged,
@@ -41,6 +42,9 @@ class PuntokPlayerPager extends StatefulWidget {
   final ValueChanged<PuntokPost> onCreator;
   final ValueChanged<PuntokPost> onFollow;
   final ValueChanged<String> onOpenPlan;
+
+  /// The ⋯ for a clip — report / block — or null for none (the viewer's own).
+  final VoidCallback? Function(PuntokPost post)? moreOf;
 
   /// Supply one to drive the pager from outside — the feed jumps to the top
   /// when its tab changes.
@@ -137,6 +141,7 @@ class _PuntokPlayerPagerState extends State<PuntokPlayerPager>
           onComment: () => widget.onComment(post),
           onShare: widget.onShare,
           onCreator: () => widget.onCreator(post),
+          onMore: widget.moreOf?.call(post),
         );
       },
     );

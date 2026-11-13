@@ -10,6 +10,7 @@ import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../home/presentation/widgets/home_assistant_fab.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/trip_like_action.dart';
 import '../domain/nearby_trip.dart';
@@ -97,6 +98,7 @@ class PaigunScreen extends ConsumerWidget {
                         likedOf: (row) => likedNow(liked, row.trip),
                         onLike: (row) => toggleTripLike(context, ref, row.trip),
                         onRetry: () => refreshPaigunFeed(ref),
+                        moreOf: (row) => tripMoreOf(context, ref)(row.trip),
                       ),
                     ],
                   ),
@@ -229,6 +231,7 @@ class _Section extends StatelessWidget {
     required this.likedOf,
     required this.onLike,
     required this.onRetry,
+    this.moreOf,
   });
 
   final AsyncValue<List<NearbyTrip>> rows;
@@ -238,6 +241,7 @@ class _Section extends StatelessWidget {
   final bool Function(NearbyTrip row) likedOf;
   final ValueChanged<NearbyTrip> onLike;
   final VoidCallback onRetry;
+  final VoidCallback? Function(NearbyTrip row)? moreOf;
 
   @override
   Widget build(BuildContext context) {
@@ -250,6 +254,7 @@ class _Section extends StatelessWidget {
           onSave: onSave,
           likedOf: likedOf,
           onLike: onLike,
+          moreOf: moreOf,
         );
       },
       loading: () => const Padding(

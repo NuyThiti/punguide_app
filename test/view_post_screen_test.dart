@@ -165,6 +165,13 @@ Widget _harness({AuthUser? viewer, bool viewerPending = false}) =>
               name: AppRoute.shareSettings.name,
               builder: (_, __) => const Scaffold(body: Text('share settings')),
             ),
+            GoRoute(
+              path: '/edit-post/:tripId',
+              name: AppRoute.editPost.name,
+              builder: (_, state) => Scaffold(
+                body: Text('post composer ${state.params['tripId']}'),
+              ),
+            ),
           ],
         ),
       ),
@@ -692,9 +699,10 @@ void main() {
       );
       await openSheet(tester);
 
-      // Only the deletable one offers a menu.
-      expect(find.byTooltip('ตัวเลือกความคิดเห็น'), findsOneWidget);
-      await tester.tap(find.byTooltip('ตัวเลือกความคิดเห็น'));
+      // Every row has ⋯ now — edit / delete on this one, report / block on
+      // the others. The deletable one is first.
+      expect(find.byTooltip('ตัวเลือกความคิดเห็น'), findsNWidgets(2));
+      await tester.tap(find.byTooltip('ตัวเลือกความคิดเห็น').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('ลบความคิดเห็น'));
       await tester.pumpAndSettle();
@@ -702,6 +710,141 @@ void main() {
       expect(adapter.paths, contains('DELETE /trips/trip-1/comments/c1'));
       expect(find.text('ของฉันเอง'), findsNothing);
       expect(find.text('On Lok Yun ไปกี่โมงดีคะ'), findsOneWidget);
+    });
+  });
+
+  group('report and block on the trip page', () {
+    testWidgets('blocking a commenter takes their rows and count away',
+        (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        trip: {..._postJson(), 'commentCount': 2},
+        extra: {
+          'GET /trips/trip-1/comments': [
+            FakeReply(
+              200,
+              <String, dynamic>{
+                'items': [
+                  <String, dynamic>{
+                    'id': 'c1',
+                    'tripId': 'trip-1',
+                    'body': 'ขายของถูกๆ ทักมา',
+                    'author': {'id': 'u9', 'username': 'spammer'},
+                    'replyCount': 0,
+                    'createdAt': '2026-11-12T00:00:00.000Z',
+                  },
+                  <String, dynamic>{
+                    'id': 'c2',
+                    'tripId': 'trip-1',
+                    'body': 'สวยมากค่ะ',
+                    'author': {'id': 'u8', 'username': 'mintwalks'},
+                    'replyCount': 0,
+                    'createdAt': '2026-11-12T00:00:00.000Z',
+                  },
+                ],
+                'total': 2,
+                'limit': 20,
+                'offset': 0,
+                'hasMore': false,
+              },
+            ),
+          ],
+          'POST /users/u9/block': [
+            const FakeReply(200, {'userId': 'u9', 'isBlocked': true}),
+          ],
+        },
+      );
+      await tester.tap(find.byKey(const Key('comment-chip')));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('ขายของถูกๆ ทักมา'));
+      await tester.pumpAndSettle();
+      expect(find.text('รายงานความคิดเห็น'), findsOneWidget);
+      // Someone else's comment: nothing to edit or delete.
+      expect(find.text('ลบความคิดเห็น'), findsNothing);
+
+      await tester.tap(find.text('บล็อก @spammer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('block-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(adapter.paths, contains('POST /users/u9/block'));
+      expect(find.text('ขายของถูกๆ ทักมา'), findsNothing);
+      expect(find.text('สวยมากค่ะ'), findsOneWidget);
+
+      // The 💬 behind the sheet dropped by the one comment that went.
+      Navigator.of(tester.element(find.text('สวยมากค่ะ'))).pop();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('comment-chip')),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a visitor can report the post from ☰ and the page closes',
+        (tester) async {
+      phone(tester);
+      await _pumpPost(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'POST /reports': [
+            const FakeReply(201, {'id': 'r1', 'alreadyReported': false}),
+          ],
+        },
+      );
+
+      await tester.tap(find.byTooltip('เมนู'));
+      await tester.pumpAndSettle();
+      expect(find.text('บล็อก @maki'), findsOneWidget);
+      await tester.tap(find.text('รายงานโพสต์'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ความรุนแรง หรือเนื้อหาน่ากลัว'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('report-send')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('report-thanks-done')));
+      await tester.pumpAndSettle();
+
+      expect(adapter.bodyOf('POST /reports'), {
+        'targetType': 'trip',
+        'targetId': 'trip-1',
+        'reason': 'violence',
+      });
+      // Nothing to pop back to here, so it lands on Home.
+      expect(find.text('home page'), findsOneWidget);
+    });
+
+    testWidgets('the owner\'s menu has no report or block', (tester) async {
+      phone(tester);
+      await _pumpPost(tester, viewer: _owner);
+
+      await tester.tap(find.byTooltip('เมนู'));
+      await tester.pumpAndSettle();
+      expect(find.text('รายงานโพสต์'), findsNothing);
+      expect(find.textContaining('บล็อก'), findsNothing);
+    });
+
+    testWidgets('a post that 404s says it is no longer available',
+        (tester) async {
+      phone(tester);
+      adapter = FakeAdapter({
+        'GET /trips/trip-1': [
+          const FakeReply(404, {'message': 'Not Found'}),
+        ],
+      });
+      await tester.pumpWidget(_harness(viewer: _visitor));
+      await tester.pumpAndSettle();
+
+      expect(find.text('โพสต์นี้ไม่พร้อมใช้งานแล้ว'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('trip-error-back')));
+      await tester.pumpAndSettle();
+      expect(find.text('home page'), findsOneWidget);
     });
   });
 
@@ -804,7 +947,8 @@ void main() {
     expect(find.byTooltip('เอาออกจากที่บันทึก'), findsOneWidget);
   });
 
-  testWidgets('แก้ไขทริป in the ☰ opens the post settings', (tester) async {
+  testWidgets('แก้ไขทริป in the ☰ opens the composer on this post',
+      (tester) async {
     phone(tester);
     await _pumpPost(tester, viewer: _owner);
 
@@ -813,7 +957,9 @@ void main() {
     await tester.tap(find.text('แก้ไขทริป'));
     await tester.pumpAndSettle();
 
-    expect(find.text('share settings'), findsOneWidget);
+    // The composer first — its Next leads on to the share settings.
+    expect(find.text('post composer trip-1'), findsOneWidget);
+    expect(find.text('share settings'), findsNothing);
   });
 
   testWidgets('no hero action at all until it is known who is looking',
@@ -1476,17 +1622,12 @@ void main() {
       expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
     });
 
-    testWidgets('leaves a post that is only waiting alone', (tester) async {
-      await _pumpPost(
-        tester,
-        trip: _rejectedJson(status: 'PENDING', reasonCode: 'UNDER_REVIEW'),
-        viewer: _owner,
-      );
+    testWidgets('offers a way to fix it', (tester) async {
+      await _pumpPost(tester, trip: _rejectedJson(), viewer: _owner);
 
-      // PENDING and REVIEW_REQUIRED may still come good on their own; only
-      // REJECTED earns the notice.
-      expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
-      expect(find.text('กำลังตรวจสอบโพสต์ของคุณ'), findsNothing);
+      // Editing and re-sharing is the way back; the server re-checks
+      // whatever changed.
+      expect(find.text('แก้ไขโพสต์'), findsOneWidget);
     });
 
     testWidgets('offers no appeal when the server does not allow one',
@@ -1494,6 +1635,79 @@ void main() {
       await _pumpPost(tester, trip: _rejectedJson(), viewer: _owner);
 
       expect(find.text('ขออุทธรณ์'), findsNothing);
+    });
+  });
+
+  group('a post still being checked', () {
+    testWidgets('says it is being looked at, and offers nothing to fix',
+        (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(status: 'PENDING', reasonCode: 'UNDER_REVIEW'),
+        viewer: _owner,
+        extra: <String, List<FakeReply>>{
+          'GET /trips/trip-1/moderation': <FakeReply>[
+            const FakeReply(200, <String, dynamic>{
+              'contentId': 'trip-1',
+              'status': 'PENDING',
+              'reasonCode': 'UNDER_REVIEW',
+              'canAppeal': false,
+            }),
+          ],
+        },
+      );
+
+      expect(find.text('กำลังตรวจสอบ'), findsOneWidget);
+      expect(find.text('กำลังตรวจสอบโพสต์ของคุณ'), findsOneWidget);
+      expect(find.text('ระหว่างนี้มีเพียงคุณที่เห็นโพสต์นี้'), findsOneWidget);
+      // Nothing is wrong with it yet, so there is nothing to fix or appeal.
+      expect(find.text('แก้ไขโพสต์'), findsNothing);
+      expect(find.text('ขออุทธรณ์'), findsNothing);
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
+
+      // Tears the tree down so the poll's timer is cancelled with it.
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('waits on a person without polling for one', (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(
+          status: 'REVIEW_REQUIRED',
+          reasonCode: 'TRAVEL_RELEVANCE_UNCERTAIN',
+        ),
+        viewer: _owner,
+      );
+
+      expect(find.text('รอทีมงานตรวจสอบ'), findsOneWidget);
+      expect(
+        find.text('ทีมงานขอตรวจสอบโพสต์นี้ก่อนเผยแพร่'),
+        findsOneWidget,
+      );
+      // A person may take hours; polling for that would be pointless.
+      expect(
+        adapter.requests.any((r) => r.path == '/trips/trip-1/moderation'),
+        isFalse,
+      );
+    });
+
+    testWidgets('says nothing at all once it is approved', (tester) async {
+      await _pumpPost(
+        tester,
+        trip: _rejectedJson(status: 'APPROVED', reasonCode: 'APPROVED'),
+        viewer: _owner,
+      );
+
+      expect(find.text('เผยแพร่แล้ว'), findsNothing);
+      expect(find.text('กำลังตรวจสอบ'), findsNothing);
+    });
+
+    testWidgets('says nothing on a draft that was never shared',
+        (tester) async {
+      await _pumpPost(tester, trip: _postJson(), viewer: _owner);
+
+      expect(find.text('กำลังตรวจสอบ'), findsNothing);
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsNothing);
     });
 
     testWidgets('appeals once, and says so', (tester) async {

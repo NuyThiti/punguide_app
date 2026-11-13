@@ -16,6 +16,7 @@ class PaigunGrid extends StatelessWidget {
     required this.onSave,
     required this.likedOf,
     required this.onLike,
+    this.moreOf,
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
   });
 
@@ -26,6 +27,9 @@ class PaigunGrid extends StatelessWidget {
   /// Whether the traveller has hearted a row, from the app-wide ledger.
   final bool Function(NearbyTrip row) likedOf;
   final ValueChanged<NearbyTrip> onLike;
+
+  /// The ⋯ for a row, or null for none — see [PunGuideGrid.moreOf].
+  final VoidCallback? Function(NearbyTrip row)? moreOf;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -62,6 +66,7 @@ class PaigunGrid extends StatelessWidget {
               onSave: () => onSave(row),
               liked: likedOf(row),
               onLike: () => onLike(row),
+              onMore: moreOf?.call(row),
             ),
           ),
       ],

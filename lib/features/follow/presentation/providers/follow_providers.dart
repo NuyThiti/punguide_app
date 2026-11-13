@@ -82,6 +82,19 @@ class FollowLedgerController extends StateNotifier<FollowLedger> {
     _ref.invalidate(myFollowSummaryProvider);
     return mine;
   }
+
+  /// A block just dropped every follow between the viewer and [userId], both
+  /// ways. Shows "ติดตาม" again and forgets the counts the last follow tap
+  /// answered with, so screens fall back to a fresh read.
+  void forgetAfterBlock(String userId) {
+    final summaries = Map<String, FollowSummary>.of(state.summaries)
+      ..remove(userId);
+    state = FollowLedger(
+      following: {...state.following, userId: false},
+      summaries: summaries,
+    );
+    _ref.invalidate(myFollowSummaryProvider);
+  }
 }
 
 /// Someone's public profile — `GET /users/:userId`. `isFollowing`,

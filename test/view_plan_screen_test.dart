@@ -1408,7 +1408,7 @@ void main() {
   testWidgets('a missing trip says so instead of throwing', (tester) async {
     await _pumpTrip(tester, trip: <String, dynamic>{}, status: 404);
 
-    expect(find.text('ไม่พบทริปนี้'), findsOneWidget);
+    expect(find.text('โพสต์นี้ไม่พร้อมใช้งานแล้ว'), findsOneWidget);
     expect(find.text('ลองอีกครั้ง'), findsNothing);
     expect(find.text('Remix Trip'), findsNothing);
   });

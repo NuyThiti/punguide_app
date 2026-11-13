@@ -18,6 +18,7 @@ class PaigunCard extends StatelessWidget {
     required this.onSave,
     required this.liked,
     required this.onLike,
+    this.onMore,
   });
 
   final NearbyTrip row;
@@ -30,6 +31,9 @@ class PaigunCard extends StatelessWidget {
   final bool liked;
   final VoidCallback onLike;
 
+  /// ⋯ — report or block. See [PunGuideCard.onMore].
+  final VoidCallback? onMore;
+
   @override
   Widget build(BuildContext context) {
     return PunGuideCard(
@@ -41,6 +45,7 @@ class PaigunCard extends StatelessWidget {
       onTap: onTap,
       onSave: onSave,
       onLike: onLike,
+      onMore: onMore,
     );
   }
 }

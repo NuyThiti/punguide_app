@@ -16,6 +16,7 @@ class PuntokActionRail extends StatelessWidget {
     required this.onShare,
     required this.onAvatar,
     required this.onFollow,
+    this.onMore,
   });
 
   final PuntokPost post;
@@ -25,6 +26,10 @@ class PuntokActionRail extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onAvatar;
   final VoidCallback onFollow;
+
+  /// ⋯ under share — report the clip, block its creator. Null on the
+  /// viewer's own clip.
+  final VoidCallback? onMore;
 
   static const double discSize = 44;
 
@@ -60,6 +65,15 @@ class PuntokActionRail extends StatelessWidget {
           count: post.shares,
           onTap: onShare,
         ),
+        if (onMore case final onMore?) ...[
+          const SizedBox(height: 14),
+          _RailAction(
+            key: const Key('puntok-more'),
+            icon: Icons.more_horiz,
+            count: null,
+            onTap: onMore,
+          ),
+        ],
       ],
     );
   }
@@ -145,6 +159,7 @@ DecorationImage? _image(String? source) {
 
 class _RailAction extends StatelessWidget {
   const _RailAction({
+    super.key,
     required this.icon,
     required this.count,
     required this.onTap,

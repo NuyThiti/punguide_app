@@ -18,6 +18,8 @@ class ProfileTopBar extends StatelessWidget {
     required this.title,
     required this.onBack,
     this.onMenu,
+    this.menuIcon = Icons.menu,
+    this.menuTooltip = 'จัดการบัญชี',
   });
 
   /// 0 = over the hero, 1 = over the wall. Anything between crossfades.
@@ -28,6 +30,11 @@ class ProfileTopBar extends StatelessWidget {
 
   /// Null on someone else's profile, which has no account menu.
   final VoidCallback? onMenu;
+
+  /// The right-hand glyph: ☰ on the viewer's own profile, ⋯ on someone
+  /// else's.
+  final IconData menuIcon;
+  final String menuTooltip;
 
   /// Height of the bar itself, above the status bar.
   static const double barHeight = 48;
@@ -85,8 +92,8 @@ class ProfileTopBar extends StatelessWidget {
           ),
           if (onMenu case final onMenu?)
             _BarButton(
-              icon: Icons.menu,
-              tooltip: 'จัดการบัญชี',
+              icon: menuIcon,
+              tooltip: menuTooltip,
               color: glyph,
               discOpacity: 0,
               size: 22,

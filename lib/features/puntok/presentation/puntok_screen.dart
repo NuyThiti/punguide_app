@@ -10,6 +10,8 @@ import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
+import '../../safety/presentation/providers/safety_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../trip_detail/presentation/widgets/comment_sheet.dart';
 import '../../trips/presentation/providers/trip_comment_providers.dart';
 import '../domain/models/puntok_post.dart';
@@ -46,7 +48,9 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
   Widget build(BuildContext context) {
     final feed = ref.watch(puntokFeedProvider);
     final posts = withFollowState(
-      feed.valueOrNull ?? const <PuntokPost>[],
+      ref
+          .watch(contentFilterProvider)
+          .visibleClips(feed.valueOrNull ?? const <PuntokPost>[]),
       ref.watch(followLedgerProvider),
       myId: ref.watch(authSessionProvider)?.userId,
     );
@@ -112,6 +116,7 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
                 final id = post.authorId;
                 if (id != null) openUserProfile(context, id);
               },
+              moreOf: clipMoreOf(context, ref),
             ),
           Positioned(
             top: 0,

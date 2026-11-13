@@ -6,6 +6,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/providers/auth_providers.dart';
 import 'features/location_access/presentation/providers/location_providers.dart';
+import 'features/safety/presentation/providers/safety_providers.dart';
 
 class PlunoApp extends ConsumerStatefulWidget {
   const PlunoApp({super.key});
@@ -36,6 +37,20 @@ class _PlunoAppState extends ConsumerState<PlunoApp> {
         // Deliberately not awaited: nothing on screen is waiting for it, and
         // ensureFix swallows its own failures.
         ref.read(locationFixProvider.notifier).ensureFix();
+      },
+    );
+
+    // Each account's block list, once per sign-in: rows cached before a
+    // block made elsewhere are filtered on this device too. The server
+    // already filters fresh feeds, so this never holds anything up.
+    ref.listenManual(
+      authSessionProvider.select((session) => session?.userId),
+      fireImmediately: true,
+      (_, userId) {
+        if (userId == null) return;
+        // Read first so the filter has rebuilt for this account.
+        ref.read(contentFilterProvider);
+        ref.read(contentFilterProvider.notifier).syncBlocks();
       },
     );
   }

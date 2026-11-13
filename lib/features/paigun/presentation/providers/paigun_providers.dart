@@ -5,6 +5,7 @@ import '../../../../core/api/pluno_api.dart';
 import '../../../../shared/models/feed_rows.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
+import '../../../safety/presentation/providers/safety_providers.dart';
 import '../../data/paigun_origin_store.dart';
 import '../../domain/nearby_trip.dart';
 import '../../../trip_style/presentation/providers/trip_style_providers.dart';
@@ -148,12 +149,12 @@ final paigunFeedProvider =
 final paigunWallProvider =
     Provider.family<AsyncValue<List<NearbyTrip>>, PaigunFilter>((ref, chip) {
   final saved = ref.watch(paigunSavedProvider);
+  final hidden = ref.watch(contentFilterProvider);
 
   // The badge ranks the wall it is on, not what the filter let through: a trip
   // does not stop being a Top PunGuide because someone asked for beaches.
-  return ref
-      .watch(paigunFeedProvider(chip))
-      .whenData((trips) => decorateTrips(trips, saved: saved));
+  return ref.watch(paigunFeedProvider(chip)).whenData(
+      (trips) => decorateTrips(hidden.visibleTrips(trips), saved: saved));
 });
 
 /// What the board is showing right now — the chip in force, already decorated.

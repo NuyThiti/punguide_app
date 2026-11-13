@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/api/pluno_api.dart';
 import '../../../../shared/models/feed_rows.dart';
+import '../../../../shared/widgets/moderation_notice.dart';
 import '../../../puntok/presentation/widgets/puntok_card.dart';
 import 'pun_guide_card.dart';
 
@@ -24,6 +25,7 @@ class PunGuideGrid extends StatelessWidget {
     this.likedOf,
     this.overlayOf,
     this.onDelete,
+    this.moreOf,
     this.isMine = false,
   });
 
@@ -60,6 +62,11 @@ class PunGuideGrid extends StatelessWidget {
   /// the traveller's own trips — the album grid is a different widget and
   /// never gets one.
   final ValueChanged<TripListItem>? onDelete;
+
+  /// The ⋯ (report / block) for a row, or null to leave it off — null for
+  /// the viewer's own rows, which is why it is asked per row rather than
+  /// settled for the wall. See `tripMoreOf` in the safety feature.
+  final VoidCallback? Function(TripListItem trip)? moreOf;
 
   /// Whether this whole wall is the traveller's own trips — see
   /// [PunGuideCard.isMine]. A wall is one person's or it is not, so this is
@@ -103,6 +110,7 @@ class PunGuideGrid extends StatelessWidget {
                       trip: trip,
                       onTap: () => onOpen(trip),
                       onDelete: _deleteFor(trip),
+                      onMore: moreOf?.call(trip),
                     )
                   : PunGuideCard(
                       trip: trip,
@@ -115,6 +123,7 @@ class PunGuideGrid extends StatelessWidget {
                       onSave: _saveFor(trip),
                       onLike: _likeFor(trip),
                       onDelete: _deleteFor(trip),
+                      onMore: moreOf?.call(trip),
                     ),
             ),
           ),
@@ -137,14 +146,39 @@ class PunGuideGrid extends StatelessWidget {
     return onDelete == null ? null : () => onDelete(trip);
   }
 
+  /// Stacks the card's top-left corner: the content-check badge first, then
+  /// whatever the caller lays on top of it.
+  ///
+  /// The badge needs no parameter and no caller change — only
+  /// `GET /trips/mine` sends `moderation`, and only to the owner, so a wall
+  /// built from any other list has nothing to draw and draws nothing.
   Widget _withOverlay(TripListItem trip, Widget card) {
     final overlay = overlayOf?.call(trip);
-    if (overlay == null) return card;
+    final moderation = trip.moderation;
+    final badge = isModerationWorthShowing(moderation)
+        ? ModerationBadge(status: moderation!.status)
+        : null;
+    if (overlay == null && badge == null) return card;
 
     return Stack(
       children: [
         card,
-        Positioned(top: 10, left: 10, child: overlay),
+        Positioned(
+          top: 10,
+          left: 10,
+          // Leaves room for the corner button on the right, so a long badge
+          // ellipsises rather than running under it.
+          right: 46,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (badge != null) badge,
+              if (badge != null && overlay != null) const SizedBox(height: 6),
+              if (overlay != null) overlay,
+            ],
+          ),
+        ),
       ],
     );
   }

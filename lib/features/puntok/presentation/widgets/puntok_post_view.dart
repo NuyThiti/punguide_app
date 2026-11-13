@@ -28,6 +28,7 @@ class PuntokPostView extends StatelessWidget {
     required this.onCreator,
     required this.onFollow,
     required this.onOpenPlan,
+    this.onMore,
   });
 
   final PuntokPost post;
@@ -50,6 +51,9 @@ class PuntokPostView extends StatelessWidget {
   /// ↗ on the plan card, with the plan's id.
   final ValueChanged<String> onOpenPlan;
 
+  /// ⋯ on the rail and a long press on the clip. Null on the viewer's own.
+  final VoidCallback? onMore;
+
   static const double _planHeight = 60;
 
   @override
@@ -64,6 +68,7 @@ class PuntokPostView extends StatelessWidget {
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTogglePlay,
+          onLongPress: onMore,
           child: PuntokVideoLayer(poster: post.poster, controller: controller),
         ),
         const _Scrim(alignment: Alignment.topCenter, extent: 0.28),
@@ -87,6 +92,7 @@ class PuntokPostView extends StatelessWidget {
             onShare: onShare,
             onAvatar: onCreator,
             onFollow: onFollow,
+            onMore: onMore,
           ),
         ),
         Positioned(

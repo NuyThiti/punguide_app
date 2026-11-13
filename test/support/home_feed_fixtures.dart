@@ -29,25 +29,31 @@ TripListItem feedTrip({
   int remixCount = 127,
   double? distanceKm,
   String type = 'plan_trip',
+  /// Where the row sits in the content check. Only `GET /trips/mine` sends
+  /// this, and only to the owner, so most fixtures leave it out.
+  Map<String, dynamic>? moderation,
 }) =>
-    TripListItem.fromJson(feedTripJson(
-      id: id,
-      title: title,
-      destination: destination,
-      country: country,
-      latitude: latitude,
-      longitude: longitude,
-      durationDays: durationDays,
-      totalBudget: totalBudget,
-      coverUrl: coverUrl,
-      coverMediaType: coverMediaType,
-      creatorName: creatorName,
-      isSaved: isSaved,
-      likeCount: likeCount,
-      remixCount: remixCount,
-      distanceKm: distanceKm,
-      type: type,
-    ));
+    TripListItem.fromJson(<String, dynamic>{
+      if (moderation != null) 'moderation': moderation,
+      ...feedTripJson(
+        id: id,
+        title: title,
+        destination: destination,
+        country: country,
+        latitude: latitude,
+        longitude: longitude,
+        durationDays: durationDays,
+        totalBudget: totalBudget,
+        coverUrl: coverUrl,
+        coverMediaType: coverMediaType,
+        creatorName: creatorName,
+        isSaved: isSaved,
+        likeCount: likeCount,
+        remixCount: remixCount,
+        distanceKm: distanceKm,
+        type: type,
+      ),
+    });
 
 /// The same row as raw JSON, for a test that answers `GET /trips` through
 /// [FakeAdapter] rather than overriding a provider.

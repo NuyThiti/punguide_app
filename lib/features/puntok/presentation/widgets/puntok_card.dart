@@ -16,6 +16,7 @@ class PuntokCard extends StatelessWidget {
     required this.trip,
     required this.onTap,
     this.onDelete,
+    this.onMore,
   });
 
   final TripListItem trip;
@@ -24,6 +25,9 @@ class PuntokCard extends StatelessWidget {
   /// Puts a delete on the cover. Only a wall of the traveller's own clips
   /// passes this — see [PunGuideCard.onDelete].
   final VoidCallback? onDelete;
+
+  /// ⋯ on the cover and a long press — see [PunGuideCard.onMore].
+  final VoidCallback? onMore;
 
   /// Matches [PunGuideCard.coverAspectRatio] so clips and plans line up when
   /// a wall holds both.
@@ -37,6 +41,7 @@ class PuntokCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onDelete == null ? onMore : null,
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
@@ -76,6 +81,17 @@ class PuntokCard extends StatelessWidget {
                       top: 10,
                       right: 10,
                       child: _DeleteButton(onTap: onDelete),
+                    )
+                  else if (onMore case final onMore?)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: _CornerDisc(
+                        icon: Icons.more_horiz,
+                        tooltip: 'ตัวเลือกเพิ่มเติม',
+                        color: AppColors.foreground,
+                        onTap: onMore,
+                      ),
                     ),
                 ],
               ),
@@ -155,6 +171,42 @@ class _DeleteButton extends StatelessWidget {
             size: 16,
             color: AppColors.brandOrangeDeep,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A white disc on the cover — the ⋯ twin of [_DeleteButton].
+class _CornerDisc extends StatelessWidget {
+  const _CornerDisc({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 16, color: color),
         ),
       ),
     );

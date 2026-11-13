@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api/pluno_api.dart';
 import '../../../core/router/app_router.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import 'providers/follow_providers.dart';
 
 /// Whether the viewer follows [userId]: their own latest tap if there was
@@ -22,6 +24,9 @@ Future<void> toggleFollow(
   WidgetRef ref, {
   required String userId,
   required bool following,
+
+  /// How the 403 dialog names them — "เลิกบล็อก @maki เพื่อติดตาม?".
+  String? label,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final session = ref.read(authSessionProvider);
@@ -45,6 +50,34 @@ Future<void> toggleFollow(
     await ref
         .read(followLedgerProvider.notifier)
         .setFollowing(userId, !following);
+  } on ApiException catch (failure) {
+    // 403 on follow: the viewer has them blocked. Unblock first, then follow.
+    if (!following && failure.isForbidden && context.mounted) {
+      final name = label ?? 'ผู้ใช้นี้';
+      final unblocked = await unblockUser(
+        context,
+        ref,
+        userId: userId,
+        label: name,
+        title: 'เลิกบล็อก $name เพื่อติดตาม?',
+        message: 'การติดตามเดิมจะไม่กลับมาเอง',
+      );
+      if (unblocked && context.mounted) {
+        return toggleFollow(
+          context,
+          ref,
+          userId: userId,
+          following: false,
+          label: label,
+        );
+      }
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(following ? 'เลิกติดตามไม่สำเร็จ' : 'ติดตามไม่สำเร็จ'),
+      ),
+    );
   } catch (_) {
     messenger.showSnackBar(
       SnackBar(

@@ -35,6 +35,25 @@ Map<String, dynamic> _postJson({Map<String, dynamic>? linkedTrip}) =>
       if (linkedTrip != null) 'linkedTrip': linkedTrip,
     };
 
+/// The same post, live, and held back by the content check: the audience the
+/// owner actually picked is in `moderation.requestedVisibility`, not in
+/// `visibility`, which is forced private until it passes.
+Map<String, dynamic> _heldJson({
+  String requested = 'followers',
+  String status = 'PENDING',
+}) =>
+    <String, dynamic>{
+      ..._postJson(),
+      'visibility': 'private',
+      'publishedAt': '2026-10-01T00:00:00.000Z',
+      'moderation': <String, dynamic>{
+        'status': status,
+        'reasonCode': 'UNDER_REVIEW',
+        'requestedVisibility': requested,
+        'canAppeal': false,
+      },
+    };
+
 Map<String, dynamic> _plan({
   required String id,
   required String title,
@@ -447,5 +466,57 @@ void main() {
             'PunGuide เป็นพื้นที่แชร์ประสบการณ์ท่องเที่ยว โพสต์นี้ดูไม่เกี่ยวกับการท่องเที่ยว'),
         findsOneWidget);
     expect(find.text('แชร์โพสต์ไม่สำเร็จ ลองอีกครั้ง'), findsNothing);
+  });
+
+  testWidgets(
+      'a post held back by the check reopens on the audience its owner picked',
+      (tester) async {
+    await _pumpScreen(tester, trip: _heldJson());
+
+    await tester.tap(find.text('Share'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // `visibility` reads "private" while the check holds it, so going by that
+    // alone would quietly demote a Followers post to Only me.
+    expect(
+      adapter.bodyOf('PUT /trips/posts/trip-1')?['visibility'],
+      'followers',
+    );
+  });
+
+  testWidgets('re-sharing a live post with its words untouched just goes',
+      (tester) async {
+    await _pumpScreen(tester, trip: _heldJson());
+
+    await tester.tap(find.text('Share'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Audience, budget and remix change nothing the checker looks at.
+    expect(find.text('โพสต์จะถูกตรวจสอบอีกครั้ง'), findsNothing);
+    expect(adapter.bodyOf('PUT /trips/posts/trip-1'), isNotNull);
+  });
+
+  testWidgets('changing a live post\'s words warns before it is hidden again',
+      (tester) async {
+    await _pumpScreen(tester, trip: _heldJson());
+
+    // Rewrite the title through the sheet the identity card opens.
+    await tester.tap(find.text('เที่ยวย่านพระนคร 1 day trip'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'ชื่อใหม่');
+    await tester.tap(find.text('ตกลง'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Share'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('โพสต์จะถูกตรวจสอบอีกครั้ง'), findsOneWidget);
+
+    // Backing out leaves the live post exactly as it was.
+    await tester.tap(find.text('ยกเลิก'));
+    await tester.pumpAndSettle();
+    expect(adapter.bodyOf('PUT /trips/posts/trip-1'), isNull);
   });
 }

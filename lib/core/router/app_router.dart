@@ -7,6 +7,7 @@ import '../api/pluno_api.dart' show FollowListKind;
 import '../../features/ai_chat/presentation/ai_chat_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/create_post/presentation/create_post_screen.dart';
+import '../../features/create_post/presentation/edit_post_screen.dart';
 import '../../features/create_puntok/presentation/create_puntok_screen.dart';
 import '../../features/create_trip/presentation/create_trip_screen.dart';
 import '../../features/create_trip/presentation/edit_trip_brief_screen.dart';
@@ -25,6 +26,7 @@ import '../../features/paigun/presentation/paigun_screen.dart';
 import '../../features/profile/presentation/account_screen.dart';
 import '../../features/profile/presentation/album_detail_screen.dart';
 import '../../features/profile/presentation/delete_account_screen.dart';
+import '../../features/safety/presentation/blocked_users_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/puntok/presentation/puntok_screen.dart';
@@ -52,6 +54,7 @@ enum AppRoute {
   editTrip,
   editTripBrief,
   shareSettings,
+  editPost,
   myTrips,
   savedTrips,
   remixTrip,
@@ -63,6 +66,7 @@ enum AppRoute {
   profileAccount,
   profileEdit,
   profileDelete,
+  blockedUsers,
   albumDetail,
   locationAccess,
   locationPicker,
@@ -183,6 +187,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _instantPage(
         state,
         PostShareSettingsScreen(tripId: state.params['tripId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/trips/:tripId/edit-post',
+      name: AppRoute.editPost.name,
+      pageBuilder: (context, state) => _instantPage(
+        state,
+        EditPostScreen(tripId: state.params['tripId']!),
       ),
     ),
     GoRoute(
@@ -318,6 +330,12 @@ final appRouter = GoRouter(
       name: AppRoute.profileEdit.name,
       pageBuilder: (context, state) =>
           _instantPage(state, const EditProfileScreen()),
+    ),
+    GoRoute(
+      path: '/profile/blocked',
+      name: AppRoute.blockedUsers.name,
+      pageBuilder: (context, state) =>
+          _instantPage(state, const BlockedUsersScreen()),
     ),
     GoRoute(
       path: '/profile/account',

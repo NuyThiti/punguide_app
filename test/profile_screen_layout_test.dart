@@ -16,6 +16,7 @@ import 'package:pluno/features/profile/presentation/widgets/profile_top_bar.dart
 import 'package:pluno/features/puntok/presentation/puntok_viewer_screen.dart';
 import 'package:pluno/features/puntok/presentation/widgets/puntok_card.dart';
 import 'package:pluno/shared/widgets/app_bottom_nav.dart';
+import 'package:pluno/shared/widgets/moderation_notice.dart';
 
 import 'support/home_feed_fixtures.dart';
 
@@ -489,5 +490,71 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AppBottomNav), findsOneWidget);
+  });
+
+  group('the content check shows on the owner\'s own wall', () {
+    testWidgets('a refused row wears its verdict', (tester) async {
+      _usePhone(tester);
+      await tester.pumpWidget(_harness(
+        mine: <TripListItem>[
+          feedTrip(
+            id: 'post-1',
+            title: 'ขายกระเป๋า',
+            type: 'content',
+            moderation: const <String, dynamic>{
+              'status': 'REJECTED',
+              'reasonCode': 'NOT_TRAVEL_RELATED',
+              'canAppeal': true,
+            },
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ModerationBadge), findsOneWidget);
+      expect(find.text('เนื้อหาไม่เหมาะสม'), findsOneWidget);
+    });
+
+    testWidgets('a row still being checked says so', (tester) async {
+      _usePhone(tester);
+      await tester.pumpWidget(_harness(
+        mine: <TripListItem>[
+          feedTrip(
+            id: 'post-1',
+            type: 'content',
+            moderation: const <String, dynamic>{
+              'status': 'PENDING',
+              'reasonCode': 'UNDER_REVIEW',
+              'canAppeal': false,
+            },
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('กำลังตรวจสอบ'), findsOneWidget);
+    });
+
+    testWidgets('an approved row and a draft wear nothing', (tester) async {
+      _usePhone(tester);
+      await tester.pumpWidget(_harness(
+        mine: <TripListItem>[
+          feedTrip(
+            id: 'post-1',
+            type: 'content',
+            moderation: const <String, dynamic>{
+              'status': 'APPROVED',
+              'reasonCode': 'APPROVED',
+              'canAppeal': false,
+            },
+          ),
+          // Never shared, so the server sends no `moderation` at all.
+          feedTrip(id: 'post-2', type: 'content'),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ModerationBadge), findsNothing);
+    });
   });
 }

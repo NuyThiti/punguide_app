@@ -9,6 +9,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/action_sheet.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../safety/presentation/providers/safety_providers.dart';
+import '../../../safety/presentation/safety_actions.dart';
 import '../../../trips/presentation/providers/trip_comment_providers.dart';
 
 /// The lime on the send button.
@@ -137,6 +139,13 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
       });
     } catch (error) {
       if (!mounted) return;
+      // The post went away (reported past the threshold, a block, deleted)
+      // since its card was drawn — drop the card everywhere too.
+      if (error is ApiException && error.isNotFound) {
+        ref
+            .read(contentFilterProvider.notifier)
+            .markGone(ReportTargetType.trip, widget.tripId);
+      }
       setState(() {
         _loadError = error;
         _loading = false;
@@ -329,19 +338,48 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
     }
   }
 
+  ReportSubject _subjectOf(TripComment comment) => ReportSubject(
+        type: ReportTargetType.comment,
+        id: comment.id,
+        ownerId: comment.author?.id,
+        ownerLabel: userHandle(
+          username: comment.author?.username,
+          name: comment.author?.name,
+        ),
+      );
+
+  /// Whether a row gets ⋯ / long-press at all: its own edit / delete, or —
+  /// on anyone else's — report and block.
+  bool _hasMenu(TripComment comment) =>
+      comment.canEdit ||
+      comment.canDelete ||
+      (!comment.isMine && !isViewer(ref, comment.author?.id));
+
   Future<void> _openMenu(TripComment comment) async {
-    if (!comment.canEdit && !comment.canDelete) return;
-    final action = await showActionSheet<String>(
+    if (!_hasMenu(comment)) return;
+    final subject = _subjectOf(comment);
+    final safety = comment.isMine
+        ? const <ActionSheetItem<SafetyAction>>[]
+        : safetyMenuItems(ref, subject);
+    final action = await showActionSheet<Object>(
       context,
+      cancelLabel: 'ยกเลิก',
       items: [
+        for (final item in safety)
+          ActionSheetItem<Object>(
+            value: item.value,
+            icon: item.icon,
+            label: item.label,
+            destructive: item.destructive,
+          ),
         if (comment.canEdit)
-          const ActionSheetItem(
+          const ActionSheetItem<Object>(
             value: 'edit',
             icon: Icons.edit_outlined,
             label: 'แก้ไขความคิดเห็น',
           ),
         if (comment.canDelete)
-          const ActionSheetItem(
+          const ActionSheetItem<Object>(
             value: 'delete',
             icon: Icons.delete_outline,
             label: 'ลบความคิดเห็น',
@@ -355,7 +393,25 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
         _startEdit(comment);
       case 'delete':
         await _delete(comment);
+      case final SafetyAction safetyAction:
+        final authorId = comment.author?.id;
+        // Counted before the rows drop out of view.
+        final theirs = authorId == null ? 0 : _countBy(authorId);
+        final result =
+            await runSafetyAction(context, ref, subject, safetyAction);
+        // Their comments leave the server's total too; ours follows.
+        if (result == SafetyResult.blocked && mounted) _move(-theirs);
     }
+  }
+
+  /// How many of the loaded comments [authorId] wrote, replies included.
+  int _countBy(String authorId) {
+    var n = 0;
+    for (final thread in _threads) {
+      if (thread.comment.author?.id == authorId) n++;
+      n += thread.replies.where((r) => r.author?.id == authorId).length;
+    }
+    return n;
   }
 
   Future<void> _delete(TripComment comment) async {
@@ -450,22 +506,35 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
         ),
       );
     }
-    if (_loadError != null) {
+    final error = _loadError;
+    if (error != null) {
+      final gone = error is ApiException && error.isNotFound;
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'โหลดความคิดเห็นไม่สำเร็จ',
-              style: TextStyle(color: AppColors.muted, fontSize: 14),
+            Text(
+              gone ? 'โพสต์นี้ไม่พร้อมใช้งานแล้ว' : 'โหลดความคิดเห็นไม่สำเร็จ',
+              style: const TextStyle(color: AppColors.muted, fontSize: 14),
             ),
-            const SizedBox(height: 10),
-            OutlinedButton(onPressed: _load, child: const Text('ลองอีกครั้ง')),
+            if (!gone) ...[
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: _load,
+                child: const Text('ลองอีกครั้ง'),
+              ),
+            ],
           ],
         ),
       );
     }
-    if (_threads.isEmpty) {
+    // Reported, blocked or gone since they loaded: off the list at once.
+    final filter = ref.watch(contentFilterProvider);
+    final threads = [
+      for (final thread in _threads)
+        if (!filter.hidesComment(thread.comment)) thread,
+    ];
+    if (threads.isEmpty && !_hasMore) {
       return const Center(
         child: Text(
           'ยังไม่มีความคิดเห็น เป็นคนแรกเลย',
@@ -477,11 +546,11 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
     return ListView.separated(
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
-      itemCount: _threads.length + (_hasMore ? 1 : 0),
+      itemCount: threads.length + (_hasMore ? 1 : 0),
       separatorBuilder: (_, __) =>
           const Divider(height: 1, color: AppColors.line),
       itemBuilder: (context, index) {
-        if (index == _threads.length) {
+        if (index == threads.length) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
@@ -493,13 +562,17 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
             ),
           );
         }
-        return _thread(_threads[index]);
+        return _thread(threads[index], filter);
       },
     );
   }
 
-  Widget _thread(_Thread thread) {
+  Widget _thread(_Thread thread, ContentFilter filter) {
     final hidden = thread.comment.replyCount - thread.replies.length;
+    final replies = [
+      for (final reply in thread.replies)
+        if (!filter.hidesComment(reply)) reply,
+    ];
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -511,14 +584,15 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
             ownerId: widget.ownerId,
             onReply: () => _startReply(thread.comment),
             onMenu: () => _openMenu(thread.comment),
+            showMenu: _hasMenu(thread.comment),
           ),
-          if (thread.replies.isNotEmpty || hidden > 0)
+          if (replies.isNotEmpty || hidden > 0)
             Padding(
               padding: const EdgeInsets.only(left: 46),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final reply in thread.replies)
+                  for (final reply in replies)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: _CommentRow(
@@ -528,6 +602,7 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
                         // Answering a reply files under the same thread.
                         onReply: () => _startReply(reply),
                         onMenu: () => _openMenu(reply),
+                        showMenu: _hasMenu(reply),
                       ),
                     ),
                   if (hidden > 0)
@@ -681,14 +756,16 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
 
 /// One comment: avatar, name and age, the text, then ตอบกลับ.
 ///
-/// The trip's owner is marked "เจ้าของทริป" in purple. A long press opens
-/// แก้ไข / ลบ when the comment allows either.
+/// The trip's owner is marked "เจ้าของทริป" in purple. A long press (or ⋯)
+/// opens แก้ไข / ลบ when the comment allows either, and รายงาน / บล็อก on
+/// anyone else's.
 class _CommentRow extends StatelessWidget {
   const _CommentRow({
     required this.comment,
     required this.ownerId,
     required this.onReply,
     required this.onMenu,
+    required this.showMenu,
     this.reply = false,
   });
 
@@ -696,6 +773,9 @@ class _CommentRow extends StatelessWidget {
   final String ownerId;
   final VoidCallback onReply;
   final VoidCallback onMenu;
+
+  /// Draws ⋯: edit / delete on one's own, report / block on anyone else's.
+  final bool showMenu;
   final bool reply;
 
   @override
@@ -786,7 +866,7 @@ class _CommentRow extends StatelessWidget {
               ],
             ),
           ),
-          if (comment.canEdit || comment.canDelete)
+          if (showMenu)
             SizedBox(
               width: 28,
               height: 28,

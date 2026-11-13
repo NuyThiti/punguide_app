@@ -24,24 +24,38 @@ class ActionSheetItem<T> {
 ///
 /// [title] heads the sheet when the actions belong to one thing on a page of
 /// many — a stop's name, say — so it is clear which one they act on.
+///
+/// A hairline separates the red rows from the ordinary ones above them, and
+/// [cancelLabel], when given, adds a plain row under another hairline that
+/// closes the sheet with null.
 Future<T?> showActionSheet<T>(
   BuildContext context, {
   required List<ActionSheetItem<T>> items,
   String? title,
+  String? cancelLabel,
 }) {
   return showModalBottomSheet<T>(
     context: context,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.42),
-    builder: (context) => _ActionSheet<T>(title: title, items: items),
+    builder: (context) => _ActionSheet<T>(
+      title: title,
+      items: items,
+      cancelLabel: cancelLabel,
+    ),
   );
 }
 
 class _ActionSheet<T> extends StatelessWidget {
-  const _ActionSheet({required this.title, required this.items});
+  const _ActionSheet({
+    required this.title,
+    required this.items,
+    required this.cancelLabel,
+  });
 
   final String? title;
   final List<ActionSheetItem<T>> items;
+  final String? cancelLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -88,11 +102,33 @@ class _ActionSheet<T> extends StatelessWidget {
                   ),
                 ),
               ),
-            for (final item in items)
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0 && items[i].destructive && !items[i - 1].destructive)
+                const _Hairline(),
               _ActionRow(
-                item: item,
-                onTap: () => Navigator.of(context).pop(item.value),
+                item: items[i],
+                onTap: () => Navigator.of(context).pop(items[i].value),
               ),
+            ],
+            if (cancelLabel case final cancel?) ...[
+              const _Hairline(),
+              InkWell(
+                onTap: () => Navigator.of(context).pop(),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  child: Text(
+                    cancel,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -141,4 +177,14 @@ class _ActionRow<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Hairline extends StatelessWidget {
+  const _Hairline();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Divider(height: 1, color: AppColors.line),
+      );
 }

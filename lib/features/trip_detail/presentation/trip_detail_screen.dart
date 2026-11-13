@@ -1,3 +1,4 @@
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,9 +13,9 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/extensions/currency_extensions.dart';
 import '../../../shared/formatting/compact_count.dart';
-import '../../../shared/formatting/moderation_text.dart';
 import '../../../shared/layout/screen_class.dart';
 import '../../../shared/widgets/glass_circle_button.dart';
+import '../../../shared/widgets/moderation_notice.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../../shared/widgets/action_sheet.dart';
 import '../../../shared/widgets/full_image_viewer.dart';
@@ -31,6 +32,8 @@ import '../../my_trips/presentation/delete_trip.dart';
 import '../../my_trips/presentation/providers/my_trips_providers.dart';
 import '../../paigun/presentation/providers/paigun_providers.dart';
 import '../../profile/presentation/providers/profile_providers.dart';
+import '../../safety/presentation/providers/safety_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import 'share_trip.dart';
 import 'widgets/add_to_trip_sheet.dart';
 import 'widgets/plan_stop_card.dart';
@@ -89,12 +92,16 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   /// a second tap cannot send a second appeal — the server allows only one.
   bool _appealing = false;
 
+  /// Re-reads a verdict that is still being decided. See [_syncPolling].
+  Timer? _poll;
+
   /// Shared with the sticky bar so it can fade its background in as the
   /// cover scrolls out from under it. Both faces use it; only one is ever up.
   final _scroll = ScrollController();
 
   @override
   void dispose() {
+    _poll?.cancel();
     _scroll.dispose();
     super.dispose();
   }
@@ -102,21 +109,45 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final trip = ref.watch(apiTripProvider(widget.tripId));
+    final hidden = ref.watch(contentFilterProvider);
+
+    // A 404 here means it went away since its card was drawn — hidden after
+    // reports, a block either way, deleted, made private. Which one is not
+    // ours to tell; the card just leaves every wall.
+    ref.listen<AsyncValue<ApiTrip>>(apiTripProvider(widget.tripId), (_, next) {
+      final error = next.error;
+      if (error is ApiException && error.isNotFound) {
+        ref
+            .read(contentFilterProvider.notifier)
+            .markGone(ReportTargetType.trip, widget.tripId);
+      }
+    });
 
     return Scaffold(
       backgroundColor: AppColors.screen,
       body: trip.when(
-        data: _body,
+        // Reported or blocked from this very page (or another): it is gone
+        // for this viewer. The owner never is — you cannot report yourself.
+        data: (trip) => _owns(trip) != true &&
+                hidden.hidesTrip(trip.id, ownerId: trip.ownerId)
+            ? _ErrorBody(
+                error: const _Unavailable(),
+                onRetry: () {},
+                onBack: _leave,
+              )
+            : _body(trip),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorBody(
           error: error,
           onRetry: () => ref.invalidate(apiTripProvider(widget.tripId)),
+          onBack: _leave,
         ),
       ),
     );
   }
 
   Widget _body(ApiTrip trip) {
+    _syncPolling(trip);
     final post = trip.type.isPost;
     // The bar is stacked over the scroll view rather than slivered into it:
     // it has to stay put while the cover and the stops slide under it, and a
@@ -133,9 +164,12 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             trip: trip,
             owned: _owns(trip),
             onBack: _leave,
+            blockLabel: _blockLabelFor(trip),
             onMenu: (action) => switch (action) {
               _TripMenuAction.edit => _edit(trip),
               _TripMenuAction.delete => _delete(trip),
+              _TripMenuAction.report => _safety(trip, SafetyAction.report),
+              _TripMenuAction.block => _safety(trip, SafetyAction.block),
               // Only the owner can mint a link; a visitor's แชร์ waits on a
               // public URL the web can serve for anyone's trip.
               _TripMenuAction.share => _owns(trip) == true
@@ -157,6 +191,63 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     );
   }
 
+  /// The owner as report and block name them: `@username` once the author
+  /// chip's profile read is in, the display name until then.
+  String _ownerLabel(ApiTrip trip) {
+    final profile = ref.read(userProfileProvider(trip.ownerId)).valueOrNull;
+    final label =
+        userHandle(username: profile?.username, name: trip.customer?.name);
+    return label.isEmpty ? 'ผู้ใช้นี้' : label;
+  }
+
+  /// "บล็อก @maki" for the menu, or null once they are already blocked.
+  String? _blockLabelFor(ApiTrip trip) {
+    if (ref.watch(contentFilterProvider).isBlocked(trip.ownerId)) return null;
+    // Watched, so the row reads @username once the author chip's read lands.
+    ref.watch(userProfileProvider(trip.ownerId));
+    return _ownerLabel(trip);
+  }
+
+  ReportSubject _subjectOf(ApiTrip trip) => ReportSubject(
+        type: ReportTargetType.trip,
+        id: trip.id,
+        ownerId: trip.ownerId,
+        ownerLabel: _ownerLabel(trip),
+      );
+
+  /// รายงานโพสต์ / บล็อก from ☰. Either one hides the page for this viewer,
+  /// so a success leaves it.
+  Future<void> _safety(ApiTrip trip, SafetyAction action) async {
+    final result =
+        await runSafetyAction(context, ref, _subjectOf(trip), action);
+    if (result != SafetyResult.none && mounted) _leave();
+  }
+
+  /// ⋯ in the full-size photo viewer: report that picture (or, for a legacy
+  /// URL-only one with no id, the post) and block the owner. A success
+  /// closes the viewer — the picture is now hidden on this device.
+  PhotoMore? _photoMore(ApiTrip trip) {
+    if (_owns(trip) != false) return null;
+    return (viewerContext, mediaId) async {
+      final post = _subjectOf(trip);
+      final subject = mediaId == null
+          ? post
+          : ReportSubject(
+              type: ReportTargetType.media,
+              id: mediaId,
+              ownerId: post.ownerId,
+              ownerLabel: post.ownerLabel,
+            );
+      final result = await showSafetyMenu(viewerContext, ref, subject);
+      if (result == SafetyResult.none || !viewerContext.mounted) return;
+      Navigator.of(viewerContext).pop();
+      // The whole post goes with a block, or with a report of the post itself.
+      if (mounted && (mediaId == null || result == SafetyResult.blocked)) {
+        _leave();
+      }
+    };
+  }
+
   /// Whether the viewer owns this trip, or null while `/auth/me` is still
   /// answering — guessing "visitor" there would flash Remix on the owner's
   /// own trip before it flips to edit. Signed out, or a failed session read,
@@ -167,28 +258,70 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     return viewer.valueOrNull?.id == trip.ownerId;
   }
 
-  /// The owner's own notice that the content check turned this post down,
+  /// The owner's own notice about where this post sits in the content check,
   /// or null when there is nothing to say.
   ///
-  /// **Owner-only, and `REJECTED` only.** Nobody else is ever sent
-  /// `moderation` at all — a rejected post is private, so a visitor cannot
-  /// reach this page in the first place. `PENDING` and `REVIEW_REQUIRED` are
-  /// states a post may still come back from on its own and are deliberately
-  /// silent here; Share already says so in a snack as it happens.
+  /// **Owner-only.** Nobody else is ever sent `moderation` at all — an
+  /// unapproved post is forced private, so a visitor cannot reach this page
+  /// in the first place. Approved says nothing, and a post that was never
+  /// shared carries no `moderation` to begin with.
   Widget? _moderationNotice(ApiTrip trip) {
     final moderation = trip.moderation;
-    if (moderation == null ||
-        moderation.status != ModerationStatus.rejected ||
-        _owns(trip) != true) {
+    if (!isModerationWorthShowing(moderation) || _owns(trip) != true) {
       return null;
     }
-    return _RejectedNotice(
-      // The real reason, translated from `reasonCode` — the server's own
-      // English `message` is never shown to the traveller.
-      reason: moderationMessage(moderation),
-      busy: _appealing,
+    return ModerationNotice(
+      moderation: moderation!,
+      // Editing and re-sharing is the way back from a refusal — the server
+      // re-checks whatever changed. There is nothing to fix while a verdict
+      // is still being decided, so the button belongs to REJECTED alone.
+      onEdit: moderation.status == ModerationStatus.rejected
+          ? () => _edit(trip)
+          : null,
       onAppeal: moderation.canAppeal ? () => _appeal(trip) : null,
+      appealing: _appealing,
     );
+  }
+
+  /// Re-reads the verdict while it is still being decided.
+  ///
+  /// **PENDING only, and the owner only.** The check usually finishes inside
+  /// the Share request itself, so this is for the slow minority; a minute of
+  /// four-second polls is the whole budget, after which the badge simply
+  /// stays up and the next visit re-reads it. `REVIEW_REQUIRED` waits on a
+  /// person and is deliberately never polled.
+  void _syncPolling(ApiTrip trip) {
+    final pending = trip.moderation?.status == ModerationStatus.pending &&
+        _owns(trip) == true;
+    if (!pending) {
+      _poll?.cancel();
+      _poll = null;
+      return;
+    }
+    if (_poll != null) return;
+
+    final startedAt = DateTime.now();
+    _poll = Timer.periodic(const Duration(seconds: 4), (timer) async {
+      if (!mounted) return timer.cancel();
+      if (DateTime.now().difference(startedAt) > const Duration(minutes: 1)) {
+        timer.cancel();
+        _poll = null;
+        return;
+      }
+      try {
+        final api = await ref.read(plunoApiProvider.future);
+        final verdict = await api.trips.moderation(trip.id);
+        if (!mounted || verdict.status == ModerationStatus.pending) return;
+        timer.cancel();
+        _poll = null;
+        // The whole trip is re-read, not just the verdict: being approved
+        // also restores the audience the owner actually picked.
+        ref.invalidate(apiTripProvider(trip.id));
+      } catch (_) {
+        // A failed poll is not worth a snack — the next tick tries again,
+        // and the one-minute budget ends it either way.
+      }
+    });
   }
 
   /// Asks a moderator to look again. The post moves to `REVIEW_REQUIRED`, so
@@ -244,6 +377,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
       comments:
           ref.watch(tripCommentCountProvider)[trip.id] ?? trip.commentCount,
       onComment: trip.type.isPost ? () => _openComments(trip) : null,
+      onPhotoMore: _photoMore(trip),
     );
   }
 
@@ -374,6 +508,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
             child: TripContentSections(
               sections: trip.contents,
               gutter: _gutter(context),
+              onPhotoMore: _photoMore(trip),
             ),
           ),
         ),
@@ -428,6 +563,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
               child: TripContentSections(
                 sections: trip.contents,
                 gutter: gutter,
+                onPhotoMore: _photoMore(trip),
               ),
             ),
           ),
@@ -491,8 +627,8 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
     );
   }
 
-  /// A post is edited on its share settings and re-read on the way back; a
-  /// plan opens its editor.
+  /// A post opens the composer on itself (its Next leads on to the share
+  /// settings) and is re-read on the way back; a plan opens its editor.
   Future<void> _edit(ApiTrip trip) async {
     if (!trip.type.isPost) {
       context.goNamed(
@@ -502,7 +638,7 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
       return;
     }
     await context.pushNamed(
-      AppRoute.shareSettings.name,
+      AppRoute.editPost.name,
       params: {'tripId': widget.tripId},
     );
     if (mounted) ref.invalidate(apiTripProvider(widget.tripId));
@@ -609,10 +745,12 @@ class _StickyTopBar extends StatefulWidget {
     required this.owned,
     required this.onBack,
     required this.onMenu,
+    this.blockLabel,
   });
 
   final ScrollController scroll;
   final ApiTrip trip;
+  final String? blockLabel;
 
   /// Null while it is not yet known who is looking — the menu offers only
   /// แชร์ until it is.
@@ -680,7 +818,11 @@ class _StickyTopBarState extends State<_StickyTopBar> {
                     ),
                   ),
                   // Saving lives in Trip Overview's row, beside the heart.
-                  _TripMenu(owned: widget.owned, onSelected: widget.onMenu),
+                  _TripMenu(
+                    owned: widget.owned,
+                    onSelected: widget.onMenu,
+                    blockLabel: widget.blockLabel,
+                  ),
                 ],
               ),
             ),
@@ -925,18 +1067,27 @@ class _PostAuthor extends ConsumerWidget {
 /// The duration and the place count describe the **linked plan** when there is
 /// one (a post has no schedule of its own) and fall back to the post's own
 /// figures otherwise.
-class _PostFacts extends StatelessWidget {
-  const _PostFacts({required this.trip, this.placeCount});
+class _PostFacts extends ConsumerWidget {
+  const _PostFacts({required this.trip, this.placeCount, this.onPhotoMore});
 
   final ApiTrip trip;
+  final PhotoMore? onPhotoMore;
 
   /// A plan's own stop count; a post counts its linked plan's places.
   final int? placeCount;
 
   @override
-  Widget build(BuildContext context) {
-    // Every photo in the post, across all its spots — "ดูรูป (24)".
-    final photos = postPhotoUrls(trip.contents);
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Every photo in the post, across all its spots — "ดูรูป (24)" — minus
+    // any the viewer has reported.
+    final hidden = ref.watch(contentFilterProvider);
+    final photos = [
+      for (final photo in postPhotos(trip.contents))
+        if (photo.mediaId == null ||
+            !hidden.hides(ReportTargetType.media, photo.mediaId!))
+          photo,
+    ];
+    final onPhotoMore = this.onPhotoMore;
     final linked = trip.linkedTrip;
     final schedule = linked?.schedule ?? trip.schedule;
     final start = schedule.startDate;
@@ -964,7 +1115,14 @@ class _PostFacts extends StatelessWidget {
         if (photos.isNotEmpty) ...[
           _PhotosPill(
             count: photos.length,
-            onTap: () => showFullImages(context, urls: photos),
+            onTap: () => showFullImages(
+              context,
+              urls: [for (final photo in photos) photo.url],
+              onMore: onPhotoMore == null
+                  ? null
+                  : (viewerContext, index) =>
+                      onPhotoMore(viewerContext, photos[index].mediaId),
+            ),
           ),
           const SizedBox(width: 2),
         ],
@@ -1051,15 +1209,23 @@ class _FactText extends StatelessWidget {
 }
 
 /// What the header's ☰ offers.
-enum _TripMenuAction { edit, delete, share }
+enum _TripMenuAction { edit, delete, share, report, block }
 
 /// ☰ in the pinned bar: แก้ไขทริป, ลบทริป and แชร์ for the owner, only แชร์
 /// for anyone else — offered on a bottom sheet.
 class _TripMenu extends StatelessWidget {
-  const _TripMenu({required this.owned, required this.onSelected});
+  const _TripMenu({
+    required this.owned,
+    required this.onSelected,
+    this.blockLabel,
+  });
 
   final bool? owned;
   final ValueChanged<_TripMenuAction> onSelected;
+
+  /// "@maki" for a visitor's บล็อก row; null leaves the row off (already
+  /// blocked).
+  final String? blockLabel;
 
   Future<void> _open(BuildContext context) async {
     final action = await showActionSheet<_TripMenuAction>(
@@ -1083,7 +1249,25 @@ class _TripMenu extends StatelessWidget {
           icon: Icons.share_outlined,
           label: 'แชร์',
         ),
+        // Only once it is known to be someone else's: your own post never
+        // offers to report or block yourself.
+        if (owned == false) ...[
+          const ActionSheetItem(
+            value: _TripMenuAction.report,
+            icon: Icons.report_gmailerrorred_outlined,
+            label: 'รายงานโพสต์',
+            destructive: true,
+          ),
+          if (blockLabel case final label?)
+            ActionSheetItem(
+              value: _TripMenuAction.block,
+              icon: Icons.block,
+              label: 'บล็อก $label',
+              destructive: true,
+            ),
+        ],
       ],
+      cancelLabel: owned == false ? 'ยกเลิก' : null,
     );
     if (action != null) onSelected(action);
   }
@@ -1118,11 +1302,15 @@ class _PostOverview extends StatelessWidget {
     this.onComment,
     this.comments = 0,
     this.placeCount,
+    this.onPhotoMore,
   });
 
   final ApiTrip trip;
   final String blurb;
   final int? placeCount;
+
+  /// ⋯ on the "ดูรูป" viewer — see [TripContentSections.onPhotoMore].
+  final PhotoMore? onPhotoMore;
 
   /// The heart as it stands now — the ledger's answer over the trip's.
   final bool liked;
@@ -1228,7 +1416,11 @@ class _PostOverview extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        _PostFacts(trip: trip, placeCount: placeCount),
+        _PostFacts(
+          trip: trip,
+          placeCount: placeCount,
+          onPhotoMore: onPhotoMore,
+        ),
         if (blurb.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
@@ -1246,17 +1438,28 @@ class _PostOverview extends StatelessWidget {
   }
 }
 
+/// Stands in for a 404 when the page itself hid the trip (reported here,
+/// or its owner blocked).
+class _Unavailable {
+  const _Unavailable();
+}
+
 class _ErrorBody extends StatelessWidget {
-  const _ErrorBody({required this.error, required this.onRetry});
+  const _ErrorBody({
+    required this.error,
+    required this.onRetry,
+    required this.onBack,
+  });
 
   final Object error;
   final VoidCallback onRetry;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    final missing = error is ApiException &&
-        ((error as ApiException).isNotFound ||
-            (error as ApiException).isForbidden);
+    final error = this.error;
+    final missing = error is _Unavailable ||
+        error is ApiException && (error.isNotFound || error.isForbidden);
 
     return Center(
       child: Padding(
@@ -1271,7 +1474,7 @@ class _ErrorBody extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              missing ? 'ไม่พบทริปนี้' : 'โหลดทริปไม่สำเร็จ',
+              missing ? 'โพสต์นี้ไม่พร้อมใช้งานแล้ว' : 'โหลดทริปไม่สำเร็จ',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppColors.foreground,
@@ -1279,137 +1482,19 @@ class _ErrorBody extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            if (!missing) ...[
-              const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            if (!missing)
               OutlinedButton(
-                  onPressed: onRetry, child: const Text('ลองอีกครั้ง')),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The owner-only "turned down" notice. There is no danger colour in the
-/// palette yet, so these three live here beside [_heartRed], the page's only
-/// other red.
-const _rejectRed = Color(0xFFB42318);
-const _rejectWell = Color(0xFFFEF3F2);
-const _rejectLine = Color(0xFFFBD5D2);
-
-/// What the owner sees on a post the content check refused: the headline, the
-/// real reason, a reminder that nobody else can see it, and — once, while the
-/// server still allows it — a way to ask a person to look again.
-class _RejectedNotice extends StatelessWidget {
-  const _RejectedNotice({
-    required this.reason,
-    required this.busy,
-    this.onAppeal,
-  });
-
-  final String reason;
-  final bool busy;
-
-  /// Null when the post may not be appealed — already appealed, or appeals
-  /// are closed for it. The button is then absent rather than inert.
-  final VoidCallback? onAppeal;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: _rejectWell,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _rejectLine),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.report_gmailerrorred_rounded,
-                size: 20,
-                color: _rejectRed,
+                onPressed: onRetry,
+                child: const Text('ลองอีกครั้ง'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'เนื้อหาไม่เหมาะสม',
-                      style: TextStyle(
-                        color: _rejectRed,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      reason,
-                      style: const TextStyle(
-                        color: AppColors.foreground,
-                        fontSize: 13,
-                        height: 1.45,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'โพสต์นี้ยังไม่ถูกเผยแพร่ ตอนนี้มีเพียงคุณที่เห็น',
-                      style: TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (onAppeal != null) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: busy ? null : onAppeal,
-                style: TextButton.styleFrom(
-                  foregroundColor: _rejectRed,
-                  backgroundColor: AppColors.screen,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                    side: const BorderSide(color: _rejectLine),
-                  ),
-                ),
-                child: busy
-                    ? const SizedBox(
-                        width: 15,
-                        height: 15,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(_rejectRed),
-                        ),
-                      )
-                    : const Text(
-                        'ขออุทธรณ์',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-              ),
+            TextButton(
+              key: const Key('trip-error-back'),
+              onPressed: onBack,
+              child: const Text('กลับ'),
             ),
           ],
-        ],
+        ),
       ),
     );
   }

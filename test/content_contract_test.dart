@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/core/api/models/trip_content.dart';
@@ -359,10 +360,12 @@ void main() {
   testWidgets(
       'public reader keeps unavailable slot and hides suggested/legacy pins',
       (tester) async {
-    await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-            body: SingleChildScrollView(
-                child: TripContentSections(gutter: 16, sections: [
+    // A spot card reads the report filter, so it needs a ProviderScope.
+    await tester.pumpWidget(ProviderScope(
+        child: MaterialApp(
+            home: Scaffold(
+                body: SingleChildScrollView(
+                    child: TripContentSections(gutter: 16, sections: [
       TripContent.fromJson({
         'content': 'first',
         'mediaIds': [a],
@@ -376,7 +379,7 @@ void main() {
           location: ContentLocation(
               status: ContentLocationStatus.confirmed, name: 'ร้านที่ยืนยัน')),
       const TripContent(content: 'third', mapId: 'legacy'),
-    ])))));
+    ]))))));
     expect(find.text('รูปนี้ไม่พร้อมใช้งาน'), findsOneWidget);
     expect(find.text('hidden'), findsNothing);
     // A confirmed place is the card's name now (Figma 2183-21784), where it

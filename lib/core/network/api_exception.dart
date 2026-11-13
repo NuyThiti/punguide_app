@@ -70,8 +70,9 @@ class ApiException implements Exception {
   final String? path;
 
   /// Only set on the one 422 `CONTENT_REJECTED` response — see
-  /// [isContentRejected]. The trip id it names (`tripId` on the wire) is not
-  /// kept here since the caller already has it: it is the id it just saved.
+  /// [isContentRejected]. The `tripId` beside it on the wire is deliberately
+  /// not kept: every Share this app sends is a `PUT` on a post it already
+  /// drafted, so the caller always has that id already.
   final Moderation? moderation;
 
   /// The whole reason, newline-joined — validation failures list several.

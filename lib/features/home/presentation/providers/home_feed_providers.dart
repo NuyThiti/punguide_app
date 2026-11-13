@@ -6,6 +6,7 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../../shared/models/feed_rows.dart';
 import '../../../paigun/domain/nearby_trip.dart';
 import '../../../paigun/presentation/providers/paigun_providers.dart';
+import '../../../safety/presentation/providers/safety_providers.dart';
 import '../../domain/destination.dart';
 
 /// The public trip feed behind "Top PunGuide", plus the save toggle.
@@ -91,11 +92,22 @@ class HomeFeedNotifier extends AsyncNotifier<List<TripListItem>> {
   }
 }
 
+/// [homeFeedProvider] minus what the viewer reported or blocked, and what
+/// has answered 404 since it was listed.
+///
+/// What every wall built from Home's feed reads — Home, search, someone's
+/// profile — so a report or a block takes the card off all of them at once,
+/// and an undone block puts it back without a refetch.
+final visibleHomeFeedProvider = Provider<AsyncValue<List<TripListItem>>>((ref) {
+  final filter = ref.watch(contentFilterProvider);
+  return ref.watch(homeFeedProvider).whenData(filter.visibleTrips);
+});
+
 /// "Top Destination" derived from the feed — the API has no destinations
 /// endpoint, so the rail is the places people actually planned trips to,
 /// most-planned first.
 final topDestinationsProvider = Provider<List<Destination>>((ref) {
-  final trips = ref.watch(homeFeedProvider).valueOrNull;
+  final trips = ref.watch(visibleHomeFeedProvider).valueOrNull;
   if (trips == null || trips.isEmpty) return const <Destination>[];
 
   final groups = <String, _DestinationGroup>{};
@@ -161,6 +173,6 @@ class _DestinationGroup {
 final homeBoardRowsProvider = Provider<AsyncValue<List<NearbyTrip>>>((ref) {
   final saved = ref.watch(paigunSavedProvider);
   return ref
-      .watch(homeFeedProvider)
+      .watch(visibleHomeFeedProvider)
       .whenData((trips) => decorateTrips(trips, saved: saved));
 });

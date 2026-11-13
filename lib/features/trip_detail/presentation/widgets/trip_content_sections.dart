@@ -4,28 +4,42 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_providers.dart';
 import '../../../../core/api/models/place.dart';
+import '../../../../core/api/models/safety.dart';
 import '../../../../core/api/models/trip_content.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/formatting/spot_detail_text.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../../../shared/widgets/full_image_viewer.dart';
+import '../../../safety/presentation/providers/safety_providers.dart';
 
 /// Every photo in a post a reader can actually open, in reading order.
 ///
 /// Uploaded media wins over a section's legacy URLs, the same rule a spot's
 /// own carousel follows, and an `unavailable` upload is left out — it has no
 /// picture to show.
-List<String> postPhotoUrls(List<TripContent> sections) => [
+List<String> postPhotoUrls(List<TripContent> sections) =>
+    [for (final photo in postPhotos(sections)) photo.url];
+
+/// One picture in a post, with the media id a report needs — null for the
+/// legacy URL-only sections, which have none.
+typedef PostPhoto = ({String url, String? mediaId});
+
+/// [postPhotoUrls] with each picture's media id beside it.
+List<PostPhoto> postPhotos(List<TripContent> sections) => [
       for (final section in sections)
         if (section.mediaIds != null)
           for (final image in section.images)
             if (!image.unavailable && image.urls != null)
-              image.urls!.full
+              (url: image.urls!.full, mediaId: image.mediaId)
             else
               ...[]
         else
-          ...section.imageUrls,
+          for (final url in section.imageUrls) (url: url, mediaId: null),
     ];
+
+/// ⋯ in the full-size viewer, with the viewer's context and the media id of
+/// the photo on screen (null for a legacy URL-only picture).
+typedef PhotoMore = void Function(BuildContext viewerContext, String? mediaId);
 
 /// A post's spots, as a reader sees them.
 ///
@@ -41,9 +55,14 @@ class TripContentSections extends StatelessWidget {
     super.key,
     required this.sections,
     required this.gutter,
+    this.onPhotoMore,
   });
 
   final List<TripContent> sections;
+
+  /// Report / block from a photo opened full size. Null on the owner's own
+  /// post, which leaves the viewer without ⋯.
+  final PhotoMore? onPhotoMore;
 
   /// The page's side margin. Headings and a card's text keep it; the photos
   /// deliberately break out of it and run to the screen's edge.
@@ -83,6 +102,7 @@ class TripContentSections extends StatelessWidget {
             key: ValueKey('$i:${groups[i].title}'),
             group: groups[i],
             gutter: gutter,
+            onPhotoMore: onPhotoMore,
           ),
       ],
     );
@@ -98,10 +118,12 @@ class _SpotGroup extends StatefulWidget {
     super.key,
     required this.group,
     required this.gutter,
+    this.onPhotoMore,
   });
 
   final _ContentGroup group;
   final double gutter;
+  final PhotoMore? onPhotoMore;
 
   @override
   State<_SpotGroup> createState() => _SpotGroupState();
@@ -131,7 +153,11 @@ class _SpotGroupState extends State<_SpotGroup> {
         if (!titled || _open)
           for (final section in widget.group.sections) ...[
             const SizedBox(height: 16),
-            _SpotCard(section: section, gutter: widget.gutter),
+            _SpotCard(
+              section: section,
+              gutter: widget.gutter,
+              onPhotoMore: widget.onPhotoMore,
+            ),
           ],
       ],
     );
@@ -196,10 +222,15 @@ class _GroupHeading extends StatelessWidget {
 /// One spot: its photos, what it is called, where, the story, and the notes
 /// beside it.
 class _SpotCard extends ConsumerStatefulWidget {
-  const _SpotCard({required this.section, required this.gutter});
+  const _SpotCard({
+    required this.section,
+    required this.gutter,
+    this.onPhotoMore,
+  });
 
   final TripContent section;
   final double gutter;
+  final PhotoMore? onPhotoMore;
 
   @override
   ConsumerState<_SpotCard> createState() => _SpotCardState();
@@ -247,7 +278,12 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (photos.isNotEmpty) _SpotCarousel(photos: photos),
+          if (photos.isNotEmpty)
+            _SpotCarousel(
+              photos: [for (final photo in photos) photo.url],
+              mediaIds: [for (final photo in photos) photo.mediaId],
+              onPhotoMore: widget.onPhotoMore,
+            ),
           Padding(
             padding: EdgeInsets.fromLTRB(gutter, 14, gutter, 18),
             child: Column(
@@ -409,16 +445,22 @@ class _SpotCardState extends ConsumerState<_SpotCard> {
     return parts.join(' | ');
   }
 
-  /// Photos, preferring uploaded media over the legacy URL-only sections.
-  List<String?> get _photos {
+  /// Photos, preferring uploaded media over the legacy URL-only sections,
+  /// minus any the viewer has reported.
+  List<({String? url, String? mediaId})> get _photos {
     final section = widget.section;
     if (section.mediaIds != null) {
+      final filter = ref.watch(contentFilterProvider);
       return [
         for (final image in section.images)
-          image.unavailable ? null : image.urls?.full,
+          if (!filter.hides(ReportTargetType.media, image.mediaId))
+            (
+              url: image.unavailable ? null : image.urls?.full,
+              mediaId: image.mediaId,
+            ),
       ];
     }
-    return [for (final url in section.imageUrls) url];
+    return [for (final url in section.imageUrls) (url: url, mediaId: null)];
   }
 
   /// A confirmed pin carries a name almost always; coordinates are the last
@@ -475,10 +517,18 @@ class SpotDetailsToggle extends StatelessWidget {
 /// Tapping one opens it full-size — the card crops to a fixed ratio so the
 /// spots read evenly, and this is where the whole picture is.
 class _SpotCarousel extends StatefulWidget {
-  const _SpotCarousel({required this.photos});
+  const _SpotCarousel({
+    required this.photos,
+    required this.mediaIds,
+    this.onPhotoMore,
+  });
 
   /// In order; null where the upload is gone.
   final List<String?> photos;
+
+  /// Beside [photos]; null for a legacy URL-only picture.
+  final List<String?> mediaIds;
+  final PhotoMore? onPhotoMore;
 
   @override
   State<_SpotCarousel> createState() => _SpotCarouselState();
@@ -500,6 +550,18 @@ class _SpotCarouselState extends State<_SpotCarousel> {
         for (final url in widget.photos)
           if (url != null) url
       ];
+
+  /// The viewer's ⋯, translated from a gallery index to that photo's id.
+  void Function(BuildContext, int)? _moreFor() {
+    final onPhotoMore = widget.onPhotoMore;
+    if (onPhotoMore == null) return null;
+    final ids = [
+      for (var i = 0; i < widget.photos.length; i++)
+        if (widget.photos[i] != null) widget.mediaIds[i],
+    ];
+    return (viewerContext, index) =>
+        onPhotoMore(viewerContext, index < ids.length ? ids[index] : null);
+  }
 
   int _galleryIndexOf(int index) {
     var seen = 0;
@@ -536,6 +598,7 @@ class _SpotCarouselState extends State<_SpotCarousel> {
                         context,
                         urls: _gallery,
                         initialIndex: _galleryIndexOf(index),
+                        onMore: _moreFor(),
                       ),
                       child: CoverImage(source: url),
                     ),

@@ -19,8 +19,9 @@ import '../../trips/presentation/providers/trip_providers.dart';
 import 'widgets/connect_plan_section.dart';
 
 /// "เชื่อมแพลนของฉัน" and the rest of a post's share settings: visibility,
-/// name, activities and whether it may be remixed — reached from
-/// `TripDetailScreen`'s "แก้ไขโพสต์" action instead of the full composer.
+/// name, activities and whether it may be remixed — step 2/2, reached from
+/// the composer's Next, both for a new post and for one opened by
+/// `TripDetailScreen`'s edit (`EditPostScreen`).
 ///
 /// Every field here is staged locally and only reaches the server on "Share"
 /// — "Back" discards whatever was changed, same as the plan picker's own
@@ -67,12 +68,20 @@ class _PostShareSettingsScreenState
     // own yet, so it defaults to Public; one reopened for editing keeps
     // whatever it was actually shared as, rather than silently flipping it
     // back.
+    //
+    // A post waiting on — or refused by — the content check is forced to
+    // `private` whatever was picked, and the pick is held in
+    // `moderation.requestedVisibility` instead. Reading `visibility` there
+    // would quietly demote a "Followers" post to "Only me" on reopening.
     final draftVisibility = trip.draftVisibility;
+    final requested = trip.moderation?.requestedVisibility;
     _audience = draftVisibility != null
         ? PostAudience.fromVisibility(draftVisibility)
-        : (trip.publishedAt == null
-            ? PostAudience.public
-            : PostAudience.fromVisibility(trip.visibility));
+        : requested != null
+            ? PostAudience.fromVisibility(requested)
+            : (trip.publishedAt == null
+                ? PostAudience.public
+                : PostAudience.fromVisibility(trip.visibility));
     final linked = trip.linkedTrip;
     _trip = linked == null
         ? null
@@ -149,8 +158,48 @@ class _PostShareSettingsScreenState
     return null;
   }
 
+  /// Warns before a change to a live post's words sends it back to be
+  /// checked again — it is hidden from everyone else until it passes.
+  ///
+  /// Only the text and the pictures are re-checked, so audience, budget,
+  /// remix and the connected plan go out silently; this screen's own text is
+  /// the title and the overview. Returns false when the traveller backs out.
+  Future<bool> _confirmRecheck() async {
+    final trip = ref.read(apiTripProvider(widget.tripId)).valueOrNull;
+    // Never published, so there is nothing live to take down.
+    if (trip == null || trip.publishedAt == null) return true;
+    final sameTitle = _title.trim() == trip.title.trim();
+    final sameBlurb =
+        _about.overview.trim() == (trip.description?.trim() ?? '');
+    if (sameTitle && sameBlurb) return true;
+
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        backgroundColor: AppColors.screen,
+        title: const Text('โพสต์จะถูกตรวจสอบอีกครั้ง'),
+        content: const Text(
+          'โพสต์นี้เผยแพร่อยู่ เมื่อแก้ข้อความแล้ว ระบบจะตรวจสอบใหม่ '
+          'และจะซ่อนจากคนอื่นจนกว่าจะผ่าน (ปกติใช้เวลาไม่กี่วินาที)',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(false),
+            child: const Text('ยกเลิก'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(true),
+            child: const Text('บันทึกต่อ'),
+          ),
+        ],
+      ),
+    );
+    return go ?? false;
+  }
+
   Future<void> _share() async {
     if (_sharing) return;
+    if (!await _confirmRecheck() || !mounted) return;
     setState(() => _sharing = true);
     try {
       final api = await ref.read(plunoApiProvider.future);

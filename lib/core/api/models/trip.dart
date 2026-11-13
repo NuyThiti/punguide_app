@@ -186,6 +186,7 @@ class TripListItem {
     this.creator,
     this.distanceKm,
     this.linkedTrip,
+    this.moderation,
   });
 
   factory TripListItem.fromJson(Map<String, dynamic> json) {
@@ -225,6 +226,7 @@ class TripListItem {
       // — guarding it now would throw away the real figure.
       distanceKm: Json.number(json, 'distanceKm'),
       linkedTrip: LinkedTrip.maybeFromJson(json['linkedTrip']),
+      moderation: Moderation.maybeFromJson(json['moderation']),
       createdAt: Json.timestamp(json, 'createdAt') ?? DateTime.now(),
       updatedAt: Json.timestamp(json, 'updatedAt') ?? DateTime.now(),
     );
@@ -238,6 +240,13 @@ class TripListItem {
   final String destination;
   final DestinationPlace? destinationPlace;
   final TripStatus status;
+
+  /// Where this row sits in the content check — **only `GET /trips/mine`
+  /// sends it**, and only to the owner. Null everywhere else (the feed,
+  /// search, saved, ไปกัน), and null on a draft that has never been shared,
+  /// which is why a badge keyed on it lights up on the owner's own walls and
+  /// nowhere else without any caller having to say so.
+  final Moderation? moderation;
   final Schedule schedule;
 
   /// The cap the planner set, in THB. Absent means no budget was set — which

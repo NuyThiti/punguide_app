@@ -91,6 +91,8 @@ void main() {
       'Save Draft',
       'ทริปที่บันทึกไว้',
       'บุ๊คมาร์คสถานที่',
+      // Signed in only — the harness is signed in.
+      'ผู้ใช้ที่ถูกบล็อก',
       'ตั้งค่าระบบ',
       'ลบบัญชี',
     ];
@@ -249,6 +251,6 @@ void main() {
     await tester.pumpWidget(_harness(_container()));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AccountRow), findsNWidgets(6));
+    expect(find.byType(AccountRow), findsNWidgets(7));
   });
 }

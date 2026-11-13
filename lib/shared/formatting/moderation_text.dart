@@ -53,3 +53,15 @@ String moderationMessage(Moderation moderation) {
   }
   return _fallbackFor(moderation.status);
 }
+
+/// The one-line headline for a moderation [status] — the same words on the
+/// card badge and on the post page's notice, so a traveller who taps through
+/// from one to the other reads the same verdict twice, not two phrasings.
+///
+/// [moderationMessage] stays the *reason*; this is the *verdict*.
+String moderationHeadline(ModerationStatus status) => switch (status) {
+      ModerationStatus.pending => 'กำลังตรวจสอบ',
+      ModerationStatus.reviewRequired => 'รอทีมงานตรวจสอบ',
+      ModerationStatus.rejected => 'เนื้อหาไม่เหมาะสม',
+      ModerationStatus.approved => 'เผยแพร่แล้ว',
+    };

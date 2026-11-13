@@ -10,6 +10,8 @@ import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
 import '../../paigun/presentation/providers/paigun_providers.dart';
+import '../../safety/presentation/providers/safety_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trip_detail/presentation/widgets/comment_sheet.dart';
 import '../../trips/presentation/providers/trip_comment_providers.dart';
@@ -49,12 +51,14 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom + 12;
+    // Reported, blocked or gone since the wall was drawn: skipped here too.
+    final posts = ref.watch(contentFilterProvider).visibleClips(_posts);
 
     return AppFrame(
       background: Colors.black,
       child: Stack(
         children: [
-          if (_posts.isEmpty)
+          if (posts.isEmpty)
             const Center(
               child: Text(
                 'ไม่พบคลิปนี้',
@@ -65,14 +69,14 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
             PuntokPlayerPager(
               posts: withCommentCounts(
                 withFollowState(
-                  _posts,
+                  posts,
                   ref.watch(followLedgerProvider),
                   myId: ref.watch(authSessionProvider)?.userId,
                 ),
                 ref.watch(tripCommentCountProvider),
               ),
               initialIndex:
-                  (widget.args?.initialIndex ?? 0).clamp(0, _posts.length - 1),
+                  (widget.args?.initialIndex ?? 0).clamp(0, posts.length - 1),
               bottomInset: bottomInset,
               onLike: _toggleLike,
               onSave: _toggleSave,
@@ -92,6 +96,7 @@ class _PuntokViewerScreenState extends ConsumerState<PuntokViewerScreen> {
                 final id = post.authorId;
                 if (id != null) openUserProfile(context, id);
               },
+              moreOf: clipMoreOf(context, ref),
             ),
           Positioned(
             top: 0,

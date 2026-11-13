@@ -9,6 +9,7 @@ import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/trip_like_action.dart';
 import 'providers/home_feed_providers.dart';
@@ -90,7 +91,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final feed = ref.watch(homeFeedProvider);
+    final feed = ref.watch(visibleHomeFeedProvider);
     final destinations = ref.watch(topDestinationsProvider);
     final session = ref.watch(authSessionProvider);
     final showDestinations = _categoryIndex != 2;
@@ -274,6 +275,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       onSave: _toggleSaved,
       onLike: (trip) => toggleTripLike(context, ref, trip),
+      moreOf: tripMoreOf(context, ref),
     );
   }
 

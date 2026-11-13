@@ -9,6 +9,7 @@ import 'services/itinerary_api.dart';
 import 'services/media_api.dart';
 import 'services/places_api.dart';
 import 'services/routes_api.dart';
+import 'services/safety_api.dart';
 import 'services/share_api.dart';
 import 'services/trips_api.dart';
 
@@ -34,6 +35,7 @@ export 'models/media.dart';
 export 'models/place.dart';
 export 'models/post_assistant.dart';
 export 'models/plan_generation.dart';
+export 'models/safety.dart';
 export 'models/schedule.dart';
 export 'models/share.dart';
 export 'models/travel_segment.dart';
@@ -51,6 +53,7 @@ export 'services/itinerary_api.dart';
 export 'services/media_api.dart';
 export 'services/places_api.dart';
 export 'services/routes_api.dart';
+export 'services/safety_api.dart';
 export 'services/share_api.dart';
 export 'services/trips_api.dart';
 
@@ -71,7 +74,8 @@ class PlunoApi {
         media = MediaApi(client),
         share = ShareApi(client),
         chat = ChatApi(client),
-        comments = CommentsApi(client);
+        comments = CommentsApi(client),
+        safety = SafetyApi(client);
 
   /// Reads the host from `PLUNO_API_BASE_URL`, restores the stored access
   /// token, and opens the on-disk cookie jar.
@@ -100,6 +104,9 @@ class PlunoApi {
 
   /// Comments and replies under any trip, post or clip.
   final CommentsApi comments;
+
+  /// Reporting content and blocking accounts.
+  final SafetyApi safety;
 
   /// True once a token has been restored or issued. It says nothing about the
   /// token still being valid — the client refreshes it on first use.

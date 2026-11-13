@@ -13,6 +13,7 @@ import '../../home/presentation/providers/home_feed_providers.dart';
 import '../../home/presentation/widgets/destination_card.dart';
 import '../../home/presentation/widgets/home_filter_bar.dart';
 import '../../home/presentation/widgets/pun_guide_grid.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/trip_like_action.dart';
 import 'providers/search_providers.dart';
@@ -219,6 +220,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onSave: _toggleSaved,
             likedOf: _likedOf,
             onLike: _toggleLiked,
+            moreOf: tripMoreOf(context, ref),
           ),
         ],
         if (recents.isEmpty && destinations.isEmpty && trending.isEmpty)
@@ -264,6 +266,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onSave: _toggleSaved,
             likedOf: _likedOf,
             onLike: _toggleLiked,
+            moreOf: tripMoreOf(context, ref),
           ),
         ],
       ],

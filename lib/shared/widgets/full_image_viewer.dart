@@ -6,10 +6,15 @@ import 'cover_image.dart';
 ///
 /// Returns once the viewer is closed. Does nothing when there is nothing to
 /// show, so a caller need not guard an empty list.
+///
+/// [onMore] puts ⋯ in the top bar — report this photo, block its owner — and
+/// is called with the viewer's own context and the photo on screen. Callers
+/// leave it null for the viewer's own pictures.
 Future<void> showFullImages(
   BuildContext context, {
   required List<String> urls,
   int initialIndex = 0,
+  void Function(BuildContext viewerContext, int index)? onMore,
 }) {
   if (urls.isEmpty) return Future<void>.value();
 
@@ -24,6 +29,7 @@ Future<void> showFullImages(
       pageBuilder: (_, __, ___) => _FullImageViewer(
         urls: urls,
         initialIndex: initialIndex.clamp(0, urls.length - 1),
+        onMore: onMore,
       ),
     ),
   );
@@ -34,10 +40,15 @@ Future<void> showFullImages(
 /// The list crops to a fixed ratio so the spots read evenly; this is where the
 /// whole picture is.
 class _FullImageViewer extends StatefulWidget {
-  const _FullImageViewer({required this.urls, required this.initialIndex});
+  const _FullImageViewer({
+    required this.urls,
+    required this.initialIndex,
+    this.onMore,
+  });
 
   final List<String> urls;
   final int initialIndex;
+  final void Function(BuildContext viewerContext, int index)? onMore;
 
   @override
   State<_FullImageViewer> createState() => _FullImageViewerState();
@@ -123,6 +134,14 @@ class _FullImageViewerState extends State<_FullImageViewer> {
                           ),
                         ),
                       ),
+                    if (widget.onMore case final onMore?) ...[
+                      const SizedBox(width: 8),
+                      _ViewerButton(
+                        icon: Icons.more_horiz,
+                        tooltip: 'ตัวเลือกเพิ่มเติม',
+                        onTap: () => onMore(context, _index),
+                      ),
+                    ],
                   ],
                 ),
               ),

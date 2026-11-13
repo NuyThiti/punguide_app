@@ -67,7 +67,7 @@ final searchResultsProvider = Provider.autoDispose
   final query = rawQuery.trim();
   final sort = ref.watch(searchSortProvider);
 
-  return ref.watch(homeFeedProvider).whenData((trips) {
+  return ref.watch(visibleHomeFeedProvider).whenData((trips) {
     final matches = query.isEmpty
         ? List<TripListItem>.of(trips)
         : trips.where((trip) => _score(trip, query.toLowerCase()) > 0).toList();
@@ -97,7 +97,7 @@ final searchResultsProvider = Provider.autoDispose
 
 /// Trips to show before anything is typed: the most-liked handful of the feed.
 final trendingTripsProvider = Provider<List<TripListItem>>((ref) {
-  final trips = ref.watch(homeFeedProvider).valueOrNull;
+  final trips = ref.watch(visibleHomeFeedProvider).valueOrNull;
   if (trips == null) return const <TripListItem>[];
 
   final ordered = List<TripListItem>.of(trips)

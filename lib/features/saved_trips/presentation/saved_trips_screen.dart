@@ -16,6 +16,8 @@ import '../../profile/presentation/profile_screen.dart' show profileCoverImage;
 import '../../profile/presentation/providers/profile_providers.dart';
 import '../../puntok/domain/models/puntok_post.dart';
 import '../../puntok/presentation/puntok_viewer_screen.dart';
+import '../../safety/presentation/providers/safety_providers.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../trips/presentation/providers/trip_like_providers.dart';
 import '../../trips/presentation/trip_like_action.dart';
 
@@ -29,7 +31,10 @@ class SavedTripsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final signedIn = ref.watch(isSignedInProvider);
-    final saved = ref.watch(savedFeedProvider);
+    // Not filtered by the server: a blocked or reported author's rows stay
+    // here until this device drops them.
+    final hidden = ref.watch(contentFilterProvider);
+    final saved = ref.watch(savedFeedProvider).whenData(hidden.visibleTrips);
     final bottomInset = AppBottomNav.heightOf(context) + 16;
 
     void unavailable(String message) => ScaffoldMessenger.of(context)
@@ -96,6 +101,7 @@ class SavedTripsScreen extends ConsumerWidget {
                                       ),
                                       onLike: (trip) =>
                                           toggleTripLike(context, ref, trip),
+                                      moreOf: tripMoreOf(context, ref),
                                       onOpen: (trip) =>
                                           _open(context, trips, trip),
                                       onSave: (trip) => _unsave(

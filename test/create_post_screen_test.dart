@@ -396,15 +396,22 @@ Future<void> _tapSpotOption(WidgetTester tester, Finder chip) async {
 }
 
 Future<void> _finishPublish(WidgetTester tester) async {
-  // Share now lands on "PunGuide Done!" before the composer actually closes
-  // — "อยู่ต่อ" is what does the closing the old flow did on its own.
-  for (var i = 0; i < 100 && find.text('อยู่ต่อ').evaluate().isEmpty; i++) {
+  // A new post lands on "PunGuide Done!" before the composer actually
+  // closes — "อยู่ต่อ" is what does the closing. An edit (`initialTrip`)
+  // skips that screen and closes straight away.
+  for (var i = 0;
+      i < 100 &&
+          find.text('อยู่ต่อ').evaluate().isEmpty &&
+          find.text('home').evaluate().isEmpty;
+      i++) {
     await tester.pump(const Duration(milliseconds: 50));
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
   }
   await tester.pumpAndSettle();
-  await tester.tap(find.text('อยู่ต่อ'));
+  if (find.text('อยู่ต่อ').evaluate().isNotEmpty) {
+    await tester.tap(find.text('อยู่ต่อ'));
+  }
   for (var i = 0; i < 100 && find.text('home').evaluate().isEmpty; i++) {
     await tester.pump(const Duration(milliseconds: 50));
     await tester
@@ -1655,6 +1662,42 @@ void main() {
       {'mediaId': _a, 'takenAt': '2026-09-01T10:00:00+07:00'}
     ]);
     expect(section.containsKey('images'), isFalse);
+  });
+
+  testWidgets('sharing an edited post closes the composer, no Done screen',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())]
+    });
+    final trip = ApiTrip.fromJson({
+      ...createdTripJson(),
+      'type': 'content',
+      'contents': [
+        {
+          'content': '',
+          'mediaIds': [_a],
+          'images': [_image(_a, 'assets/images/puntok_osaka.jpg')],
+          'location': {'status': 'confirmed', 'name': 'ร้านเดิม'},
+        },
+      ]
+    });
+    await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
+    // The post's own content is already in the composer.
+    expect(find.text('ร้านเดิม'), findsOneWidget);
+
+    await _tapNext(tester);
+    expect(find.byType(PostShareSettingsScreen), findsOneWidget);
+    await _tapShare(tester);
+    for (var i = 0; i < 100 && find.text('home').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PostDoneScreen), findsNothing);
+    expect(find.byType(CreatePostScreen), findsNothing);
+    expect(find.text('home'), findsOneWidget);
   });
 
   testWidgets('removing the cover frees its media and drops it from contents',

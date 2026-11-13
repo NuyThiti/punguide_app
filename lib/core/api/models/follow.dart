@@ -43,6 +43,7 @@ class PublicUserProfile {
     required this.isFollowing,
     required this.followsYou,
     required this.isMe,
+    this.isBlocked = false,
     this.name,
     this.avatarUrl,
   });
@@ -58,6 +59,7 @@ class PublicUserProfile {
         isFollowing: Json.boolean(json, 'isFollowing'),
         followsYou: Json.boolean(json, 'followsYou'),
         isMe: Json.boolean(json, 'isMe'),
+        isBlocked: Json.boolean(json, 'isBlocked'),
       );
 
   final String id;
@@ -76,6 +78,11 @@ class PublicUserProfile {
 
   /// The caller is looking at their own profile: no follow button.
   final bool isMe;
+
+  /// The caller has blocked this account: no follow button, no wall, an
+  /// เลิกบล็อก banner instead. The other direction never shows — someone
+  /// who blocked the caller answers 404, like an account that is gone.
+  final bool isBlocked;
 
   String get displayName => name?.isNotEmpty == true ? name! : username;
 }

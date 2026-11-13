@@ -1552,6 +1552,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     );
     if (shared == true && mounted) {
       _published = true;
+      // An edit goes straight back to the post it came from, which re-reads
+      // itself; the "posted" screen is for a post going out the first time.
+      if (widget.initialTrip != null) {
+        _close();
+        return;
+      }
       // "อยู่ต่อ" on the done screen pops straight back here, which is
       // exactly when the composer itself should close.
       await context.pushNamed(
@@ -1883,6 +1889,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       if (!mounted) return false;
       return true;
     } on ApiException catch (error) {
+      // No CONTENT_REJECTED branch here on purpose: this composer only ever
+      // sends `action: "draft"`, and a draft is never content-checked. The
+      // post goes out for checking from the share settings screen, which
+      // already holds the id a 422 would name.
       if (mounted) {
         _message(_uncertainUploads.isNotEmpty
             ? 'มีรูปที่ไม่ทราบผลอัปโหลด กดอีกครั้งเพื่อลองใหม่: ${error.message}'
