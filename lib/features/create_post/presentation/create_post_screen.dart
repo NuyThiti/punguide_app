@@ -282,7 +282,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         // Absent on the wire means THB — nothing was backfilled.
         currency: trip.budgetCurrency ?? 'THB',
       );
-      _audience = PostAudience.fromVisibility(trip.visibility);
+      // Not `trip.visibility`: a post held by the content check is private
+      // until it passes, and this pick goes back up on the draft save.
+      _audience = PostAudience.of(trip);
       for (final block in _blocks) {
         block.dispose(_refresh);
       }

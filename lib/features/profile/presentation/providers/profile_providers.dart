@@ -104,10 +104,6 @@ final profileTabRowsProvider =
   };
 });
 
-/// How many albums one page of อัลบั้มของฉัน asks for. The endpoint caps
-/// `limit` at 100 and 400s above it.
-const albumsPageSize = 20;
-
 /// The kinds of trip that are albums: photo posts and plan trips.
 ///
 /// Puntok is deliberately absent — a clip is not a page of pictures. Asking
@@ -116,93 +112,55 @@ const albumsPageSize = 20;
 /// back through `withoutClips` as well. See `shared/models/feed_rows.dart`.
 const albumTypes = <TripType>[TripType.content, TripType.planTrip];
 
-/// อัลบั้มของฉัน (Personal), from `GET /trips/mine?type=content,puntok`.
+/// อัลบั้มของฉัน (Personal), from `GET /trips/mine?type=content,plan_trip`.
 ///
-/// Paged rather than read whole: the shelf grows without bound, so the grid
-/// asks for [albumsPageSize] at a time and walks forward on [loadMore].
+/// **Read whole, not paged** (2026-11-13). `limit` on this endpoint does not
+/// count trips: it counts the rows a trip joins to, so one plan with two
+/// dozen stops swallows the whole window and the shelf comes back holding a
+/// single album. Measured against the live server with 21 trips:
+///
+/// ```text
+/// type=content,plan_trip                 -> 21
+/// type=content,plan_trip&limit=20&offset=0 ->  1
+/// type=plan_trip&limit=20&offset=0        ->  1   (there are 11)
+/// type=content&limit=20&offset=0          -> 10   (there are 10)
+/// ```
+///
+/// `offset` is unusable for the same reason, so there is nothing to page
+/// with. Every other `/trips/mine` read in the app sends neither and is
+/// unaffected. Bring the window back — and `loadMore` with it — once the
+/// server counts trips; see `docs/backend-gaps.md`.
 final myAlbumsProvider =
     AsyncNotifierProvider<MyAlbumsNotifier, List<TripListItem>>(
   MyAlbumsNotifier.new,
 );
 
 class MyAlbumsNotifier extends AsyncNotifier<List<TripListItem>> {
-  /// True once a page came back shorter than asked for — the documented way
-  /// this endpoint says "that was the last one", since it sends no total.
-  bool _exhausted = false;
-  bool get hasMore => !_exhausted;
-
-  /// Rows pulled from the server, which is what `offset` counts. Kept apart
-  /// from the list length: clips are dropped after the fetch, so walking the
-  /// offset by what survives would re-read rows already seen.
-  int _fetched = 0;
-
   @override
   Future<List<TripListItem>> build() async {
-    _exhausted = false;
-    _fetched = 0;
     // 401 for an anonymous caller, so an empty shelf rather than an error —
     // and a re-read the moment the session changes.
     if (ref.watch(authSessionProvider) == null) {
-      _exhausted = true;
       return const <TripListItem>[];
     }
-
     final api = await ref.watch(plunoApiProvider.future);
-    return _page(api, offset: 0);
+    return _read(api);
   }
 
-  /// Appends the next page. Does nothing while one is already in flight or
-  /// the shelf is spent, so a scroll that fires twice cannot double-read.
-  Future<void> loadMore() async {
-    final current = state.valueOrNull;
-    if (current == null || _exhausted || state.isLoading) return;
-
-    state = AsyncLoading<List<TripListItem>>()
-        .copyWithPrevious(AsyncData<List<TripListItem>>(current));
-    state = await AsyncValue.guard(() async {
-      final api = await ref.read(plunoApiProvider.future);
-      final page = await _page(api, offset: _fetched);
-      // The window can shift when a trip is created mid-walk, so drop any id
-      // already held rather than printing it twice.
-      final seen = {for (final trip in current) trip.id};
-      return <TripListItem>[
-        ...current,
-        ...page.where((trip) => !seen.contains(trip.id)),
-      ];
-    });
-  }
-
-  /// Pull-to-refresh starts the walk again from zero rather than patching a
-  /// window that may have moved underneath it.
   Future<void> refresh() async {
     state = await AsyncValue.guard(() async {
-      _exhausted = false;
-      _fetched = 0;
       if (ref.read(authSessionProvider) == null) {
-        _exhausted = true;
         return const <TripListItem>[];
       }
       final api = await ref.read(plunoApiProvider.future);
-      return _page(api, offset: 0);
+      return _read(api);
     });
   }
 
-  /// One page: asked for by type, then stripped of the clips the server sends
-  /// back as `content` anyway.
-  ///
-  /// `_exhausted` is judged on what the *server* sent, never on what survives
-  /// the filter — a page of twenty that happens to be all clips means the
-  /// shelf goes on, not that it ended.
-  Future<List<TripListItem>> _page(PlunoApi api, {required int offset}) async {
-    final page = await api.trips.mine(
-      types: albumTypes,
-      limit: albumsPageSize,
-      offset: offset,
-    );
-    _fetched = offset + page.length;
-    _exhausted = page.length < albumsPageSize;
-    return withoutClips(page);
-  }
+  /// Asked for by type, then stripped of the clips the server sends back as
+  /// `content` anyway.
+  Future<List<TripListItem>> _read(PlunoApi api) async =>
+      withoutClips(await api.trips.mine(types: albumTypes));
 }
 
 /// How many pictures one page of an album asks for. The gallery is the only

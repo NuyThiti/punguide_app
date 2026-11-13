@@ -40,6 +40,19 @@ final _albums = <TripListItem>[
   feedTrip(id: 'album-2', title: 'ของอร่อยเยาวราช', type: 'content'),
 ];
 
+/// The four header figures as `GET /users/me-1` answers them.
+const _me = PublicUserProfile(
+  id: 'me-1',
+  username: 'me',
+  followerCount: 1200,
+  followingCount: 42,
+  remixCount: 48300,
+  likeCount: 7600,
+  isFollowing: false,
+  followsYou: false,
+  isMe: true,
+);
+
 final _saved = <TripListItem>[
   feedTrip(id: 'saved-1', title: 'ทริปที่บุ๊กมาร์กไว้', isSaved: true),
 ];
@@ -55,12 +68,14 @@ Widget _harness({
   List<TripListItem>? saved,
   List<TripListItem>? albums,
   AuthSession? session = AuthSession.demo,
+  PublicUserProfile? me = _me,
 }) {
   return ProviderScope(
     overrides: profileOverrides(
       mine: mine ?? _mine,
       saved: saved ?? _saved,
       albums: albums ?? _albums,
+      me: me,
       session: session,
     ),
     child: MaterialApp.router(
@@ -157,15 +172,12 @@ void main() {
     );
     expect(find.text(AuthSession.demo.handle), findsOneWidget);
 
-    // Remix and Like are still the design's; the follow counts are real.
-    for (final count in ProfileHero.designCounts.take(2)) {
-      expect(find.text(count.value), findsOneWidget);
-      expect(find.text(count.label), findsOneWidget);
+    // All four figures come from the profile read — see the group below.
+    for (final label in <String>['Remix', 'Like', 'Follower', 'Following']) {
+      expect(find.text(label), findsOneWidget);
     }
     expect(find.text('1.2K'), findsOneWidget);
-    expect(find.text('Follower'), findsOneWidget);
     expect(find.text('42'), findsOneWidget);
-    expect(find.text('Following'), findsOneWidget);
 
     // Back and menu both ride on the cover.
     expect(find.byIcon(Icons.chevron_left), findsOneWidget);
@@ -555,6 +567,39 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(ModerationBadge), findsNothing);
+    });
+  });
+
+  group('the header figures', () {
+    testWidgets('come from the profile read, not the design', (tester) async {
+      _usePhone(tester);
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+
+      final hero = find.byType(ProfileHero);
+      for (final figure in <String>['48.3K', '7.6K', '1.2K', '42']) {
+        expect(
+          find.descendant(of: hero, matching: find.text(figure)),
+          findsOneWidget,
+          reason: figure,
+        );
+      }
+      // The design's own placeholders are gone.
+      expect(find.descendant(of: hero, matching: find.text('2.9K')),
+          findsNothing);
+    });
+
+    testWidgets('read as a dash, never a zero, when the read fails',
+        (tester) async {
+      _usePhone(tester);
+      await tester.pumpWidget(_harness(me: null));
+      await tester.pumpAndSettle();
+
+      // A zero here would read as fact; this account may have thousands.
+      expect(
+        find.descendant(of: find.byType(ProfileHero), matching: find.text('–')),
+        findsNWidgets(4),
+      );
     });
   });
 }

@@ -67,8 +67,6 @@ class _PersonalShelf extends ConsumerWidget {
       return const _AlbumsNotice(message: 'ยังไม่มีอัลบั้มของคุณ');
     }
 
-    final notifier = ref.read(myAlbumsProvider.notifier);
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -91,13 +89,6 @@ class _PersonalShelf extends ConsumerWidget {
               onTap: () => onOpen(rows[index]),
             ),
           ),
-          if (notifier.hasMore) ...[
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: albums.isLoading ? null : notifier.loadMore,
-              child: Text(albums.isLoading ? 'กำลังโหลด…' : 'โหลดเพิ่ม'),
-            ),
-          ],
         ],
       ),
     );

@@ -60,28 +60,9 @@ class _PostShareSettingsScreenState
   void _seed(ApiTrip trip) {
     if (_seeded) return;
     _seeded = true;
-    // `draftVisibility` is what the traveller actually chose the last time
-    // this post was saved as a draft — including a Save Draft that took an
-    // already-shared post down, which forces `visibility` itself to private
-    // and would otherwise read back as "Only me" no matter what was picked.
-    // Absent that, a draft that has never gone out has no visibility of its
-    // own yet, so it defaults to Public; one reopened for editing keeps
-    // whatever it was actually shared as, rather than silently flipping it
-    // back.
-    //
-    // A post waiting on — or refused by — the content check is forced to
-    // `private` whatever was picked, and the pick is held in
-    // `moderation.requestedVisibility` instead. Reading `visibility` there
-    // would quietly demote a "Followers" post to "Only me" on reopening.
-    final draftVisibility = trip.draftVisibility;
-    final requested = trip.moderation?.requestedVisibility;
-    _audience = draftVisibility != null
-        ? PostAudience.fromVisibility(draftVisibility)
-        : requested != null
-            ? PostAudience.fromVisibility(requested)
-            : (trip.publishedAt == null
-                ? PostAudience.public
-                : PostAudience.fromVisibility(trip.visibility));
+    // What the owner actually picked — see [PostAudience.of] for why that
+    // is not always `visibility` (a held post, a Save Draft take-down).
+    _audience = PostAudience.of(trip);
     final linked = trip.linkedTrip;
     _trip = linked == null
         ? null

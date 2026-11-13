@@ -146,6 +146,50 @@ void main() {
     expect(gallery.queryParameters['limit'], albumGalleryPageSize);
   });
 
+  testWidgets("a plan's borrowed stop photos still fill the album",
+      (tester) async {
+    _phone(tester);
+    final adapter = _adapter(gallery: <FakeReply>[
+      FakeReply(200, <String, dynamic>{
+        'tripId': 'album-1',
+        'total': 2,
+        'page': 1,
+        'limit': albumGalleryPageSize,
+        'items': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'a',
+            'isCover': true,
+            'urls': <String, dynamic>{
+              'large': 'https://cdn.test/a-large.jpg',
+              'thumbnail': 'https://cdn.test/a-thumb.jpg',
+            },
+          },
+          // Not a media row: `id` is the stop's, and it cannot be edited,
+          // deleted or made the cover. The album only ever shows it.
+          <String, dynamic>{
+            'id': 'stop-1',
+            'isStopPhoto': true,
+            'source': 'activity',
+            'sourceActivityId': 'stop-1',
+            'dayNumber': 2,
+            'isCover': false,
+            'urls': <String, dynamic>{
+              'large': 'https://cdn.test/places/p1/photo',
+              'thumbnail': 'https://cdn.test/places/p1/photo',
+            },
+          },
+        ],
+      }),
+    ]);
+
+    await tester.pumpWidget(_harness(adapter));
+    await tester.pumpAndSettle();
+
+    expect(find.text('12 Oct 2026 • 2 รูป'), findsOneWidget);
+    expect(find.byType(CoverImage), findsWidgets);
+    expect(find.text('อัลบั้มนี้ยังไม่มีรูป'), findsNothing);
+  });
+
   testWidgets('the header counts every picture the trip holds, not the page',
       (tester) async {
     _phone(tester);

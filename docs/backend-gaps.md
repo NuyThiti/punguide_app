@@ -43,6 +43,44 @@ where table_name='trips' and column_name in ('budget_currency','budget_amount_ma
 `npm run migration:run` น่าจะจบ (ตอนนี้มีสองตัวรอ: `AddTripBudgetCurrency` และ
 `AddTripLinkedTrip`)
 
+### 1.3 `GET /trips/mine` — `limit` นับแถวที่ join ไม่ได้นับทริป
+
+**พบ 2026-11-13 · ยังเปิดอยู่**
+
+`limit`/`offset` ที่เพิ่มมาพร้อม `type` (2026-10-27) ใช้ไม่ได้: `limit` ถูก
+ใช้กับแถวก่อน group ผลคือทริปแผนหนึ่งใบที่มี 24 จุดแวะกินโควตาไปทั้งหน้า และ
+รายการตอบกลับมาแค่ทริปเดียว วัดจาก account จริง (Thitichaya, 21 ทริป —
+plan_trip 11, content 10) บน dev:
+
+| query | ได้ | ควรได้ |
+|---|---|---|
+| `type=content,plan_trip` | 21 | 21 |
+| `type=content,plan_trip&limit=20&offset=0` | **1** | 20 |
+| `type=plan_trip&limit=20&offset=0` | **1** | 11 |
+| `type=content&limit=20&offset=0` | 10 | 10 |
+| `limit=20&offset=0` | **1** | 20 |
+
+`type` เองทำงานถูกต้อง — เฉพาะ `limit` ที่พัง และ `offset` ก็ใช้ต่อไม่ได้ด้วย
+เหตุผลเดียวกัน (นับคนละหน่วยกับที่ client ส่ง)
+
+**ผลกับแอป:** แท็บอัลบั้มในโปรไฟล์เคยส่ง `limit=20&offset=0` เลยเหลืออัลบั้ม
+ใบเดียว แก้ชั่วคราวแล้วด้วยการเลิกส่ง window ทั้งคู่ (`myAlbumsProvider`,
+2026-11-13) อ่านทั้งชั้นรวดเดียวเหมือน `/trips/mine` ที่อื่นในแอป จะเอา
+pagination กลับมาได้เมื่อ `limit` นับเป็นทริป
+
+### 1.4 รูปจุดแวะใน gallery ใช้ URL `localhost`
+
+**พบ 2026-11-13 · ยังเปิดอยู่**
+
+`GET /trips/:id/media` ของ `plan_trip` ต่อท้ายด้วยรูปจุดแวะ (`isStopPhoto: true`)
+ซึ่งใช้งานได้ดี แต่ `urls.large` / `urls.thumbnail` ของ item พวกนี้เป็น
+`http://localhost:4002/places/:placeId/photo` ไม่ใช่ URL สาธารณะเหมือนรูปอื่น
+(ที่เป็น `https://storage.googleapis.com/...`)
+
+บนซิมมูเลเตอร์มันโหลดได้เพราะ localhost คือเครื่อง Mac ที่รัน dev server อยู่
+แต่**บนเครื่องจริง / TestFlight จะเป็นรูปเสียทั้งหมด** ขอให้ส่งเป็น absolute URL
+ของ host จริง หรือเป็น path ล้วน (`/places/:id/photo`) ให้ client ต่อ base เอง
+
 ### 1.2 โพสต์ (`type=content`) ได้ `distanceKm=20015` — ✅ ปิดแล้ว (backend แก้ 2026-10-04)
 
 **พบ 2026-09-23 · แก้แล้ว 2026-10-04**

@@ -131,6 +131,8 @@ Map<String, dynamic> feedTripJson({
 List<Override> homeOverrides(
   List<TripListItem> trips, {
   AuthSession? session = AuthSession.demo,
+  /// The account's own profile read. Pass `_noProfile` to make it come back
+  /// null, as a failed or still-loading read does.
 }) {
   return <Override>[
     homeFeedProvider.overrideWith(() => _StubHomeFeed(trips)),
@@ -172,6 +174,20 @@ FakeAdapter feedAdapter(List<Map<String, dynamic>> rows) => FakeAdapter(
       },
     );
 
+/// The account's own four figures, as `GET /users/me-1` would answer them.
+const _demoProfile = PublicUserProfile(
+  id: 'me-1',
+  username: 'me',
+  followerCount: 1200,
+  followingCount: 42,
+  remixCount: 2900,
+  likeCount: 1000,
+  isFollowing: false,
+  followsYou: false,
+  isMe: true,
+);
+
+
 /// Overrides that let the profile render without a server: the traveller's
 /// own shelf, their bookmarks, and a session with no API behind it.
 List<Override> profileOverrides({
@@ -179,25 +195,18 @@ List<Override> profileOverrides({
   List<TripListItem> saved = const <TripListItem>[],
   List<TripListItem> albums = const <TripListItem>[],
   AuthSession? session = AuthSession.demo,
+  /// The account's own profile read. Null makes it come back null, as a
+  /// failed or still-loading read does.
+  PublicUserProfile? me = _demoProfile,
 }) {
   return <Override>[
     myTripsProvider.overrideWith(() => _StubMyTrips(mine)),
     savedFeedProvider.overrideWith(() => _StubSavedFeed(saved)),
     myAlbumsProvider.overrideWith(() => _StubMyAlbums(albums)),
     authSessionProvider.overrideWith((ref) => AuthController(session)),
-    // The account's own counts, as `GET /users/me-1/follow-summary` would
-    // answer them.
-    myFollowSummaryProvider.overrideWith(
-      (ref) async => session == null
-          ? null
-          : (
-              userId: 'me-1',
-              summary: const FollowSummary(
-                followerCount: 1200,
-                followingCount: 42,
-                isFollowing: false,
-              ),
-            ),
+    // The account's own four figures, as `GET /users/me-1` would answer them.
+    myProfileProvider.overrideWith(
+      (ref) async => session == null ? null : me,
     ),
   ];
 }
@@ -212,9 +221,6 @@ class _StubMyAlbums extends MyAlbumsNotifier {
 
   @override
   Future<void> refresh() async {}
-
-  @override
-  Future<void> loadMore() async {}
 }
 
 class _StubMyTrips extends MyTripsNotifier {

@@ -1303,6 +1303,47 @@ void main() {
           ],
         };
 
+    testWidgets('a plan\'s borrowed stop photos are not the stop\'s own',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      adapter.replies['GET /trips/trip-1'] = [
+        FakeReply(200, _tripJson(days: _filledDay()))
+      ];
+      // Two real uploads, plus the stand-in the server appends for the stop
+      // itself: keyed by the *stop's* id, not a media id.
+      final gallery = <String, dynamic>{
+        ...galleryOf(['m2', 'm1']),
+        'total': 3,
+      };
+      gallery['items'] = <Object>[
+        ...gallery['items'] as List,
+        <String, Object>{
+          'id': 's1',
+          'isStopPhoto': true,
+          'source': 'activity',
+          'sourceActivityId': 's1',
+          'dayNumber': 1,
+          'urls': <String, Object>{
+            'large': 'https://cdn.example.com/places/p1/photo',
+            'thumbnail': 'https://cdn.example.com/places/p1/photo',
+          },
+        },
+      ];
+      adapter.replies['GET /trips/trip-1/media'] = [FakeReply(200, gallery)];
+
+      await tester.pumpWidget(_harness());
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+
+      // Two, not three: the borrowed one is the place photo the card already
+      // shows, and deleting by its id would 404.
+      final count = find.byKey(const ValueKey('stop-photo-count-s1'));
+      expect(
+          find.descendant(of: count, matching: find.text('2')), findsOneWidget);
+    });
+
     testWidgets('the card counts a stop with several photos', (tester) async {
       tester.view.physicalSize = const Size(393 * 3, 1800 * 3);
       tester.view.devicePixelRatio = 3;

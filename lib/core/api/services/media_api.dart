@@ -25,8 +25,9 @@ class MediaApi {
 
   /// Uploads a photo, up to 15 MB.
   ///
-  /// Attach it to a stop with [activityId] — which must belong to this trip —
-  /// and the item's source becomes `activity` instead of `user_upload`.
+  /// Attach it to a stop with [activityId] — which must belong to this trip.
+  /// The source stays `user_upload`: what changes is `sourceActivityId`.
+  /// Only `addFromPlace` produces an `activity` source.
   Future<Media> upload(
     String tripId, {
     String? filePath,

@@ -1664,6 +1664,44 @@ void main() {
     expect(section.containsKey('images'), isFalse);
   });
 
+  testWidgets('a post held by the content check reopens on its real audience',
+      (tester) async {
+    // Refused, so the server forced it private — but Public is what was
+    // picked, and it waits in moderation.requestedVisibility.
+    final adapter = FakeAdapter({
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())]
+    });
+    final trip = ApiTrip.fromJson({
+      ...createdTripJson(),
+      'type': 'content',
+      'visibility': 'private',
+      'publishedAt': '2026-11-12T00:00:00.000Z',
+      'moderation': {
+        'status': 'REJECTED',
+        'reasonCode': 'UNSAFE_CONTENT',
+        'requestedVisibility': 'public',
+        'canAppeal': true,
+      },
+      'contents': [
+        {
+          'content': '',
+          'mediaIds': [_a],
+          'images': [_image(_a, 'assets/images/puntok_osaka.jpg')],
+          'location': {'status': 'confirmed', 'name': 'ร้านเดิม'},
+        },
+      ]
+    });
+    await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
+
+    expect(find.text('Public'), findsOneWidget);
+    expect(find.text('Only me'), findsNothing);
+
+    await _tapNext(tester);
+    // The draft save at Next carries the pick, not the forced private.
+    expect(adapter.bodyOf('PUT /trips/posts/trip-new')!['visibility'],
+        'public');
+  });
+
   testWidgets('sharing an edited post closes the composer, no Done screen',
       (tester) async {
     final adapter = FakeAdapter({

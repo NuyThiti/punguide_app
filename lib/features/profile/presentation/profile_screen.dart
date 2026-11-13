@@ -74,31 +74,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             .clamp(0.0, 1.0);
   }
 
-  /// Remix and Like stay the design's figures — the API has no account-wide
-  /// totals for either. Follower / Following are real, and open their lists;
-  /// a dash while they load or when the read failed.
-  List<ProfileCount> _counts(
-    ({String userId, FollowSummary summary})? follows,
-  ) {
+  /// All four figures from `GET /users/:myId` — Remix and Like are sums over
+  /// the account's own trips, Follower and Following open their lists. A dash
+  /// while the read is in flight or after it failed, rather than a zero that
+  /// would read as fact.
+  List<ProfileCount> _counts(PublicUserProfile? me) {
     void open(FollowListKind kind) => context.pushNamed(
           AppRoute.userFollows.name,
-          params: {'userId': follows!.userId},
+          params: {'userId': me!.id},
           queryParams: {'tab': kind.path},
         );
 
-    final summary = follows?.summary;
+    String figure(int Function(PublicUserProfile) of) =>
+        me == null ? '–' : compactCount(of(me));
+
     return <ProfileCount>[
-      ProfileHero.designCounts[0],
-      ProfileHero.designCounts[1],
+      (value: figure((p) => p.remixCount), label: 'Remix', onTap: null),
+      (value: figure((p) => p.likeCount), label: 'Like', onTap: null),
       (
-        value: summary == null ? '–' : compactCount(summary.followerCount),
+        value: figure((p) => p.followerCount),
         label: 'Follower',
-        onTap: follows == null ? null : () => open(FollowListKind.followers),
+        onTap: me == null ? null : () => open(FollowListKind.followers),
       ),
       (
-        value: summary == null ? '–' : compactCount(summary.followingCount),
+        value: figure((p) => p.followingCount),
         label: 'Following',
-        onTap: follows == null ? null : () => open(FollowListKind.following),
+        onTap: me == null ? null : () => open(FollowListKind.following),
       ),
     ];
   }
@@ -108,7 +109,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final session = ref.watch(authSessionProvider);
     final tab = ref.watch(profileTabProvider);
     final rows = ref.watch(profileTabRowsProvider);
-    final follows = ref.watch(myFollowSummaryProvider).valueOrNull;
+    final me = ref.watch(myProfileProvider).valueOrNull;
 
     void unavailable(String message) => ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -125,7 +126,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: ProfileHero(
                   session: session,
                   coverImage: profileCoverImage,
-                  counts: _counts(follows),
+                  counts: _counts(me),
                   onEditAvatar: () =>
                       context.pushNamed(AppRoute.profileEdit.name),
                 ),

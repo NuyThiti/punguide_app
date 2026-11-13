@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pluno/core/api/api_providers.dart';
-import 'package:pluno/core/api/pluno_api.dart';
 import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/profile/presentation/providers/profile_providers.dart';
@@ -65,50 +64,35 @@ void main() {
     );
   });
 
-  test('a full page of clips means the shelf goes on, not that it ended',
+  test('sends no window: the server would read it as rows, not trips',
       () async {
-    // Twenty rows back, every one a clip: nothing survives the filter, but
-    // the server clearly has more to give.
-    final clips = <Map<String, dynamic>>[
-      for (var i = 0; i < albumsPageSize; i++)
-        feedTripJson(
-          id: 'clip-$i',
-          type: 'content',
-          coverUrl: 'https://cdn.test/$i.mov',
-          coverMediaType: 'video',
-        ),
-    ];
-    final adapter = FakeAdapter(<String, List<FakeReply>>{
-      'GET /trips/mine': <FakeReply>[
-        FakeReply(200, clips),
-        FakeReply(200, _page(2, from: 100)),
-      ],
-    });
-    final container = _container(adapter);
-
-    await container.read(myAlbumsProvider.future);
-    expect(container.read(myAlbumsProvider).value, isEmpty);
-    expect(container.read(myAlbumsProvider.notifier).hasMore, isTrue);
-
-    await container.read(myAlbumsProvider.notifier).loadMore();
-
-    // The second page is asked for past all twenty rows the server sent, not
-    // past the nothing that survived them.
-    expect(adapter.requests.last.queryParameters['offset'], albumsPageSize);
-    expect(
-      container.read(myAlbumsProvider).value!.map((album) => album.title),
-      <String>['โพสต์ 100'],
-    );
-  });
-
-  test('a short page ends the walk', () async {
     final adapter = FakeAdapter(<String, List<FakeReply>>{
       'GET /trips/mine': <FakeReply>[FakeReply(200, _page(2))],
     });
-    final container = _container(adapter);
 
-    await container.read(myAlbumsProvider.future);
+    await _container(adapter).read(myAlbumsProvider.future);
 
-    expect(container.read(myAlbumsProvider.notifier).hasMore, isFalse);
+    // `limit` on this endpoint counts the rows a trip joins to, so one plan
+    // with two dozen stops swallows the whole window and the shelf comes
+    // back holding a single album. The whole shelf is read instead.
+    final query = adapter.requests.single.queryParameters;
+    expect(query.containsKey('limit'), isFalse);
+    expect(query.containsKey('offset'), isFalse);
+  });
+
+  test('signed out is an empty shelf, not an error', () async {
+    final adapter = FakeAdapter(<String, List<FakeReply>>{
+      'GET /trips/mine': <FakeReply>[FakeReply(200, _page(2))],
+    });
+    final container = ProviderContainer(
+      overrides: <Override>[
+        plunoApiProvider.overrideWith((ref) async => fakeApi(adapter)),
+        authSessionProvider.overrideWith((ref) => AuthController(null)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(await container.read(myAlbumsProvider.future), isEmpty);
+    expect(adapter.requests, isEmpty);
   });
 }

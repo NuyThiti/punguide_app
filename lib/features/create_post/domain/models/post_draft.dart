@@ -1,4 +1,5 @@
 import '../../../../core/api/models/enums.dart';
+import '../../../../core/api/models/trip.dart';
 import '../../../../core/api/models/trip_content.dart';
 import 'package:flutter/material.dart';
 
@@ -30,6 +31,25 @@ enum PostAudience {
         PostAudience.followers => TripVisibility.followers,
         PostAudience.onlyMe => TripVisibility.private,
       };
+
+  /// The audience a saved post reopens on — what its owner actually picked,
+  /// which is not always its `visibility` today.
+  ///
+  /// - `draftVisibility` first: the pick from the last Save Draft, including
+  ///   one that took a shared post down and forced `visibility` private.
+  /// - then `moderation.requestedVisibility`: a post held or refused by the
+  ///   content check is forced private whatever was picked, and the pick
+  ///   waits there. Reading `visibility` instead would quietly turn a Public
+  ///   post into "Only me" the moment it was edited and re-sent.
+  /// - a post never shared defaults to Public; otherwise its `visibility`.
+  static PostAudience of(ApiTrip trip) {
+    final picked =
+        trip.draftVisibility ?? trip.moderation?.requestedVisibility;
+    if (picked != null) return PostAudience.fromVisibility(picked);
+    return trip.publishedAt == null
+        ? PostAudience.public
+        : PostAudience.fromVisibility(trip.visibility);
+  }
 }
 
 /// A place pinned to one topic, as `/places/search` returned it.

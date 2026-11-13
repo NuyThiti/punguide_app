@@ -46,6 +46,12 @@ final stopMediaProvider =
   final gallery = await api.media.gallery(tripId, limit: 200);
   final media = <String, List<GalleryImage>>{};
   for (final image in gallery.items) {
+    // A plan's gallery also carries one borrowed photo per stop, tagged with
+    // that stop's `sourceActivityId` like a real row. They are skipped here:
+    // the stop card already draws its place's photo, so they would double it
+    // — and their `id` is the stop's, not a media id, so the sheet's remove
+    // button would 404 on one. See [GalleryImage.isStopPhoto].
+    if (image.isStopPhoto) continue;
     final activityId = image.sourceActivityId;
     if (activityId == null) continue;
     (media[activityId] ??= <GalleryImage>[]).add(image);

@@ -31,9 +31,9 @@ class ProfileHero extends StatelessWidget {
 
   static const double avatarSize = 84;
 
-  /// Remix / Like / Follower / Following as the design prints them. The API
-  /// has no account-wide Remix or Like totals, so those two stay the design's
-  /// own; the profile screen swaps in real follower counts.
+  /// Remix / Like / Follower / Following as the design prints them — the
+  /// fallback for a hero with no profile read behind it (a preview, a test).
+  /// Every screen that has one passes real figures from `GET /users/:id`.
   static const designCounts = <ProfileCount>[
     (value: '2.9K', label: 'Remix', onTap: null),
     (value: '1K', label: 'Like', onTap: null),

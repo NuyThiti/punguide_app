@@ -40,6 +40,8 @@ class PublicUserProfile {
     required this.username,
     required this.followerCount,
     required this.followingCount,
+    this.remixCount = 0,
+    this.likeCount = 0,
     required this.isFollowing,
     required this.followsYou,
     required this.isMe,
@@ -56,6 +58,8 @@ class PublicUserProfile {
         avatarUrl: Json.string(json, 'avatarUrl'),
         followerCount: Json.integer(json, 'followerCount') ?? 0,
         followingCount: Json.integer(json, 'followingCount') ?? 0,
+        remixCount: Json.integer(json, 'remixCount') ?? 0,
+        likeCount: Json.integer(json, 'likeCount') ?? 0,
         isFollowing: Json.boolean(json, 'isFollowing'),
         followsYou: Json.boolean(json, 'followsYou'),
         isMe: Json.boolean(json, 'isMe'),
@@ -68,6 +72,16 @@ class PublicUserProfile {
   final String? avatarUrl;
   final int followerCount;
   final int followingCount;
+
+  /// Every remix of every trip this account owns, added up — the design's
+  /// "Remix" figure, and the only place the API offers it. The server sums
+  /// the owner's trips; there is no per-account column behind it, and
+  /// [FollowSummary] (what follow / unfollow answer with) does not carry it,
+  /// so a tap on Follow leaves these two where they were.
+  final int remixCount;
+
+  /// The same, for hearts: the "Like" figure.
+  final int likeCount;
 
   /// The caller follows this account. False when signed out.
   final bool isFollowing;

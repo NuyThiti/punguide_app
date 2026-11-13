@@ -150,6 +150,7 @@ class GalleryImage {
     required this.id,
     required this.urls,
     required this.isCover,
+    this.isStopPhoto = false,
     this.source,
     this.sourcePlaceId,
     this.sourceActivityId,
@@ -170,6 +171,7 @@ class GalleryImage {
         altText: Json.string(json, 'altText'),
         caption: Json.string(json, 'caption'),
         isCover: Json.boolean(json, 'isCover'),
+        isStopPhoto: Json.boolean(json, 'isStopPhoto'),
         sortOrder: Json.integer(json, 'sortOrder'),
         createdAt: Json.timestamp(json, 'createdAt'),
       );
@@ -183,6 +185,19 @@ class GalleryImage {
   final String? altText;
   final String? caption;
   final bool isCover;
+
+  /// A plan trip's gallery ends with one borrowed photo per stop, and these
+  /// are **not media rows at all**.
+  ///
+  /// [id] is the *stop's* id (the same value as [sourceActivityId]), not a
+  /// `mediaId`, so `PATCH` / `DELETE /trips/:id/media/:mediaId` and
+  /// `PUT /trips/:id/cover` all answer 404 for one. Both URLs point at the
+  /// place's photo endpoint, and there is no caption. To make one editable,
+  /// `POST .../media/from-place` it with its `sourcePlaceId` — it then
+  /// becomes an ordinary row and this stand-in disappears from the gallery.
+  ///
+  /// Posts never carry them; only `plan_trip` does.
+  final bool isStopPhoto;
 
   /// Display order for this response only — reordering is not persisted yet.
   final int? sortOrder;

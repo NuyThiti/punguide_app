@@ -320,6 +320,20 @@ class _UserHero extends ConsumerWidget {
                 const SizedBox(height: 16),
                 ProfileCountsRow(
                   counts: [
+                    // Remix and Like are sums over this account's own trips,
+                    // and only the profile read carries them: the summary a
+                    // follow answers with does not, so they keep the figures
+                    // this page opened with.
+                    (
+                      value: compactCount(profile.remixCount),
+                      label: 'Remix',
+                      onTap: null,
+                    ),
+                    (
+                      value: compactCount(profile.likeCount),
+                      label: 'Like',
+                      onTap: null,
+                    ),
                     (
                       value: compactCount(followers),
                       label: 'Follower',

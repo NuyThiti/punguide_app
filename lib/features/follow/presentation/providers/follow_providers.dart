@@ -66,7 +66,7 @@ class FollowLedgerController extends StateNotifier<FollowLedger> {
           : await api.follows.unfollow(userId);
       if (mounted) state = state._withSummary(userId, summary);
       // The viewer's own "Following" count moved too.
-      _ref.invalidate(myFollowSummaryProvider);
+      _ref.invalidate(myProfileProvider);
       return summary;
     } catch (_) {
       if (mounted) state = state._withFollowing(userId, before);
@@ -79,7 +79,7 @@ class FollowLedgerController extends StateNotifier<FollowLedger> {
   Future<FollowSummary> removeFollower(String userId) async {
     final api = await _ref.read(plunoApiProvider.future);
     final mine = await api.follows.removeFollower(userId);
-    _ref.invalidate(myFollowSummaryProvider);
+    _ref.invalidate(myProfileProvider);
     return mine;
   }
 
@@ -93,7 +93,7 @@ class FollowLedgerController extends StateNotifier<FollowLedger> {
       following: {...state.following, userId: false},
       summaries: summaries,
     );
-    _ref.invalidate(myFollowSummaryProvider);
+    _ref.invalidate(myProfileProvider);
   }
 }
 
@@ -109,15 +109,15 @@ final userProfileProvider = FutureProvider.autoDispose
   return api.follows.profile(userId);
 });
 
-/// The signed-in account's id and its own follower / following counts.
+/// The signed-in account's own public profile — all four header figures
+/// (Remix, Like, Follower, Following) in one read.
 ///
-/// `GET /users/me` is not a profile (it is a 400), so the counts come from
-/// `follow-summary` under the account's real id. Null when signed out or
-/// when the session cannot be read — the counts then show as a dash rather
-/// than an error over the profile.
-final myFollowSummaryProvider =
-    FutureProvider.autoDispose<({String userId, FollowSummary summary})?>(
-        (ref) async {
+/// `GET /users/me` is a 400, so this resolves the account's real id first and
+/// reads `GET /users/:id`, which answers `isMe: true` for its owner. Null
+/// when signed out or when the id cannot be resolved — the counts then show
+/// as a dash rather than an error over the profile.
+final myProfileProvider =
+    FutureProvider.autoDispose<PublicUserProfile?>((ref) async {
   final session = ref.watch(authSessionProvider);
   if (session == null) return null;
   try {
@@ -125,7 +125,7 @@ final myFollowSummaryProvider =
         session.userId ?? (await ref.watch(currentUserProvider.future))?.id;
     if (myId == null) return null;
     final api = await ref.watch(plunoApiProvider.future);
-    return (userId: myId, summary: await api.follows.summary(myId));
+    return await api.follows.profile(myId);
   } catch (_) {
     return null;
   }
