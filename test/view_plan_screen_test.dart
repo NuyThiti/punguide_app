@@ -11,6 +11,8 @@ import 'package:pluno/core/theme/app_colors.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/trip_detail/presentation/share_trip.dart';
 import 'package:pluno/features/trip_detail/presentation/trip_detail_screen.dart';
+import 'package:pluno/features/trips/presentation/widgets/trip_map_card.dart';
+import 'package:pluno/features/trip_detail/presentation/widgets/plan_stop_card.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'support/fake_api.dart';
@@ -468,7 +470,135 @@ void main() {
     expect(find.byKey(const Key('save-chip')), findsNothing);
   });
 
-  testWidgets('the stops sit under ตารางแผน on white, not cream',
+  group('tabs', () {
+    // 15,200 spent against a 24,000 cap, over a group of three — the
+    // per-person figures the tab leads with are 5,067 and 8,000.
+    final budget = <String, dynamic>{
+      'budgetLimit': 24000,
+      'totalBudget': 15200,
+      'byCategory': const <Map<String, dynamic>>[
+        {
+          'category': 'food',
+          'amount': 15200,
+          'percentage': 100,
+          'itemCount': 1
+        },
+      ],
+      'byDay': const <Map<String, dynamic>>[
+        {'dayId': 'd1', 'dayNumber': 1, 'date': '2026-08-20', 'amount': 15200},
+      ],
+      'items': const <Map<String, dynamic>>[
+        {
+          'id': 'e1',
+          'title': 'Le Banneton Café',
+          'category': 'food',
+          'amount': 15200,
+          'source': 'activity',
+          'dayNumber': 1,
+        },
+      ],
+    };
+
+    Future<void> openTab(WidgetTester tester, String label) async {
+      final tab = find.text(label);
+      await tester.ensureVisible(tab);
+      await tester.pumpAndSettle();
+      await tester.tap(tab);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('ทริปของฉัน · สรุปงบ, the stops first and no ตารางแผน',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await _pumpTrip(tester, viewer: _visitor);
+
+      expect(find.text('ทริปของฉัน'), findsOneWidget);
+      expect(find.text('สรุปงบ'), findsOneWidget);
+      // Dropped: it was the same stops as ทริปของฉัน.
+      expect(find.text('ตารางแผน'), findsNothing);
+      expect(find.text('Le Banneton Café'), findsOneWidget);
+      // The map stays shut until asked for.
+      expect(find.byType(TripMapCard), findsNothing);
+      // The budget is not read until its tab opens.
+      expect(adapter.paths, isNot(contains('GET /trips/trip-1/budget')));
+    });
+
+    testWidgets('สรุปงบ reads the budget, per person, with no edit actions',
+        (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await _pumpTrip(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'GET /trips/trip-1/budget': [FakeReply(200, budget)],
+        },
+      );
+      await openTab(tester, 'สรุปงบ');
+
+      expect(adapter.paths, contains('GET /trips/trip-1/budget'));
+      expect(find.text('ค่าใช้จ่ายต่อคน'), findsOneWidget);
+      expect(find.text('฿5,067'), findsWidgets);
+      expect(find.text('฿8,000'), findsOneWidget);
+      // Read-only: editing the budget belongs to the plan editor.
+      expect(find.text('แก้ไขงบ'), findsNothing);
+      expect(find.text('เพิ่มค่าใช้จ่าย'), findsNothing);
+      expect(find.text('แชร์'), findsOneWidget);
+      // The itinerary is not drawn under it.
+      expect(find.byType(PlanStopCard), findsNothing);
+    });
+
+    testWidgets(
+        'the floating map button opens the map above the stops '
+        'and shuts it again', (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await _pumpTrip(tester, viewer: _visitor);
+      final fab = find.byType(FloatingActionButton);
+      expect(fab, findsOneWidget);
+      expect(find.byTooltip('ดูบนแผนที่'), findsOneWidget);
+
+      await tester.tap(fab);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TripMapCard), findsOneWidget);
+      expect(find.byIcon(Icons.close), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byType(TripMapCard)).dy,
+        lessThan(tester.getTopLeft(find.text('Le Banneton Café')).dy),
+      );
+
+      await tester.tap(find.byTooltip('ซ่อนแผนที่'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TripMapCard), findsNothing);
+    });
+
+    testWidgets('the map button is ทริปของฉัน\'s alone', (tester) async {
+      tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await _pumpTrip(
+        tester,
+        viewer: _visitor,
+        extra: {
+          'GET /trips/trip-1/budget': [FakeReply(200, budget)],
+        },
+      );
+      await openTab(tester, 'สรุปงบ');
+
+      expect(find.byType(FloatingActionButton), findsNothing);
+    });
+  });
+
+  testWidgets('the stops sit under the tabs on white, not cream',
       (tester) async {
     tester.view.physicalSize = const Size(393 * 3, 1100 * 3);
     tester.view.devicePixelRatio = 3;
@@ -476,9 +606,8 @@ void main() {
 
     await _pumpTrip(tester);
 
-    expect(find.text('ตารางแผน'), findsOneWidget);
     final band = find.ancestor(
-      of: find.text('ตารางแผน'),
+      of: find.text('ทริปของฉัน'),
       matching: find.byWidgetPredicate(
         (widget) => widget is ColoredBox && widget.color == AppColors.screen,
       ),

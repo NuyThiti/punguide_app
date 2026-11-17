@@ -35,6 +35,9 @@ import '../../profile/presentation/providers/profile_providers.dart';
 import '../../safety/presentation/providers/safety_providers.dart';
 import '../../safety/presentation/safety_actions.dart';
 import 'share_trip.dart';
+import '../../create_trip/presentation/widgets/budget_sheets.dart';
+import '../../create_trip/presentation/widgets/plan_budget_tab.dart';
+import '../../trips/presentation/widgets/trip_map_card.dart';
 import 'widgets/add_to_trip_sheet.dart';
 import 'widgets/plan_stop_card.dart';
 import 'widgets/comment_sheet.dart';
@@ -88,6 +91,32 @@ const _topBarHeight = 44.0;
 class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
   int _selectedDay = 0;
 
+  /// The plan face's tab: 0 ทริปของฉัน, 1 สรุปงบ.
+  int _planTab = 0;
+
+  /// Whether ทริปของฉัน shows the day on a map above its stops. Closed to
+  /// begin with — the stops are what a reader came for — and toggled by the
+  /// floating map button, as in the editor.
+  bool _mapOpen = false;
+  final _mapKey = GlobalKey();
+
+  void _toggleMap() {
+    setState(() => _mapOpen = !_mapOpen);
+    // Opened from far down the list, the map would appear out of sight.
+    if (!_mapOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _mapKey.currentContext;
+      if (target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+        // Clear of the pinned bar, which overlays the top of the page.
+        alignment: 0.16,
+      );
+    });
+  }
+
   /// True while an appeal is in flight, so the notice's button can spin and
   /// a second tap cannot send a second appeal — the server allows only one.
   bool _appealing = false;
@@ -123,8 +152,20 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
       }
     });
 
+    final shown = trip.valueOrNull;
+
     return Scaffold(
       backgroundColor: AppColors.screen,
+      // The map switch belongs to ทริปของฉัน on a plan; a post has no map.
+      floatingActionButton: shown != null && !shown.type.isPost && _planTab == 0
+          ? FloatingActionButton(
+              onPressed: _toggleMap,
+              backgroundColor: AppColors.brandOrange,
+              foregroundColor: Colors.white,
+              tooltip: _mapOpen ? 'ซ่อนแผนที่' : 'ดูบนแผนที่',
+              child: Icon(_mapOpen ? Icons.close : Icons.map_outlined),
+            )
+          : null,
       body: trip.when(
         // Reported or blocked from this very page (or another): it is gone
         // for this viewer. The owner never is — you cannot report yourself.
@@ -576,48 +617,72 @@ class _TripDetailScreenState extends ConsumerState<TripDetailScreen> {
                 gutter,
                 24,
                 gutter,
-                28 + MediaQuery.paddingOf(context).bottom,
+                // The map button floats over the foot of ทริปของฉัน.
+                (_planTab == 0 ? 96 : 28) +
+                    MediaQuery.paddingOf(context).bottom,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'ตารางแผน',
-                    style: TextStyle(
-                      color: AppColors.foreground,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  _ViewTabs(
+                    selectedIndex: _planTab,
+                    onChanged: (index) => setState(() => _planTab = index),
                   ),
-                  const SizedBox(height: 16),
-                  // One day needs no tabs to choose between.
-                  if (plan.days.length > 1) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: _DayTabs(
-                        days: plan.days,
-                        selectedIndex: dayIndex,
-                        onSelect: (index) =>
-                            setState(() => _selectedDay = index),
+                  const SizedBox(height: 20),
+                  if (_planTab == 1)
+                    PlanBudgetTab(
+                      tripId: trip.id,
+                      groupSize: trip.customer?.groupSize ?? 1,
+                      days: [
+                        for (final day in plan.days)
+                          BudgetDayOption(
+                            number: day.dayNumber,
+                            label: '',
+                            date: day.date,
+                          ),
+                      ],
+                      onShare: () => _snack('แชร์สรุปงบยังไม่เปิดใช้งาน'),
+                      // Read-only here: the budget is edited in the plan
+                      // editor, so แก้ไขงบ and เพิ่มค่าใช้จ่าย are left off.
+                    )
+                  else ...[
+                    if (_mapOpen) ...[
+                      TripMapCard(
+                        key: _mapKey,
+                        stops: stops,
+                        onMenu: () => _snack('ตัวเลือกแผนที่ยังไม่เปิดใช้งาน'),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (plan.days.isEmpty)
-                    const _EmptyNote(text: 'ทริปนี้ยังไม่มีแผนการเดินทาง')
-                  else if (stops.isEmpty)
-                    const _EmptyNote(text: 'วันนี้ยังไม่มีสถานที่')
-                  else
-                    for (var i = 0; i < stops.length; i++) ...[
-                      PlanStopCard(
-                        key: ValueKey(stops[i].id),
-                        stop: stops[i],
-                        position: i + 1,
-                        segment: day!.segmentInto(stops[i]),
-                        onAction: (action) => _onStopAction(stops[i], action),
-                      ),
-                      if (i < stops.length - 1) const SizedBox(height: 14),
+                      const SizedBox(height: 16),
                     ],
+                    // One day needs no tabs to choose between.
+                    if (plan.days.length > 1) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: _DayTabs(
+                          days: plan.days,
+                          selectedIndex: dayIndex,
+                          onSelect: (index) =>
+                              setState(() => _selectedDay = index),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (plan.days.isEmpty)
+                      const _EmptyNote(text: 'ทริปนี้ยังไม่มีแผนการเดินทาง')
+                    else if (stops.isEmpty)
+                      const _EmptyNote(text: 'วันนี้ยังไม่มีสถานที่')
+                    else
+                      for (var i = 0; i < stops.length; i++) ...[
+                        PlanStopCard(
+                          key: ValueKey(stops[i].id),
+                          stop: stops[i],
+                          position: i + 1,
+                          segment: day!.segmentInto(stops[i]),
+                          onAction: (action) => _onStopAction(stops[i], action),
+                        ),
+                        if (i < stops.length - 1) const SizedBox(height: 14),
+                      ],
+                  ],
                 ],
               ),
             ),
@@ -1558,6 +1623,75 @@ class _CountChip extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: chip,
+      ),
+    );
+  }
+}
+
+/// ทริปของฉัน · สรุปงบ — the editor's pill without its จัดแผน, which is the
+/// editor's own.
+class _ViewTabs extends StatelessWidget {
+  const _ViewTabs({required this.selectedIndex, required this.onChanged});
+
+  static const labels = ['ทริปของฉัน', 'สรุปงบ'];
+
+  final int selectedIndex;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFAF7),
+        borderRadius: BorderRadius.circular(99),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: Semantics(
+                selected: selectedIndex == i,
+                button: true,
+                child: GestureDetector(
+                  onTap: () => onChanged(i),
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: selectedIndex == i
+                          ? AppColors.brandPurple
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: FittedBox(
+                      child: Text(
+                        labels[i],
+                        style: TextStyle(
+                          color: selectedIndex == i
+                              ? Colors.white
+                              : AppColors.muted,
+                          fontSize: 14,
+                          fontWeight: selectedIndex == i
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

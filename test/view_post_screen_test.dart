@@ -883,6 +883,12 @@ void main() {
     }
   });
 
+  testWidgets('a post has no map button', (tester) async {
+    phone(tester);
+    await _pumpPost(tester, viewer: _visitor);
+    expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
   testWidgets('the bar has no bookmark and no avatar', (tester) async {
     phone(tester);
     await _pumpPost(tester, viewer: _visitor);

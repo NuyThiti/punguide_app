@@ -23,8 +23,8 @@ class PlanBudgetTab extends ConsumerStatefulWidget {
     required this.groupSize,
     required this.days,
     required this.onShare,
-    required this.onEditBudget,
-    required this.onAddExpense,
+    this.onEditBudget,
+    this.onAddExpense,
   });
 
   final String tripId;
@@ -40,10 +40,11 @@ class PlanBudgetTab extends ConsumerStatefulWidget {
   final VoidCallback onShare;
 
   /// Opens the cap editor; the sheet itself lives in the screen because it
-  /// writes to the trip.
-  final VoidCallback onEditBudget;
+  /// writes to the trip. Null leaves แก้ไขงบ off — a read-only view.
+  final VoidCallback? onEditBudget;
 
-  final VoidCallback onAddExpense;
+  /// Null leaves เพิ่มค่าใช้จ่าย off — a read-only view.
+  final VoidCallback? onAddExpense;
 
   @override
   ConsumerState<PlanBudgetTab> createState() => _PlanBudgetTabState();
@@ -228,8 +229,8 @@ class _HeadingRow extends StatelessWidget {
   final bool perPerson;
   final VoidCallback onTogglePerPerson;
   final VoidCallback onShare;
-  final VoidCallback onEditBudget;
-  final VoidCallback onAddExpense;
+  final VoidCallback? onEditBudget;
+  final VoidCallback? onAddExpense;
 
   @override
   Widget build(BuildContext context) {
@@ -292,20 +293,22 @@ class _HeadingRow extends StatelessWidget {
               icon: Icons.ios_share,
               onTap: onShare,
             ),
-            _BudgetAction(
-              label: 'แก้ไขงบ',
-              icon: Icons.edit_outlined,
-              background: AppColors.brandOrange,
-              foreground: Colors.white,
-              onTap: onEditBudget,
-            ),
-            _BudgetAction(
-              label: 'เพิ่มค่าใช้จ่าย',
-              icon: Icons.add,
-              background: AppColors.brandPurple,
-              foreground: Colors.white,
-              onTap: onAddExpense,
-            ),
+            if (onEditBudget case final onEdit?)
+              _BudgetAction(
+                label: 'แก้ไขงบ',
+                icon: Icons.edit_outlined,
+                background: AppColors.brandOrange,
+                foreground: Colors.white,
+                onTap: onEdit,
+              ),
+            if (onAddExpense case final onAdd?)
+              _BudgetAction(
+                label: 'เพิ่มค่าใช้จ่าย',
+                icon: Icons.add,
+                background: AppColors.brandPurple,
+                foreground: Colors.white,
+                onTap: onAdd,
+              ),
           ],
         ),
       ],

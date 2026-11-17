@@ -14,7 +14,14 @@ enum AddSpotChoice {
 }
 
 /// The menu behind the composer's "+" button. Returns null when dismissed.
-Future<AddSpotChoice?> showAddSpotMenu(BuildContext context) {
+///
+/// "เพิ่มเนื้อหา" only makes sense once the spot has a heading to group
+/// items under — [hasHeading] hides it otherwise, leaving just the new-spot
+/// choice.
+Future<AddSpotChoice?> showAddSpotMenu(
+  BuildContext context, {
+  required bool hasHeading,
+}) {
   return showModalBottomSheet<AddSpotChoice>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -24,11 +31,12 @@ Future<AddSpotChoice?> showAddSpotMenu(BuildContext context) {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _AddSpotMenuTile(
-            icon: Icons.post_add,
-            label: 'เพิ่มเนื้อหา',
-            onTap: () => Navigator.of(context).pop(AddSpotChoice.content),
-          ),
+          if (hasHeading)
+            _AddSpotMenuTile(
+              icon: Icons.post_add,
+              label: 'เพิ่มเนื้อหา',
+              onTap: () => Navigator.of(context).pop(AddSpotChoice.content),
+            ),
           _AddSpotMenuTile(
             icon: Icons.add_location_alt_outlined,
             label: 'เพิ่มจุดถัดไป',

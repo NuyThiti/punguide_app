@@ -40,6 +40,7 @@ class PostActionBar extends StatelessWidget {
     required this.onAddSpot,
     required this.onSaveDraft,
     required this.onShare,
+    required this.canSaveDraft,
     required this.canShare,
     required this.busy,
   });
@@ -50,6 +51,10 @@ class PostActionBar extends StatelessWidget {
 
   final VoidCallback onSaveDraft;
   final VoidCallback onShare;
+
+  /// Nothing worth keeping yet — same condition as [canShare], so an empty
+  /// composer can't save a blank draft either.
+  final bool canSaveDraft;
 
   /// Nothing worth sharing yet — the action greys out rather than
   /// disappearing, so its place on the bar stays predictable.
@@ -81,10 +86,12 @@ class PostActionBar extends StatelessWidget {
             child: SizedBox(
               height: 52,
               child: FilledButton(
-                onPressed: busy ? null : onSaveDraft,
+                onPressed: busy || !canSaveDraft ? null : onSaveDraft,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.postDraftBg,
                   foregroundColor: AppColors.foreground,
+                  disabledBackgroundColor: AppColors.postDraftBg,
+                  disabledForegroundColor: AppColors.muted,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(26)),

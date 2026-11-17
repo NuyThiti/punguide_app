@@ -350,6 +350,16 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           _blocks.add(block);
         }
       }
+      // A cover picked from the header sits in no section, so the loop above
+      // never matched it. Left unset, the next save would read "no cover"
+      // and clear the one the post has.
+      final cover = trip.coverImage;
+      if (cover != null && _coverPath == null) {
+        final path = cover.urls.full;
+        _uploaded[path] = cover;
+        _coverPath = path;
+        _coverOffPage = true;
+      }
       _savedCoverId = trip.coverImage?.mediaId;
       if (_savedCoverId != null) _savedMediaIds.add(_savedCoverId!);
       if (_blocks.isEmpty) _blocks.add(_BlockFields());
@@ -533,7 +543,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// the spot on screen, or a whole new spot of its own, then does exactly
   /// what the equivalent dedicated button always did.
   Future<void> _openAddSpotMenu() async {
-    final choice = await showAddSpotMenu(context);
+    final choice = await showAddSpotMenu(
+      context,
+      hasHeading: _blocks[_currentBlockIndex].title.text.trim().isNotEmpty,
+    );
     if (!mounted || choice == null) return;
     switch (choice) {
       case AddSpotChoice.content:
@@ -2295,6 +2308,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                     : _openAddSpotMenu,
                 onSaveDraft: _saveDraftAndClose,
                 onShare: _next,
+                canSaveDraft: !_publishing && !_arranging && _draft.isPublishable,
                 canShare: !_publishing && !_arranging && _draft.isPublishable,
                 busy: _publishing || _arranging,
               ),

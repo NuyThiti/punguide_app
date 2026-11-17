@@ -232,6 +232,7 @@ class _PostBlockState extends State<PostBlock> {
                 blockIndex: widget.blockIndex,
                 itemIndex: item,
                 item: blockItems[item],
+                multipleItems: blockItems.length > 1,
                 locationFieldKey: blockItems[item].locationFieldKey,
                 locationHasError: blockItems[item].locationHasError,
                 locationErrorText: widget.locationErrorText,
@@ -265,18 +266,11 @@ class _PostBlockState extends State<PostBlock> {
                 onConfirmLocation: widget.onConfirmLocationInItem == null
                     ? null
                     : () => widget.onConfirmLocationInItem!(item),
+                onRemoveItem: blockItems.length > 1 &&
+                        widget.onRemoveItem != null
+                    ? () => widget.onRemoveItem!(item)
+                    : null,
               ),
-              if (blockItems.length > 1 && widget.onRemoveItem != null)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => widget.onRemoveItem!(item),
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('ลบชุดข้อมูลนี้'),
-                    style:
-                        TextButton.styleFrom(foregroundColor: AppColors.muted),
-                  ),
-                ),
             ],
             const SizedBox(height: 16),
             const _Hairline(),
@@ -419,6 +413,7 @@ class _PostBlockContentItem extends StatelessWidget {
     required this.blockIndex,
     required this.itemIndex,
     required this.item,
+    this.multipleItems = false,
     required this.unavailableImages,
     required this.coverPath,
     required this.onSelectCover,
@@ -431,6 +426,7 @@ class _PostBlockContentItem extends StatelessWidget {
     required this.onClearPlace,
     required this.onConfirmLocation,
     required this.onExtra,
+    this.onRemoveItem,
     this.locationFieldKey,
     this.locationHasError = false,
     this.locationErrorText,
@@ -440,6 +436,11 @@ class _PostBlockContentItem extends StatelessWidget {
 
   final int blockIndex, itemIndex;
   final PostBlockItem item;
+
+  /// A second (or third…) item under the same heading — the extras row
+  /// switches to the compact horizontal strip so several stacked items don't
+  /// each spend a whole screen's height on "add something" rows.
+  final bool multipleItems;
   final Set<String> unavailableImages;
   final String? coverPath;
   final ValueChanged<String>? onSelectCover;
@@ -449,6 +450,9 @@ class _PostBlockContentItem extends StatelessWidget {
   final void Function(PostPhotoMove, int) onDropBeforeImage;
   final VoidCallback onPickPlace, onClearPlace;
   final VoidCallback? onConfirmLocation;
+
+  /// Null on the only item under a heading — a section always keeps one.
+  final VoidCallback? onRemoveItem;
 
   /// Answers for this item's own rows the API cannot store yet.
   final ValueChanged<PostSpotExtra> onExtra;
@@ -495,6 +499,17 @@ class _PostBlockContentItem extends StatelessWidget {
     final suggested =
         item.location?.status == ContentLocationStatus.suggested ||
             (item.legacyMapId != null && item.location == null);
+    final hasLocationRow = pinned || locationHasError;
+    final menuButton = item.imagePaths.length == 1 || onRemoveItem != null
+        ? IconButton(
+            onPressed: () => _showItemMenu(context),
+            icon: const Icon(Icons.more_vert, size: 20),
+            color: AppColors.muted,
+            tooltip: 'ตัวเลือก',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+          )
+        : null;
 
     return DragTarget<PostPhotoMove>(
       onAcceptWithDetails: (details) => onDropImage(details.data),
@@ -506,10 +521,14 @@ class _PostBlockContentItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // No location row to share it with — the ⋮ gets a row of its
+            // own instead of going missing.
+            if (menuButton != null && !hasLocationRow)
+              Align(alignment: Alignment.centerRight, child: menuButton),
             // The row itself is only worth showing once there's something to
             // show — a pinned place, or a validation error to explain. The
             // empty, nothing-picked-yet state is the chip's job now.
-            if (pinned || locationHasError)
+            if (hasLocationRow)
               _LocationRow(
                 key: locationFieldKey,
                 label: label,
@@ -518,6 +537,7 @@ class _PostBlockContentItem extends StatelessWidget {
                 onTap: onPickPlace,
                 hasError: locationHasError,
                 errorText: locationErrorText,
+                trailing: menuButton,
               ),
             if (suggested && onConfirmLocation != null)
               Align(
@@ -592,15 +612,6 @@ class _PostBlockContentItem extends StatelessWidget {
                   ),
                 ),
               ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => onMoveImage(0),
-                  icon: const Icon(Icons.drive_file_move_outline, size: 18),
-                  label: const Text('ย้ายรูป'),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.muted),
-                ),
-              ),
             ] else if (item.imagePaths.length > 1) ...[
               const SizedBox(height: 14),
               _PhotoCluster(
@@ -637,11 +648,37 @@ class _PostBlockContentItem extends StatelessWidget {
               details: item.details,
               onImportPhotos: onImportPhotos,
               importing: importing,
+              compact: multipleItems,
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// The ⋮ beside the item itself — ย้ายรูป (only when it carries exactly
+  /// one photo; several have their own grid-based reordering) and ลบชุด
+  /// ข้อมูลนี้ (only when a sibling item exists to leave behind).
+  Future<void> _showItemMenu(BuildContext context) async {
+    final canMoveImage = item.imagePaths.length == 1;
+    final action = await showModalBottomSheet<_ItemAction>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ItemActionsSheet(
+        canMoveImage: canMoveImage,
+        canRemove: onRemoveItem != null,
+      ),
+    );
+    switch (action) {
+      case _ItemAction.moveImage:
+        onMoveImage(0);
+      case _ItemAction.remove:
+        onRemoveItem?.call();
+      case null:
+        break;
+    }
   }
 
   /// The pencil on a grid tile — ลบ / ตั้งเป็นปก / ย้ายรูป, the same three
@@ -707,6 +744,7 @@ class _LocationRow extends StatelessWidget {
     required this.onTap,
     this.hasError = false,
     this.errorText,
+    this.trailing,
   });
 
   final String label;
@@ -723,6 +761,10 @@ class _LocationRow extends StatelessWidget {
   final bool hasError;
   final String? errorText;
 
+  /// The item's own ⋮, sharing this row instead of one of its own — outside
+  /// the tappable area below so it keeps answering to its own menu.
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
     final tint = hasError ? AppColors.brandOrangeDeep : AppColors.postPurple;
@@ -730,7 +772,30 @@ class _LocationRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DecoratedBox(
+        Row(
+          children: [
+            Expanded(child: _buildRow(tint)),
+            if (trailing != null) trailing!,
+          ],
+        ),
+        if (hasError && errorText != null && errorText!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 46, bottom: 4),
+            child: Text(
+              errorText!,
+              style: const TextStyle(
+                color: AppColors.brandOrangeDeep,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRow(Color tint) {
+    return DecoratedBox(
           decoration: hasError
               ? const BoxDecoration(
                   border: Border(
@@ -831,21 +896,7 @@ class _LocationRow extends StatelessWidget {
               ),
             ),
           ),
-        ),
-        if (hasError && errorText != null && errorText!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 46, bottom: 4),
-            child: Text(
-              errorText!,
-              style: const TextStyle(
-                color: AppColors.brandOrangeDeep,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-      ],
-    );
+        );
   }
 }
 
@@ -1077,6 +1128,48 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 
+enum _ItemAction { moveImage, remove }
+
+/// What the item's own ⋮ opens: ย้ายรูป, ลบชุดข้อมูลนี้ — never both missing,
+/// or the ⋮ itself would not have shown.
+class _ItemActionsSheet extends StatelessWidget {
+  const _ItemActionsSheet(
+      {required this.canMoveImage, required this.canRemove});
+
+  final bool canMoveImage;
+  final bool canRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 10, bottom: 4),
+            child: _SheetGrabber(),
+          ),
+          if (canMoveImage)
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline,
+                  color: AppColors.postPurple),
+              title: const Text('ย้ายรูป'),
+              onTap: () => Navigator.of(context).pop(_ItemAction.moveImage),
+            ),
+          if (canRemove)
+            ListTile(
+              leading: const Icon(Icons.delete_outline,
+                  color: AppColors.brandOrangeDeep),
+              title: const Text('ลบชุดข้อมูลนี้'),
+              onTap: () => Navigator.of(context).pop(_ItemAction.remove),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
 enum _PhotoAction { remove, setCover, move }
 
 /// What the pencil opens: ตั้งเป็นปก (when there is a cover to set at all and
@@ -1216,18 +1309,18 @@ class _SheetGrabber extends StatelessWidget {
   }
 }
 
-/// One item's own "+ something" chips — add a photo, ask AI to help write it,
-/// then when to go, how to get there, who to call, the one tip worth passing
-/// on. Independent per item, so the same row appears once under every content
-/// item in a section, not once for the whole heading.
+/// One item's own "+ something" rows — ask AI to help write it first, then
+/// add a photo, then when to go, how to get there, who to call, the one tip
+/// worth passing on. Independent per item, so the same list appears once
+/// under every content item in a section, not once for the whole heading.
 ///
 /// Each of the five (location, time, transport, contact, hack) drops off the
-/// row the moment it has an answer — [PostSpotDetailRows] above already
-/// turned into its own tappable chip, so the add-icon stays only for
-/// whichever extras are still blank. The photo and AI chips are the
-/// exceptions: there is no single "filled" state to replace the photo one
-/// with, since a spot takes more than one picture, and the AI action (once
-/// wired by the screen) is always on offer, not something an item answers.
+/// list the moment it has an answer — [PostSpotDetailRows] above already
+/// turned into its own tappable row, so the entry stays only for whichever
+/// extras are still blank. The photo and AI rows are the exceptions: there
+/// is no single "filled" state to replace the photo one with, since a spot
+/// takes more than one picture, and the AI action (once wired by the screen)
+/// is always on offer, not something an item answers.
 class _ItemExtrasRow extends StatelessWidget {
   const _ItemExtrasRow({
     required this.onPickImage,
@@ -1237,6 +1330,7 @@ class _ItemExtrasRow extends StatelessWidget {
     required this.details,
     this.onImportPhotos,
     this.importing = false,
+    this.compact = false,
   });
 
   final VoidCallback onPickImage;
@@ -1247,76 +1341,111 @@ class _ItemExtrasRow extends StatelessWidget {
   final VoidCallback? onImportPhotos;
   final bool importing;
 
+  /// A second (or later) item under the same heading — rendered as a
+  /// horizontally-scrolling strip of small pills instead of the stacked
+  /// full-width rows the lone item gets.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      clipBehavior: Clip.none,
-      child: Row(children: [
+    final rows = <PostAddChip>[
+      if (onImportPhotos != null)
         PostAddChip(
-          icon: Icons.add_photo_alternate_outlined,
-          tooltip: 'รูปภาพ',
-          onTap: onPickImage,
+          icon: Icons.auto_awesome,
+          label: 'ช่วยเขียน',
+          tooltip: 'ช่วยเขียน',
+          loading: importing,
+          onTap: onImportPhotos!,
+          compact: compact,
         ),
-        if (onImportPhotos != null) ...[
-          const SizedBox(width: 8),
-          PostAddChip(
-            icon: Icons.auto_awesome,
-            label: 'ช่วยเขียน',
-            tooltip: 'ช่วยเขียน',
-            loading: importing,
-            onTap: onImportPhotos!,
-          ),
+      PostAddChip(
+        icon: Icons.add_photo_alternate_outlined,
+        label: 'รูปภาพ',
+        tooltip: 'รูปภาพ',
+        onTap: onPickImage,
+        compact: compact,
+        showLabel: !compact,
+      ),
+      if (!locationPinned)
+        PostAddChip(
+          icon: Icons.location_on_outlined,
+          label: 'เพิ่มตำแหน่ง',
+          tooltip: 'Add Location',
+          onTap: onPickPlace,
+          compact: compact,
+          showLabel: !compact,
+        ),
+      if (!details.hasTime)
+        PostAddChip(
+          icon: Icons.schedule,
+          label: PostSpotExtra.recommendTime.label,
+          tooltip: PostSpotExtra.recommendTime.label,
+          onTap: () => onExtra(PostSpotExtra.recommendTime),
+          compact: compact,
+          showLabel: !compact,
+        ),
+      if (!details.hasTransport)
+        PostAddChip(
+          icon: Icons.directions_car_outlined,
+          label: PostSpotExtra.howToGetHere.label,
+          tooltip: PostSpotExtra.howToGetHere.label,
+          onTap: () => onExtra(PostSpotExtra.howToGetHere),
+          compact: compact,
+          showLabel: !compact,
+        ),
+      if (!details.hasContact)
+        PostAddChip(
+          icon: Icons.call_outlined,
+          label: PostSpotExtra.contact.label,
+          tooltip: PostSpotExtra.contact.label,
+          onTap: () => onExtra(PostSpotExtra.contact),
+          compact: compact,
+          showLabel: !compact,
+        ),
+      if (!details.hasHack)
+        PostAddChip(
+          icon: Icons.info_outline,
+          label: PostSpotExtra.tripHack.label,
+          tooltip: PostSpotExtra.tripHack.label,
+          onTap: () => onExtra(PostSpotExtra.tripHack),
+          compact: compact,
+        ),
+    ];
+
+    if (compact) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        child: Row(
+          children: [
+            for (var i = 0; i < rows.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              rows[i],
+            ],
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const Divider(height: 1, color: AppColors.line),
+          rows[i],
         ],
-        if (!locationPinned) ...[
-          const SizedBox(width: 8),
-          PostAddChip(
-            icon: Icons.location_on_outlined,
-            tooltip: 'Add Location',
-            onTap: onPickPlace,
-          ),
-        ],
-        if (!details.hasTime) ...[
-          const SizedBox(width: 8),
-          PostAddChip(
-            icon: Icons.schedule,
-            tooltip: PostSpotExtra.recommendTime.label,
-            onTap: () => onExtra(PostSpotExtra.recommendTime),
-          ),
-        ],
-        if (!details.hasTransport) ...[
-          const SizedBox(width: 8),
-          PostAddChip(
-            icon: Icons.directions_car_outlined,
-            tooltip: PostSpotExtra.howToGetHere.label,
-            onTap: () => onExtra(PostSpotExtra.howToGetHere),
-          ),
-        ],
-        if (!details.hasContact) ...[
-          const SizedBox(width: 8),
-          PostAddChip(
-            icon: Icons.call_outlined,
-            label: PostSpotExtra.contact.label,
-            tooltip: PostSpotExtra.contact.label,
-            onTap: () => onExtra(PostSpotExtra.contact),
-          ),
-        ],
-        if (!details.hasHack) ...[
-          const SizedBox(width: 8),
-          PostAddChip(
-            icon: Icons.info_outline,
-            label: PostSpotExtra.tripHack.label,
-            tooltip: PostSpotExtra.tripHack.label,
-            onTap: () => onExtra(PostSpotExtra.tripHack),
-          ),
-        ],
-      ]),
+      ],
     );
   }
 }
 
-/// One "add something" pill: a dashed well, and a label only when the glyph
-/// alone would not say what it is.
+/// One "add something" chip.
+///
+/// Full width by default: an icon, its label, then a chevron — the same
+/// shape every other list of optional extras in the app uses. [compact]
+/// shrinks it to a small dashed pill for the horizontally-scrolling strip a
+/// second item gets instead, dropping the label unless [showLabel] says
+/// otherwise (the reference keeps it only on the Trip Hack pill).
 class PostAddChip extends StatelessWidget {
   const PostAddChip({
     super.key,
@@ -1325,6 +1454,8 @@ class PostAddChip extends StatelessWidget {
     required this.tooltip,
     this.label,
     this.loading = false,
+    this.compact = false,
+    this.showLabel = true,
   });
 
   final IconData icon;
@@ -1337,9 +1468,61 @@ class PostAddChip extends StatelessWidget {
   /// second control just for that state.
   final bool loading;
 
+  final bool compact;
+  final bool showLabel;
+
   @override
   Widget build(BuildContext context) {
-    final text = label;
+    if (compact) return _buildCompact(context);
+
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: loading ? null : onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                children: [
+                  if (loading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.postPurple,
+                      ),
+                    )
+                  else
+                    Icon(icon, size: 18, color: AppColors.postPurple),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label ?? tooltip,
+                      style: const TextStyle(
+                        color: AppColors.foreground,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      size: 20, color: AppColors.muted),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompact(BuildContext context) {
+    final text = showLabel ? (label ?? tooltip) : null;
 
     return Tooltip(
       message: tooltip,

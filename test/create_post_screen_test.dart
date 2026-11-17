@@ -321,6 +321,17 @@ Future<void> _tapAddMenu(WidgetTester tester, String option) async {
   await tester.pumpAndSettle();
 }
 
+/// Taps the [index]-th item's own ⋮ and picks one option from its sheet —
+/// 'ย้ายรูป' or 'ลบชุดข้อมูลนี้', the two the menu ever offers.
+Future<void> _tapItemMenu(WidgetTester tester, int index, String option) async {
+  final button = find.byTooltip('ตัวเลือก');
+  await _scrollTo(tester, button.at(index));
+  await tester.tap(button.at(index));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(option));
+  await tester.pumpAndSettle();
+}
+
 /// The story field of a spot. The name field comes first in the tree now, so
 /// "the first TextField in a PostBlock" is no longer the body.
 Finder _bodyField() => find.byWidgetPredicate((widget) =>
@@ -1781,6 +1792,36 @@ void main() {
     expect(firstWrite.data['contents'][0]['mediaIds'], [_b]);
   });
 
+  testWidgets('a header cover survives reopening and saving again',
+      (tester) async {
+    final adapter = FakeAdapter({
+      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
+    });
+    // The cover was picked from the header, so it sits in no section.
+    final trip = ApiTrip.fromJson({
+      ...createdTripJson(),
+      'type': 'content',
+      'coverImage': _image(_b, 'assets/images/puntok_london.jpg'),
+      'contents': [
+        {
+          'content': 'วัดอรุณ',
+          'mediaIds': [_a],
+          'images': [_image(_a, 'assets/images/puntok_osaka.jpg')],
+          'location': {'status': 'confirmed', 'name': 'เชียงใหม่'},
+        },
+      ]
+    });
+    await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
+    await _scrollTo(tester, find.text('Save Draft'));
+    await tester.tap(find.text('Save Draft'));
+    await tester.pumpAndSettle();
+
+    final body = adapter.bodyOf('PUT /trips/posts/trip-new')!;
+    expect(body['coverMediaId'], _b);
+    // Already the post's own picture — nothing to upload again.
+    expect(adapter.paths.where((p) => p == 'POST /media'), isEmpty);
+  });
+
   testWidgets('unavailable reference blocks publish until explicitly removed',
       (tester) async {
     final adapter = FakeAdapter({});
@@ -2430,19 +2471,24 @@ void main() {
     expect(find.text('Location'), findsNothing);
     expect(find.text('Tell us about your trip..'), findsOneWidget);
 
-    // Each item's own extras scroll on one line, rather than wrapping onto a
-    // second row and taking more height than the story itself.
-    final options = find.descendant(
-      of: find.byType(PostBlock),
-      matching: find.byWidgetPredicate((w) =>
-          w is SingleChildScrollView && w.scrollDirection == Axis.horizontal),
-    );
-    expect(options, findsOneWidget);
-    for (final chip in ['Trip Hack']) {
-      expect(find.descendant(of: options, matching: find.text(chip)),
-          findsOneWidget,
-          reason: chip);
-    }
+    // Each item's own extras stack as a vertical list, one row per kind,
+    // "ช่วยเขียน" first.
+    final rows = find.descendant(
+      of: find.byType(PostBlock), matching: find.byType(PostAddChip));
+    expect(
+        tester
+            .widgetList<PostAddChip>(rows)
+            .map((w) => w.label)
+            .whereType<String>(),
+        [
+          'ช่วยเขียน',
+          'รูปภาพ',
+          'เพิ่มตำแหน่ง',
+          PostSpotExtra.recommendTime.label,
+          PostSpotExtra.howToGetHere.label,
+          PostSpotExtra.contact.label,
+          PostSpotExtra.tripHack.label,
+        ]);
 
     // Attachments: a photo, the location, the time, how you got there, and
     // the hack.
@@ -2589,15 +2635,46 @@ void main() {
     expect(adapter.bodyOf('POST /trips/posts')!['destination'], 'Chiang Mai');
   });
 
-  testWidgets('Save Draft never asks for Post Title or Post Location',
+  testWidgets('Save Draft stays disabled until the post has something to keep',
       (tester) async {
-    await _pumpComposer(tester);
+    final adapter = FakeAdapter({
+      'POST /trips/posts': [FakeReply(201, createdTripJson())],
+    });
+    await _pumpComposer(tester, adapter: adapter);
     await _scrollTo(tester, find.text('Save Draft'));
+
+    // Nothing was ever typed anywhere — the button greys out rather than
+    // saving a blank draft.
+    expect(
+      tester
+          .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Save Draft'))
+          .onPressed,
+      isNull,
+    );
+
+    tester
+        .widget<PostBlock>(find.byType(PostBlock))
+        .items!
+        .first
+        .bodyController
+        .text = 'เดินเล่น';
+    await tester.pumpAndSettle();
+    await _scrollTo(tester, find.text('Save Draft'));
+
+    expect(
+      tester
+          .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Save Draft'))
+          .onPressed,
+      isNotNull,
+    );
+
     await tester.tap(find.text('Save Draft'));
     await tester.pumpAndSettle();
 
-    // Both are empty, nothing was ever typed anywhere, and no dialog of any
-    // kind interrupted it.
+    // No dialog interrupted it — Save Draft still never asks for Post Title
+    // or Post Location.
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.text('home'), findsOneWidget);
   });
@@ -2805,8 +2882,8 @@ void main() {
     expect(find.byType(PostBlock), findsOneWidget);
     expect(find.text('ที่พัก'), findsOneWidget);
     expect(find.text('โรงแรมรัตนโกสินทร์'), findsOneWidget);
-    // Both items now offer their own delete — there are two to choose from.
-    expect(find.text('ลบชุดข้อมูลนี้'), findsNWidgets(2));
+    // Both items now offer their own ⋮ — there are two to choose from.
+    expect(find.byTooltip('ตัวเลือก'), findsNWidgets(2));
 
     await tester.enterText(_bodyField().last, 'โรงแรมศาลารัตนโกสินทร์');
     await tester.pumpAndSettle();
@@ -2825,15 +2902,13 @@ void main() {
     await tester.enterText(_bodyField().last, 'โรงแรมศาลารัตนโกสินทร์');
     await tester.pumpAndSettle();
 
-    await _scrollTo(tester, find.text('ลบชุดข้อมูลนี้').first);
-    await tester.tap(find.text('ลบชุดข้อมูลนี้').first);
-    await tester.pumpAndSettle();
+    await _tapItemMenu(tester, 0, 'ลบชุดข้อมูลนี้');
 
     // The heading and the remaining item survive; only the deleted one goes.
     expect(find.text('ที่พัก'), findsOneWidget);
     expect(find.text('โรงแรมรัตนโกสินทร์'), findsNothing);
     expect(find.text('โรงแรมศาลารัตนโกสินทร์'), findsOneWidget);
-    expect(find.text('ลบชุดข้อมูลนี้'), findsNothing);
+    expect(find.byTooltip('ตัวเลือก'), findsNothing);
   });
 
   testWidgets(
@@ -3521,6 +3596,9 @@ void main() {
   testWidgets('each content item keeps its own Trip Hack independently',
       (tester) async {
     await _pumpComposer(tester);
+    await _tapSpotOption(tester, _headingChip);
+    await tester.enterText(find.byType(TextField).first, 'ที่พัก');
+    await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await tester.pumpAndSettle();
     await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
@@ -3554,6 +3632,9 @@ void main() {
   testWidgets('Next blocks on a second item missing its own location',
       (tester) async {
     await _pumpComposer(tester, adapter: _placesAdapter());
+    await _tapSpotOption(tester, _headingChip);
+    await tester.enterText(find.byType(TextField).first, 'ที่พัก');
+    await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'เดินเล่น');
     await _confirmPlace(tester);
 
