@@ -9,6 +9,7 @@ import 'package:pluno/features/auth/domain/auth_session.dart';
 import 'package:pluno/features/auth/presentation/providers/auth_providers.dart';
 import 'package:pluno/features/follow/presentation/user_profile_screen.dart';
 import 'package:pluno/features/home/presentation/providers/home_feed_providers.dart';
+import 'package:pluno/features/home/presentation/widgets/pun_guide_card.dart';
 import 'package:pluno/features/home/presentation/widgets/pun_guide_grid.dart';
 import 'package:pluno/features/safety/data/reported_content_store.dart';
 import 'package:pluno/features/safety/presentation/blocked_users_screen.dart';
@@ -122,9 +123,15 @@ final _two = [
   feedTrip(id: 'trip-2', title: 'ทริปของคนอื่น', creatorName: 'other'),
 ];
 
-Future<void> _reportFirstCard(WidgetTester tester) async {
-  await tester.tap(find.byTooltip('ตัวเลือกเพิ่มเติม').first);
+/// Opens a feed card's safety menu the only way there is: a long press.
+/// The cover wore a ⋯ until the card was given back its photo.
+Future<void> _openFirstCardMenu(WidgetTester tester) async {
+  await tester.longPress(find.byType(PunGuideCard).first);
   await tester.pumpAndSettle();
+}
+
+Future<void> _reportFirstCard(WidgetTester tester) async {
+  await _openFirstCardMenu(tester);
   await tester.tap(find.text('รายงานโพสต์'));
   await tester.pumpAndSettle();
 }
@@ -377,7 +384,7 @@ void main() {
       expect(adapter.paths, isNot(contains('POST /reports')));
     });
 
-    testWidgets('the viewer\'s own card has no ⋯', (tester) async {
+    testWidgets('the viewer\'s own card has no safety menu', (tester) async {
       _phone(tester);
       await tester.pumpWidget(_harness(
         home: const _Wall(),
@@ -392,7 +399,11 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('ตัวเลือกเพิ่มเติม'), findsNothing);
+      // Nothing on the cover said so even before; now the long press is the
+      // whole menu, so pressing is what has to come up empty.
+      await _openFirstCardMenu(tester);
+      expect(find.text('รายงานโพสต์'), findsNothing);
+      expect(find.textContaining('บล็อก'), findsNothing);
     });
   });
 
@@ -414,8 +425,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('ตัวเลือกเพิ่มเติม').first);
-      await tester.pumpAndSettle();
+      await _openFirstCardMenu(tester);
       await tester.tap(find.text('บล็อก makitravels'));
       await tester.pumpAndSettle();
 
@@ -440,8 +450,7 @@ void main() {
       await tester.pumpWidget(_harness(home: const _Wall(), feed: _two));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('ตัวเลือกเพิ่มเติม').first);
-      await tester.pumpAndSettle();
+      await _openFirstCardMenu(tester);
       await tester.tap(find.text('บล็อก makitravels'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('ยกเลิก'));

@@ -69,9 +69,15 @@ class PunGuideCard extends StatelessWidget {
   /// slot is better spent on the one action that belongs there.
   final VoidCallback? onDelete;
 
-  /// ⋯ in the corner (and a long press anywhere on the card): report the
-  /// post or block its creator. Walls of other people's trips pass it; it
-  /// gives way to [onDelete] on a wall of the traveller's own.
+  /// Report the post or block its creator, on a long press anywhere on the
+  /// card. Walls of other people's trips pass it; it gives way to [onDelete]
+  /// on a wall of the traveller's own.
+  ///
+  /// Deliberately no ⋯ on the cover any more: two cards per row leaves the
+  /// photo little enough room without a disc sitting on it, and the menu is
+  /// something a traveller reaches for rarely and on purpose. Long press is
+  /// the whole affordance now — [onDelete] still gets its own button, because
+  /// that one is reached often and there is no undo behind it.
   final VoidCallback? onMore;
 
   /// Whether this row belongs to the traveller looking at it.
@@ -89,7 +95,8 @@ class PunGuideCard extends StatelessWidget {
   ///
   /// Bookmarking moved down to the counts row, where the save tally already
   /// sits — one place to read the number and one place to change it, instead
-  /// of a button up here that said the same thing twice.
+  /// of a button up here that said the same thing twice. ⋯ left the corner
+  /// too; see [onMore].
   Widget? _corner(BuildContext context) {
     if (onDelete case final onDelete?) {
       return _CornerButton(
@@ -97,14 +104,6 @@ class PunGuideCard extends StatelessWidget {
         tooltip: 'ลบทริป',
         color: AppColors.brandOrangeDeep,
         onTap: onDelete,
-      );
-    }
-    if (onMore case final onMore?) {
-      return _CornerButton(
-        icon: Icons.more_horiz,
-        tooltip: 'ตัวเลือกเพิ่มเติม',
-        color: AppColors.foreground,
-        onTap: onMore,
       );
     }
     return null;
@@ -155,7 +154,8 @@ class PunGuideCard extends StatelessWidget {
                       left: 10,
                       child: _FeaturedBadge(),
                     ),
-                  // Delete on the traveller's own wall, ⋯ on anyone else's.
+                  // Delete on the traveller's own wall, nothing on anyone
+                  // else's — report and block are on the long press.
                   if (_corner(context) case final corner?)
                     Positioned(top: 10, right: 10, child: corner),
                   Positioned(

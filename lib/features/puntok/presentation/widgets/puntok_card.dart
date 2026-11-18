@@ -26,7 +26,8 @@ class PuntokCard extends StatelessWidget {
   /// passes this — see [PunGuideCard.onDelete].
   final VoidCallback? onDelete;
 
-  /// ⋯ on the cover and a long press — see [PunGuideCard.onMore].
+  /// Report or block, on a long press — see [PunGuideCard.onMore], which
+  /// explains why neither card wears a ⋯ on its cover any more.
   final VoidCallback? onMore;
 
   /// Matches [PunGuideCard.coverAspectRatio] so clips and plans line up when
@@ -81,17 +82,6 @@ class PuntokCard extends StatelessWidget {
                       top: 10,
                       right: 10,
                       child: _DeleteButton(onTap: onDelete),
-                    )
-                  else if (onMore case final onMore?)
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: _CornerDisc(
-                        icon: Icons.more_horiz,
-                        tooltip: 'ตัวเลือกเพิ่มเติม',
-                        color: AppColors.foreground,
-                        onTap: onMore,
-                      ),
                     ),
                 ],
               ),
@@ -177,38 +167,3 @@ class _DeleteButton extends StatelessWidget {
   }
 }
 
-/// A white disc on the cover — the ⋯ twin of [_DeleteButton].
-class _CornerDisc extends StatelessWidget {
-  const _CornerDisc({
-    required this.icon,
-    required this.tooltip,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: 30,
-          height: 30,
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, size: 16, color: color),
-        ),
-      ),
-    );
-  }
-}
