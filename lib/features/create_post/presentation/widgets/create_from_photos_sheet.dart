@@ -211,13 +211,13 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
                       ),
                       // Figma 2480-80792 has no location prompt before a
                       // photo is even picked — the place only ever shows up
-                      // afterward, in `_ResolvedPlaceRow`, auto-suggested or
+                      // afterward, in `ResolvedPlaceRow`, auto-suggested or
                       // picked by hand. The one "add a photo" action lives in
                       // the pinned bar now, so it is not repeated here too.
                     ] else ...[
-                      _ResolvedPlaceRow(place: _place, onTap: _pickLocation),
+                      ResolvedPlaceRow(place: _place, onTap: _pickLocation),
                       const SizedBox(height: 12),
-                      _MainPhotoPreview(
+                      MainPhotoPreview(
                         path: _photos[_mainIndex].file.path,
                         allPaths: _photos.map((p) => p.file.path).toList(),
                         index: _mainIndex,
@@ -227,14 +227,14 @@ class _PhotoImportPageState extends ConsumerState<_PhotoImportPage> {
                         onReset: () => setState(() => _zoom = 1),
                       ),
                       const SizedBox(height: 12),
-                      _ThumbnailStrip(
+                      ThumbnailStrip(
                         paths: _photos.map((p) => p.file.path).toList(),
                         selected: _mainIndex,
                         onSelect: _selectMain,
                         onDelete: _removePhoto,
                       ),
                       const SizedBox(height: 12),
-                      _DashedAddPhotosButton(
+                      DashedAddPhotosButton(
                           busy: _picking, onTap: _picking ? null : _addPhotos),
                     ],
                     if (_error != null)
@@ -422,8 +422,8 @@ class _TitleField extends StatelessWidget {
 /// The place row once photos exist — a plain row over a divider, reading
 /// whatever `_place` currently holds (auto-suggested from a photo's GPS, or
 /// picked by hand) rather than the bordered "Add Location" prompt above.
-class _ResolvedPlaceRow extends StatelessWidget {
-  const _ResolvedPlaceRow({required this.place, required this.onTap});
+class ResolvedPlaceRow extends StatelessWidget {
+  const ResolvedPlaceRow({required this.place, required this.onTap});
 
   final PostPlace? place;
   final VoidCallback onTap;
@@ -482,8 +482,8 @@ class _ResolvedPlaceRow extends StatelessWidget {
 /// tap the corner icon for a real full-screen look, or the reset icon to
 /// undo the pinch. The zoom itself is a plain scale, not a saved crop: there
 /// is nowhere in the post's own data for a crop to live yet.
-class _MainPhotoPreview extends StatelessWidget {
-  const _MainPhotoPreview({
+class MainPhotoPreview extends StatelessWidget {
+  const MainPhotoPreview({
     required this.path,
     required this.allPaths,
     required this.index,
@@ -523,7 +523,7 @@ class _MainPhotoPreview extends StatelessWidget {
                 Positioned(
                   top: 8,
                   right: 8,
-                  child: _RoundIconButton(
+                  child: RoundIconButton(
                     icon: Icons.delete_outline,
                     tooltip: 'ลบรูปนี้',
                     onTap: onDelete,
@@ -538,7 +538,7 @@ class _MainPhotoPreview extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           children: [
-            _RoundIconButton(
+            RoundIconButton(
               icon: Icons.center_focus_strong_outlined,
               tooltip: 'จัดกึ่งกลาง',
               onTap: onReset,
@@ -555,7 +555,7 @@ class _MainPhotoPreview extends StatelessWidget {
                 onChanged: onZoomChanged,
               ),
             ),
-            _RoundIconButton(
+            RoundIconButton(
               icon: Icons.fullscreen,
               tooltip: 'ดูเต็มจอ',
               onTap: () =>
@@ -565,7 +565,7 @@ class _MainPhotoPreview extends StatelessWidget {
               size: 32,
             ),
             const SizedBox(width: 8),
-            _RoundIconButton(
+            RoundIconButton(
               icon: Icons.refresh,
               tooltip: 'รีเซ็ตขนาด',
               onTap: onReset,
@@ -580,8 +580,8 @@ class _MainPhotoPreview extends StatelessWidget {
   }
 }
 
-class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({
+class RoundIconButton extends StatelessWidget {
+  const RoundIconButton({
     required this.icon,
     required this.tooltip,
     required this.onTap,
@@ -619,8 +619,8 @@ class _RoundIconButton extends StatelessWidget {
 
 /// Every photo in the post so far — tap one to bring it up front, or its own
 /// badge to drop it.
-class _ThumbnailStrip extends StatelessWidget {
-  const _ThumbnailStrip({
+class ThumbnailStrip extends StatelessWidget {
+  const ThumbnailStrip({
     required this.paths,
     required this.selected,
     required this.onSelect,
@@ -661,7 +661,7 @@ class _ThumbnailStrip extends StatelessWidget {
                 Positioned(
                   top: 4,
                   right: 4,
-                  child: _RoundIconButton(
+                  child: RoundIconButton(
                     icon: Icons.delete_outline,
                     tooltip: 'ลบรูปที่ ${index + 1}',
                     onTap: () => onDelete(index),
@@ -679,8 +679,8 @@ class _ThumbnailStrip extends StatelessWidget {
   }
 }
 
-class _DashedAddPhotosButton extends StatelessWidget {
-  const _DashedAddPhotosButton({required this.busy, required this.onTap});
+class DashedAddPhotosButton extends StatelessWidget {
+  const DashedAddPhotosButton({required this.busy, required this.onTap});
 
   final bool busy;
   final VoidCallback? onTap;

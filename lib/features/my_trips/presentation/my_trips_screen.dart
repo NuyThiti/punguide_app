@@ -9,6 +9,7 @@ import '../../../shared/models/feed_rows.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../create_post/presentation/start_punguide_post.dart';
 import '../../../shared/widgets/dark_sheet_header.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../home/presentation/widgets/pun_guide_grid.dart';
@@ -90,7 +91,7 @@ class MyTripsScreen extends ConsumerWidget {
               onCreate: () => openCreateSheet(
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
-                onPost: () => context.goNamed(AppRoute.createPost.name),
+                onPost: () => startPunGuidePost(context, ref),
                 onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
                 onUnavailable: unavailable,
               ),

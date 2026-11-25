@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../create_post/presentation/start_punguide_post.dart';
 import '../../home/presentation/widgets/home_assistant_fab.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../safety/presentation/safety_actions.dart';
@@ -123,7 +124,7 @@ class PaigunScreen extends ConsumerWidget {
               onCreate: () => openCreateSheet(
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
-                onPost: () => context.goNamed(AppRoute.createPost.name),
+                onPost: () => startPunGuidePost(context, ref),
                 onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
                 onUnavailable: (message) => _showMessage(context, message),
               ),

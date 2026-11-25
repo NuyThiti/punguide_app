@@ -227,8 +227,18 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/posts/create',
       name: AppRoute.createPost.name,
-      pageBuilder: (context, state) =>
-          _instantPage(state, const CreatePostScreen()),
+      pageBuilder: (context, state) {
+        final args = state.extra;
+        return _instantPage(
+          state,
+          CreatePostScreen(
+            initialAiImport:
+                args is CreatePostRouteArgs ? args.aiImport : null,
+            initialManualImport:
+                args is CreatePostRouteArgs ? args.manualImport : null,
+          ),
+        );
+      },
     ),
     GoRoute(
       path: '/saved',

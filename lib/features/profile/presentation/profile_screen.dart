@@ -9,6 +9,7 @@ import '../../../shared/formatting/compact_count.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../create_post/presentation/start_punguide_post.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
 import '../../../shared/models/feed_rows.dart';
@@ -175,7 +176,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               onCreate: () => openCreateSheet(
                 context,
                 onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
-                onPost: () => context.goNamed(AppRoute.createPost.name),
+                onPost: () => startPunGuidePost(context, ref),
                 onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
                 onUnavailable: unavailable,
               ),

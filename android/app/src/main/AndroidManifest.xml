@@ -7,6 +7,12 @@
          background, so ACCESS_BACKGROUND_LOCATION is deliberately absent. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- The photo-first PunGuide picker reads the library itself (photo_manager)
+         rather than handing off to the OS picker, so it needs read access
+         directly: READ_MEDIA_IMAGES on API 33+, READ_EXTERNAL_STORAGE below it. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
    <application
         android:label="PunGuide"
         android:icon="@mipmap/ic_launcher">

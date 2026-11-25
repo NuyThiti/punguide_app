@@ -5,6 +5,10 @@ import 'composer_sheet.dart';
 
 /// What the "+" button's menu was asked for.
 enum AddSpotChoice {
+  /// "เพิ่มหัวข้อ" — reveals the spot's own heading row, hidden until asked
+  /// for since a title is ไม่บังคับ.
+  heading,
+
   /// "เพิ่มเนื้อหา" — another content item under the current spot's own
   /// heading.
   content,
@@ -15,11 +19,14 @@ enum AddSpotChoice {
 
 /// The menu behind the composer's "+" button. Returns null when dismissed.
 ///
-/// "เพิ่มเนื้อหา" only makes sense once the spot has a heading to group
-/// items under — [hasHeading] hides it otherwise, leaving just the new-spot
-/// choice.
+/// "เพิ่มหัวข้อ" only shows while the heading row is still hidden
+/// ([headingShown] false) — once it's on screen, asking for it again would
+/// do nothing. "เพิ่มเนื้อหา" only makes sense once the spot actually has a
+/// heading to group items under — [hasHeading] hides it otherwise, leaving
+/// just the other two choices.
 Future<AddSpotChoice?> showAddSpotMenu(
   BuildContext context, {
+  required bool headingShown,
   required bool hasHeading,
 }) {
   return showModalBottomSheet<AddSpotChoice>(
@@ -31,6 +38,12 @@ Future<AddSpotChoice?> showAddSpotMenu(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (!headingShown)
+            _AddSpotMenuTile(
+              icon: Icons.title,
+              label: 'เพิ่มหัวข้อ',
+              onTap: () => Navigator.of(context).pop(AddSpotChoice.heading),
+            ),
           if (hasHeading)
             _AddSpotMenuTile(
               icon: Icons.post_add,

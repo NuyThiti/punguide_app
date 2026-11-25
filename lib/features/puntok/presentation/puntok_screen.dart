@@ -7,6 +7,7 @@ import '../../../core/router/app_router.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../../shared/widgets/app_frame.dart';
 import '../../../shared/widgets/create_sheet.dart';
+import '../../create_post/presentation/start_punguide_post.dart';
 import '../../auth/presentation/providers/auth_providers.dart';
 import '../../follow/presentation/follow_actions.dart';
 import '../../follow/presentation/providers/follow_providers.dart';
@@ -179,7 +180,7 @@ class _PuntokScreenState extends ConsumerState<PuntokScreen> {
     openCreateSheet(
       context,
       onOwnPlan: () => context.goNamed(AppRoute.createTrip.name),
-      onPost: () => context.goNamed(AppRoute.createPost.name),
+      onPost: () => startPunGuidePost(context, ref),
       onPuntok: () => context.goNamed(AppRoute.createPuntok.name),
       onUnavailable: _showMessage,
     );

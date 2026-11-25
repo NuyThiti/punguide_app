@@ -53,7 +53,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>PaiGun PunGuide's camera may request microphone access from iOS even though the app only takes photos, never video.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose a photo for your trip cover.</string>
+	<string>PaiGun PunGuide only process the files you choose to manage your account.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -1704,11 +1704,10 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter, initialTrip: trip);
 
-    expect(find.text('Public'), findsOneWidget);
-    expect(find.text('Only me'), findsNothing);
-
     await _tapNext(tester);
-    // The draft save at Next carries the pick, not the forced private.
+    // The draft save at Next carries the pick, not the forced private — the
+    // composer no longer shows the audience itself, so this is read back off
+    // the request rather than off a "Public" chip.
     expect(adapter.bodyOf('PUT /trips/posts/trip-new')!['visibility'],
         'public');
   });
@@ -2068,39 +2067,6 @@ void main() {
     expect(find.text('home'), findsOneWidget);
   });
 
-  testWidgets('Followers goes up as visibility followers instead of refusing',
-      (tester) async {
-    final adapter = FakeAdapter({
-      'POST /trips/posts': [FakeReply(201, createdTripJson())],
-      'PUT /trips/posts/trip-new': [FakeReply(200, createdTripJson())],
-    });
-    await _pumpComposer(tester, adapter: adapter);
-    tester
-        .widget<PostBlock>(find.byType(PostBlock))
-        .items!
-        .first
-        .bodyController
-        .text = 'เล่าเฉย ๆ';
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Public'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(PostAudience.followers.label));
-    await tester.pumpAndSettle();
-    await _confirmPlace(tester);
-
-    await _scrollTo(tester, find.text('Save Draft'));
-    await tester.tap(find.text('Save Draft'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
-    await tester.pumpAndSettle();
-
-    expect(adapter.bodyOf('POST /trips/posts')!['visibility'], 'followers');
-  });
-
   for (final denied in [false, true]) {
     testWidgets(
         denied
@@ -2437,32 +2403,28 @@ void main() {
     expect(find.text('ช่วยเขียน'), findsOneWidget);
     expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
 
-    // One card says what the post is and who it is by. The plan link is not
-    // on the page any more — it is the Next step's own screen.
+    // One card says what the post is called. Who is posting and the
+    // audience pill are not on this page any more — the author is always
+    // the signed-in traveller, and the Next step's own screen sets the
+    // audience. The plan link is not on the page either — same Next step.
     expect(find.text('Title..'), findsOneWidget);
-    expect(find.text('Public'), findsOneWidget);
+    expect(find.text('Public'), findsNothing);
     expect(find.text('เชื่อมแผนของฉัน'), findsNothing);
     expect(find.byType(PostIdentityCard), findsOneWidget);
     // The title row is the only way into the Title sheet; an add chip beside
     // it would be a second door onto the same thing.
     expect(find.text('Trip activity'), findsNothing);
-
-    // Author then title, top to bottom inside that one card.
-    final card = find.byType(PostIdentityCard);
-    for (final part in ['Public', 'Title..']) {
-      expect(
-          find.descendant(of: card, matching: find.text(part)), findsOneWidget,
-          reason: part);
-    }
-    expect(tester.getTopLeft(find.text('Public')).dy,
-        lessThan(tester.getTopLeft(find.text('Title..')).dy));
-
-    // The spot: a heading, where it is, then the story. The heading row is
-    // always on screen now, same as location — required-looking, not a
-    // chip that only appears once asked for.
-    expect(_headingChip, findsOneWidget);
-    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+    expect(
+        find.descendant(
+            of: find.byType(PostIdentityCard), matching: find.text('Title..')),
         findsOneWidget);
+
+    // The spot: where it is, then the story. The heading row itself is
+    // hidden until "เพิ่มหัวข้อ" asks for it — a title is ไม่บังคับ, not
+    // something every spot starts with.
+    expect(_headingChip, findsNothing);
+    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+        findsNothing);
     // About trip is written in the Title sheet, so it is not on the page.
     expect(find.text('About trip'), findsNothing);
     // The full "Add Location" row only shows once there's a place (or an
@@ -2513,11 +2475,11 @@ void main() {
     expect(find.text('Save Draft'), findsOneWidget);
     expect(find.text('Next'), findsOneWidget);
 
-    // The "+" stays off until this first spot has something in it — an
-    // empty composer has nothing to add a second spot's worth of content to.
+    // The "+" is there even on a blank composer now — "เพิ่มหัวข้อ" is a
+    // reason to show it the spot did not have before.
     await tester.drag(find.byType(ListView), const Offset(0, -700));
     await tester.pumpAndSettle();
-    expect(find.byType(AddMenuButton), findsNothing);
+    expect(find.byType(AddMenuButton), findsOneWidget);
   });
 
   testWidgets('the Title sheet names the post and picks its activities',
@@ -2824,19 +2786,22 @@ void main() {
     expect(find.text('ส่วนที่สอง'), findsOneWidget);
   });
 
-  testWidgets('the spot heading is always on screen, ready to type into',
+  testWidgets('"เพิ่มหัวข้อ" reveals the heading row, focused and ready to type',
       (tester) async {
     await _pumpComposer(tester);
 
-    // The offer — hint text and the "+" — is there from the start now, the
-    // same way the location row already is.
+    // Hidden until asked for — a title is ไม่บังคับ, not something every
+    // spot starts with.
+    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+        findsNothing);
+    expect(_headingChip, findsNothing);
+
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
+
+    // The row is up, and already focused — the same door, with the field
+    // waiting behind it rather than a second tap away.
     expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
         findsOneWidget);
-    expect(_headingChip, findsOneWidget);
-
-    await _tapSpotOption(tester, _headingChip);
-
-    // Tapping its own "+" just focuses the field that was already there.
     expect(tester.widget<PostBlock>(find.byType(PostBlock)).titleFocus.hasFocus,
         isTrue);
 
@@ -2850,7 +2815,7 @@ void main() {
   testWidgets('a heading that has text stays put when focus moves on',
       (tester) async {
     await _pumpComposer(tester);
-    await _tapSpotOption(tester, _headingChip);
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
     await tester.enterText(find.byType(TextField).first, 'ร้านอาหารที่ต้องแวะ');
     await tester.pumpAndSettle();
 
@@ -2865,7 +2830,7 @@ void main() {
       'เพิ่มเนื้อหา adds another item under the same heading, not a new spot',
       (tester) async {
     await _pumpComposer(tester);
-    await _tapSpotOption(tester, _headingChip);
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
     await tester.enterText(find.byType(TextField).first, 'ที่พัก');
     await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'โรงแรมรัตนโกสินทร์');
@@ -2894,7 +2859,7 @@ void main() {
   testWidgets('deleting a content item keeps the heading and the other items',
       (tester) async {
     await _pumpComposer(tester);
-    await _tapSpotOption(tester, _headingChip);
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
     await tester.enterText(find.byType(TextField).first, 'ที่พัก');
     await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'โรงแรมรัตนโกสินทร์');
@@ -3079,20 +3044,6 @@ void main() {
       ),
     );
     expect(enabled.onPressed, isNotNull);
-  });
-
-  testWidgets('the audience pill switches who sees the post', (tester) async {
-    await _pumpComposer(tester);
-
-    await tester.tap(find.text('Public'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ใครเห็นโพสต์นี้'), findsOneWidget);
-    await tester.tap(find.text(PostAudience.onlyMe.label));
-    await tester.pumpAndSettle();
-
-    expect(find.text(PostAudience.onlyMe.label), findsOneWidget);
-    expect(find.text(PostAudience.public.label), findsNothing);
   });
 
   testWidgets('the place pin searches /places/search and fills the row',
@@ -3596,7 +3547,7 @@ void main() {
   testWidgets('each content item keeps its own Trip Hack independently',
       (tester) async {
     await _pumpComposer(tester);
-    await _tapSpotOption(tester, _headingChip);
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
     await tester.enterText(find.byType(TextField).first, 'ที่พัก');
     await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'เดินเล่น');
@@ -3632,7 +3583,7 @@ void main() {
   testWidgets('Next blocks on a second item missing its own location',
       (tester) async {
     await _pumpComposer(tester, adapter: _placesAdapter());
-    await _tapSpotOption(tester, _headingChip);
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
     await tester.enterText(find.byType(TextField).first, 'ที่พัก');
     await tester.pumpAndSettle();
     await tester.enterText(_bodyField().first, 'เดินเล่น');

@@ -97,7 +97,7 @@ class PunGuideCard extends StatelessWidget {
 
   /// Breathing room round the title, the place line and the counts. The
   /// cover has none: it runs to the card's own edge.
-  static const double contentPadding = 8;
+  static const double contentPadding = 4;
 
   /// The cover's corner holds delete and nothing else.
   ///

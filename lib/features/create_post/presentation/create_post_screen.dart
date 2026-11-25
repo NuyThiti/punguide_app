@@ -15,16 +15,15 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/formatting/spot_detail_text.dart';
 import '../../../shared/widgets/app_frame.dart';
-import '../../auth/presentation/providers/auth_providers.dart';
 import '../../location_access/data/location_sync.dart';
 import '../domain/models/post_draft.dart';
 import 'providers/place_pin_providers.dart';
 import 'widgets/add_spot_menu.dart';
+import 'widgets/ai_generating_overlay.dart';
 import 'widgets/create_post_header.dart';
 import 'widgets/create_from_photos_sheet.dart';
 import 'widgets/photo_source_sheet.dart';
 import 'widgets/place_pin_picker.dart';
-import 'widgets/post_audience_chip.dart';
 import 'widgets/post_about_trip.dart';
 import 'widgets/post_action_bar.dart';
 import 'widgets/post_spot_details.dart';
@@ -80,6 +79,15 @@ class _PublishResume {
   Map<String, TripPhoto> metadata = {};
 }
 
+/// `state.extra` for the `/posts/create` route — the photo-first PunGuide
+/// entry's own way of handing the composer a running start, as an object
+/// GoRouter can carry that a query string couldn't.
+class CreatePostRouteArgs {
+  const CreatePostRouteArgs({this.aiImport, this.manualImport});
+  final PhotoImportSelection? aiImport;
+  final PhotoImportSelection? manualImport;
+}
+
 /// "สร้างโพสต์" — the community composer, from the create sheet's Post row.
 ///
 /// A post is one or more sections, each led by its story and carrying whatever
@@ -87,8 +95,24 @@ class _PublishResume {
 /// the header's ปันไกด์ action.
 ///
 class CreatePostScreen extends ConsumerStatefulWidget {
-  const CreatePostScreen({super.key, this.initialTrip});
+  const CreatePostScreen({
+    super.key,
+    this.initialTrip,
+    this.initialAiImport,
+    this.initialManualImport,
+  });
   final ApiTrip? initialTrip;
+
+  /// Photos already picked and reviewed before this screen ever opened (the
+  /// create sheet's new photo-first PunGuide entry) — run straight through
+  /// the same assistant pipeline "ช่วยเขียน" uses, skipping its own
+  /// photo-picking step since this already did it.
+  final PhotoImportSelection? initialAiImport;
+
+  /// Same photos, same place, but the traveller chose to write it themselves
+  /// — dropped straight into the first spot's first item, same as adding
+  /// them by hand.
+  final PhotoImportSelection? initialManualImport;
 
   @override
   ConsumerState<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -151,6 +175,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   bool _published = false;
   bool _arranging = false;
   int _arrangement = 0;
+
+  /// True only for the run that `initialAiImport` kicks off straight out of
+  /// `initState` — shows the full-screen "AI กำลังสร้างโพส" step in place of
+  /// the composer until that run finishes, rather than the chip's own small
+  /// spinner a traveller already editing never has their screen taken over
+  /// by.
+  bool _aiOverlayArmed = false;
   final Map<String, Media> _uploaded = {};
 
   /// Media ids the last successful save actually referenced (contents and
@@ -370,6 +401,25 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       block.listen(_refresh);
     }
 
+    // Only for a brand-new post — a resumed draft or a reopened trip already
+    // has its own content and must not have these spliced on top of it.
+    if (saved == null && widget.initialTrip == null) {
+      final aiImport = widget.initialAiImport;
+      final manualImport = widget.initialManualImport;
+      if (aiImport != null) {
+        _aiOverlayArmed = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted) return;
+          await _runPhotoImport(aiImport);
+          if (mounted) setState(() => _aiOverlayArmed = false);
+        });
+      } else if (manualImport != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _applyManualImport(manualImport);
+        });
+      }
+    }
+
     _loadAccountFix();
   }
 
@@ -543,12 +593,20 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   /// the spot on screen, or a whole new spot of its own, then does exactly
   /// what the equivalent dedicated button always did.
   Future<void> _openAddSpotMenu() async {
+    final block = _blocks[_currentBlockIndex];
+    final hasHeading = block.title.text.trim().isNotEmpty;
     final choice = await showAddSpotMenu(
       context,
-      hasHeading: _blocks[_currentBlockIndex].title.text.trim().isNotEmpty,
+      headingShown: block.headingRevealed || hasHeading,
+      hasHeading: hasHeading,
     );
     if (!mounted || choice == null) return;
     switch (choice) {
+      case AddSpotChoice.heading:
+        setState(() => block.headingRevealed = true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) block.titleFocus.requestFocus();
+        });
       case AddSpotChoice.content:
         _addItem(_currentBlockIndex);
       case AddSpotChoice.nextSpot:
@@ -608,12 +666,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       }
     });
     _saveLocal();
-  }
-
-  Future<void> _pickAudience() async {
-    final picked = await showAudiencePicker(context, _audience);
-    if (picked == null || !mounted) return;
-    setState(() => _audience = picked);
   }
 
   /// [forcedSource] is the camera chip, which has already said where the photo
@@ -1307,6 +1359,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       titleController: _postTitle,
     );
     if (selection == null || !mounted) return;
+    await _runPhotoImport(selection);
+  }
+
+  /// The actual work "Create from Photos" does once it has a [selection] —
+  /// split out so the photo-first PunGuide entry can hand one in directly,
+  /// never opening [showCreateFromPhotosSheet] a second time for photos it
+  /// already picked and reviewed on its own screen.
+  Future<void> _runPhotoImport(PhotoImportSelection selection) async {
+    if (_arranging) return;
     final fromCamera = selection.fromCamera;
     final token = ++_arrangement;
     setState(() {
@@ -1375,6 +1436,38 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     } finally {
       if (mounted && token == _arrangement) setState(() => _arranging = false);
     }
+  }
+
+  /// "ฉันสร้างโพสเอง" off the photo-first review screen — the same photos and
+  /// place, just dropped straight into the one spot a brand-new post starts
+  /// with instead of asking the assistant to write anything.
+  Future<void> _applyManualImport(PhotoImportSelection selection) async {
+    final photos = <TripPhoto>[];
+    for (final file in selection.files) {
+      if (!mounted) return;
+      try {
+        final bytes = await file.readAsBytes();
+        photos.add(await compute(_readPhoto, (bytes, file.path)));
+      } catch (_) {
+        photos.add(TripPhoto(file.path));
+      }
+    }
+    if (!mounted) return;
+    if (_photoCount() + photos.length > 200) {
+      _message('รองรับสูงสุด 200 รูปต่อโพสต์ กรุณาเลือกให้น้อยลง');
+      return;
+    }
+    _photoMetadata.addEntries(photos.map((p) => MapEntry(p.path, p)));
+    setState(() {
+      _blocks.first.items.first.imagePaths.addAll(photos.map((p) => p.path));
+      if (selection.place != null) {
+        _blocks.first.items.first.place = selection.place;
+        _fillPlace(selection.place!);
+        _placeSuggestedByDraft = true;
+      }
+      _syncCover();
+    });
+    _saveLocal();
   }
 
   void _transferPhoto(int source, int photo, int target, [int? position]) =>
@@ -2093,9 +2186,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = ref.watch(authSessionProvider);
-
-    return AppFrame(
+    final frame = AppFrame(
       background: AppColors.screen,
       child: PopScope(
         // Back from spot 2+ first goes to spot 1 — leaving the screen itself
@@ -2136,14 +2227,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
                   children: [
-                    // Author, title and activities are one card: they all
-                    // describe the post, while everything under Trip Detail
-                    // describes a spot. The plan link is not here any more —
-                    // it is the Next step's own screen.
+                    // Title and activities are one card: they all describe
+                    // the post, while everything under Trip Detail describes
+                    // a spot. Who is posting and the audience pill are gone
+                    // from here — the author is always the signed-in
+                    // traveller, and the Next step's own screen is where the
+                    // audience is actually set.
                     PostIdentityCard(
-                      session: session,
-                      audience: _audience,
-                      onChangeAudience: _pickAudience,
                       title: _postTitle.text,
                       styles: _styles,
                       customStyles: _customStyles,
@@ -2171,6 +2261,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           key: ValueKey(_blocks[index].id),
                           titleController: _blocks[index].title,
                           titleFocus: _blocks[index].titleFocus,
+                          showHeading: _blocks[index].headingRevealed,
                           bodyController: _blocks[index].body,
                           imagePath: null,
                           onImportPhotos: _createFromPhotos,
@@ -2303,7 +2394,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   ),
                 ),
               PostActionBar(
-                onAddSpot: _blocks[_currentBlockIndex].toTopic().isEmpty
+                // A blank spot still gets the "+" once, for "เพิ่มหัวข้อ" —
+                // hidden again only once that's been asked for and the spot
+                // is still otherwise empty, the same "nothing to add" state
+                // as before.
+                onAddSpot: _blocks[_currentBlockIndex].toTopic().isEmpty &&
+                        _blocks[_currentBlockIndex].headingRevealed
                     ? null
                     : _openAddSpotMenu,
                 onSaveDraft: _saveDraftAndClose,
@@ -2316,6 +2412,19 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ),
         ),
       ),
+    );
+
+    if (!_arranging || !_aiOverlayArmed) return frame;
+    return Stack(
+      children: [
+        frame,
+        AiGeneratingOverlay(
+          onCancel: () {
+            _cancelArrangement();
+            setState(() => _aiOverlayArmed = false);
+          },
+        ),
+      ],
     );
   }
 }
@@ -2332,6 +2441,12 @@ class _BlockFields {
   final TextEditingController title = TextEditingController();
   final FocusNode titleFocus = FocusNode();
   final List<_BlockItemFields> items = [_BlockItemFields()];
+
+  /// "เพิ่มหัวข้อ" from the "+" menu turns this on — the heading row stays
+  /// hidden by default (a title is ไม่บังคับ, not something every spot
+  /// starts with), but the moment there's text of its own that is already
+  /// answer enough to show it even if this is somehow still false.
+  bool headingRevealed = false;
 
   TextEditingController get body => items.first.body;
   List<String> get imagePaths => items.length == 1

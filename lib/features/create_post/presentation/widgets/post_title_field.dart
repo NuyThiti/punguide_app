@@ -11,17 +11,18 @@ import 'place_pin_picker.dart';
 import 'post_about_trip.dart';
 import 'post_audience_chip.dart';
 
-/// The card at the top of the composer: who is posting, what the post is
-/// called, and what kind of trip it was.
+/// The card at the top of the page: what the post is called, what kind of
+/// trip it was, and — only when [audience] is given — who is posting and
+/// who will see it.
 ///
-/// One card rather than three stacked rows — the design groups them because
-/// they all describe the post itself, while everything below describes a spot.
+/// The composer (step 1/2) leaves [audience] null: the author is always the
+/// signed-in traveller and that row would say nothing new there, and the
+/// audience is this card's second user, `PostShareSettingsScreen` (step
+/// 2/2), to set instead. That screen passes [audience] and the rest, so the
+/// row still shows exactly where the pick is actually made.
 class PostIdentityCard extends StatelessWidget {
   const PostIdentityCard({
     super.key,
-    required this.session,
-    required this.audience,
-    required this.onChangeAudience,
     required this.title,
     required this.styles,
     required this.customStyles,
@@ -29,12 +30,11 @@ class PostIdentityCard extends StatelessWidget {
     required this.about,
     required this.onEditAbout,
     this.place,
+    this.session,
+    this.audience,
+    this.onChangeAudience,
   });
 
-  /// Null while signed out — the guest path still reaches the composer.
-  final AuthSession? session;
-  final PostAudience audience;
-  final VoidCallback onChangeAudience;
   final String title;
   final List<TravelStyle> styles;
   final List<String> customStyles;
@@ -47,9 +47,18 @@ class PostIdentityCard extends StatelessWidget {
   /// Where the post is about, when the Title sheet has been given one.
   final PostPlace? place;
 
+  /// Null while signed out, and null on the composer, which does not show
+  /// this row at all.
+  final AuthSession? session;
+
+  /// Null hides the author/audience row entirely — the composer's own case.
+  final PostAudience? audience;
+  final VoidCallback? onChangeAudience;
+
   @override
   Widget build(BuildContext context) {
     final written = title.trim().isNotEmpty;
+    final audience = this.audience;
     final avatar = session?.avatarImage;
     final chosen = [
       for (final style in styles)
@@ -76,40 +85,43 @@ class PostIdentityCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: const BoxDecoration(
-                  color: AppColors.postField,
-                  shape: BoxShape.circle,
+          if (audience != null) ...[
+            Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    color: AppColors.postField,
+                    shape: BoxShape.circle,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: avatar == null || avatar.isEmpty
+                      ? const Icon(Icons.person,
+                          size: 18, color: AppColors.muted)
+                      : CoverImage(source: avatar),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: avatar == null || avatar.isEmpty
-                    ? const Icon(Icons.person, size: 18, color: AppColors.muted)
-                    : CoverImage(source: avatar),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  session?.displayName ?? 'ผู้ใช้ PunGuide',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    session?.displayName ?? 'ผู้ใช้ PunGuide',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.foreground,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              PostAudienceChip(audience: audience, onTap: onChangeAudience),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(height: 1, color: AppColors.chipBorder),
-          const SizedBox(height: 12),
+                const SizedBox(width: 8),
+                PostAudienceChip(audience: audience, onTap: onChangeAudience!),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppColors.chipBorder),
+            const SizedBox(height: 12),
+          ],
           InkWell(
             onTap: onEditTitle,
             child: Row(

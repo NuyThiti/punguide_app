@@ -64,6 +64,7 @@ class PostBlock extends StatefulWidget {
     super.key,
     required this.titleController,
     required this.titleFocus,
+    this.showHeading = false,
     required this.bodyController,
     required this.imagePath,
     required this.imagePaths,
@@ -115,6 +116,11 @@ class PostBlock extends StatefulWidget {
   final int blockIndex;
   final TextEditingController titleController;
   final FocusNode titleFocus;
+
+  /// "เพิ่มหัวข้อ" from the "+" menu turned this on, or the spot already has
+  /// a title of its own (checked again below, so a reopened post with one
+  /// still shows it even if this happens to be false).
+  final bool showHeading;
   final TextEditingController bodyController;
   final String? coverPath;
   final ValueChanged<String>? onSelectCover;
@@ -220,11 +226,14 @@ class _PostBlockState extends State<PostBlock> {
                   ),
                 ),
               ),
-            _TitleRow(
-              controller: widget.titleController,
-              focusNode: widget.titleFocus,
-            ),
-            const _Hairline(),
+            if (widget.showHeading ||
+                widget.titleController.text.trim().isNotEmpty) ...[
+              _TitleRow(
+                controller: widget.titleController,
+                focusNode: widget.titleFocus,
+              ),
+              const _Hairline(),
+            ],
             for (var item = 0; item < blockItems.length; item++) ...[
               if (item > 0) const _Hairline(),
               _PostBlockContentItem(
