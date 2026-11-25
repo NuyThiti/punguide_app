@@ -2220,6 +2220,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 onPickCover: _pickCover,
                 onClearCover: _clearCover,
                 coverPath: _coverPath,
+                onCreateFromPhotos: _createFromPhotos,
+                importing: _arranging,
               ),
               if (_publishing) const LinearProgressIndicator(),
               Expanded(
@@ -2264,8 +2266,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           showHeading: _blocks[index].headingRevealed,
                           bodyController: _blocks[index].body,
                           imagePath: null,
-                          onImportPhotos: _createFromPhotos,
-                          importing: _arranging,
                           items: _blocks[index]
                               .items
                               .map((item) => PostBlockItem(

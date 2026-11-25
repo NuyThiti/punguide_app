@@ -76,12 +76,7 @@ class PostSpotDetailRows extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0) const Divider(height: 1, color: AppColors.line),
-          rows[i],
-        ],
-      ],
+      children: rows,
     );
   }
 
@@ -128,12 +123,19 @@ class _DetailRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: AppColors.postPurple),
-            const SizedBox(width: 10),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                color: AppColors.postPurpleWell,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 20, color: AppColors.postPurple),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,8 +146,8 @@ class _DetailRow extends StatelessWidget {
                       lines[i],
                       style: TextStyle(
                         color: i == 0 ? AppColors.foreground : AppColors.muted,
-                        fontSize: i == 0 ? 14 : 13,
-                        fontWeight: i == 0 ? FontWeight.w700 : FontWeight.w500,
+                        fontSize: i == 0 ? 15 : 13,
+                        fontWeight: FontWeight.w500,
                         height: 1.35,
                       ),
                     ),

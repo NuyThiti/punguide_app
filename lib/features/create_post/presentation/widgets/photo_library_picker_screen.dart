@@ -467,11 +467,12 @@ class _PickerNextBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: EdgeInsets.fromLTRB(
-        18,
-        12,
-        18,
-        12 + MediaQuery.paddingOf(context).bottom,
+        9,
+        6,
+        9,
+        6 + MediaQuery.paddingOf(context).bottom,
       ),
       decoration: const BoxDecoration(
         color: AppColors.screen,
@@ -494,7 +495,7 @@ class _PickerNextBar extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                 ),
               ),

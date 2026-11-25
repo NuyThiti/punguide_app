@@ -23,7 +23,15 @@ class CreatePostHeader extends StatelessWidget {
     required this.onPickCover,
     required this.onClearCover,
     this.coverPath,
+    this.onCreateFromPhotos,
+    this.importing = false,
   });
+
+  /// "ให้ AI สร้างโพสจากรูป" under the bar. Null hides it.
+  final VoidCallback? onCreateFromPhotos;
+
+  /// That run is already going — the button shows a spinner instead.
+  final bool importing;
 
   final VoidCallback onClose;
 
@@ -75,44 +83,119 @@ class CreatePostHeader extends StatelessWidget {
                 16,
                 18,
               ),
-              child: SizedBox(
-                height: 44,
-                child: Row(
-                  children: [
-                    _RoundBackButton(onTap: onClose),
-                    // `IgnorePointer`, not just an absent `GestureDetector`:
-                    // `RenderParagraph` claims hit-testing across its own
-                    // painted line regardless, and without this a tap meant
-                    // for the cover image behind it never reaches it.
-                    const Expanded(
-                      child: IgnorePointer(
-                        child: Text(
-                          'PunGuide',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 44,
+                    child: Row(
+                      children: [
+                        _RoundBackButton(onTap: onClose),
+                        // `IgnorePointer`, not just an absent `GestureDetector`:
+                        // `RenderParagraph` claims hit-testing across its own
+                        // painted line regardless, and without this a tap meant
+                        // for the cover image behind it never reaches it.
+                        const Expanded(
+                          child: IgnorePointer(
+                            child: Text(
+                              'PunGuide',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        if (!hasCover)
+                          _RoundAction(
+                            icon: Icons.add_photo_alternate_outlined,
+                            tooltip: 'รูปหน้าปก',
+                            onTap: onPickCover,
+                          )
+                        else
+                          _CoverMenuButton(
+                            onChange: onPickCover,
+                            onRemove: onClearCover,
+                          ),
+                      ],
                     ),
-                    if (!hasCover)
-                      _RoundAction(
-                        icon: Icons.add_photo_alternate_outlined,
-                        tooltip: 'รูปหน้าปก',
-                        onTap: onPickCover,
-                      )
-                    else
-                      _CoverMenuButton(
-                        onChange: onPickCover,
-                        onRemove: onClearCover,
-                      ),
+                  ),
+                  if (onCreateFromPhotos != null) ...[
+                    const SizedBox(height: 16),
+                    _AiCreateButton(
+                      busy: importing,
+                      onTap: onCreateFromPhotos!,
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The purple-to-lime pill that hands the spot's photos to the assistant.
+class _AiCreateButton extends StatelessWidget {
+  const _AiCreateButton({required this.busy, required this.onTap});
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            AppColors.postImportStart,
+            AppColors.postImportMid,
+            AppColors.postImportMid2,
+            AppColors.postImportEnd,
+          ],
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: busy ? null : onTap,
+          child: Center(
+            child: busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'ให้ AI สร้างโพสจากรูป',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );

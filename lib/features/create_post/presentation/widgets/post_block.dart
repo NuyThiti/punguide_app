@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/api/models/trip_content.dart';
 import '../../../../core/theme/app_colors.dart';
+import 'composer_sheet.dart';
 import 'post_spot_details.dart';
 import '../../../../shared/widgets/cover_image.dart';
 import '../../../../shared/widgets/full_image_viewer.dart';
@@ -95,8 +96,6 @@ class PostBlock extends StatefulWidget {
     this.onConfirmLocationInItem,
     this.onRemove,
     this.locationErrorText,
-    this.onImportPhotos,
-    this.importing = false,
   });
 
   final void Function((int, int), int)? onDropBeforeImage;
@@ -146,15 +145,6 @@ class PostBlock extends StatefulWidget {
   /// The message every flagged item's row shows — the per-item key/flag
   /// themselves live on each `PostBlockItem` now, not here.
   final String? locationErrorText;
-
-  /// "ช่วยเขียน" — the same AI-from-photos flow the header's own button used
-  /// to open, now a small action beside Add Photo and Add Location. Null
-  /// hides the chip rather than wiring it to nothing.
-  final VoidCallback? onImportPhotos;
-
-  /// That flow is already running — the chip shows its own spinner instead
-  /// of growing a second entry point into the same generation.
-  final bool importing;
 
   @override
   State<PostBlock> createState() => _PostBlockState();
@@ -207,25 +197,6 @@ class _PostBlockState extends State<PostBlock> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.onRemove != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: InkWell(
-                  onTap: widget.onRemove,
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      'ลบจุดนี้',
-                      style: TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             if (widget.showHeading ||
                 widget.titleController.text.trim().isNotEmpty) ...[
               _TitleRow(
@@ -241,7 +212,6 @@ class _PostBlockState extends State<PostBlock> {
                 blockIndex: widget.blockIndex,
                 itemIndex: item,
                 item: blockItems[item],
-                multipleItems: blockItems.length > 1,
                 locationFieldKey: blockItems[item].locationFieldKey,
                 locationHasError: blockItems[item].locationHasError,
                 locationErrorText: widget.locationErrorText,
@@ -249,8 +219,6 @@ class _PostBlockState extends State<PostBlock> {
                 unavailableImages: widget.unavailableImages,
                 coverPath: widget.coverPath,
                 onSelectCover: widget.onSelectCover,
-                onImportPhotos: widget.onImportPhotos,
-                importing: widget.importing,
                 onPickImage: () {
                   final handler = widget.onPickImageInItem;
                   if (handler == null) {
@@ -275,10 +243,11 @@ class _PostBlockState extends State<PostBlock> {
                 onConfirmLocation: widget.onConfirmLocationInItem == null
                     ? null
                     : () => widget.onConfirmLocationInItem!(item),
-                onRemoveItem: blockItems.length > 1 &&
-                        widget.onRemoveItem != null
-                    ? () => widget.onRemoveItem!(item)
-                    : null,
+                onRemoveItem:
+                    blockItems.length > 1 && widget.onRemoveItem != null
+                        ? () => widget.onRemoveItem!(item)
+                        : null,
+                onRemoveSpot: widget.onRemove,
               ),
             ],
             const SizedBox(height: 16),
@@ -422,7 +391,6 @@ class _PostBlockContentItem extends StatelessWidget {
     required this.blockIndex,
     required this.itemIndex,
     required this.item,
-    this.multipleItems = false,
     required this.unavailableImages,
     required this.coverPath,
     required this.onSelectCover,
@@ -436,20 +404,15 @@ class _PostBlockContentItem extends StatelessWidget {
     required this.onConfirmLocation,
     required this.onExtra,
     this.onRemoveItem,
+    this.onRemoveSpot,
     this.locationFieldKey,
     this.locationHasError = false,
     this.locationErrorText,
-    this.onImportPhotos,
-    this.importing = false,
   });
 
   final int blockIndex, itemIndex;
   final PostBlockItem item;
 
-  /// A second (or third…) item under the same heading — the extras row
-  /// switches to the compact horizontal strip so several stacked items don't
-  /// each spend a whole screen's height on "add something" rows.
-  final bool multipleItems;
   final Set<String> unavailableImages;
   final String? coverPath;
   final ValueChanged<String>? onSelectCover;
@@ -463,6 +426,10 @@ class _PostBlockContentItem extends StatelessWidget {
   /// Null on the only item under a heading — a section always keeps one.
   final VoidCallback? onRemoveItem;
 
+  /// "ลบจุดนี้" — the whole spot. Null on the only spot, since a post always
+  /// keeps one.
+  final VoidCallback? onRemoveSpot;
+
   /// Answers for this item's own rows the API cannot store yet.
   final ValueChanged<PostSpotExtra> onExtra;
 
@@ -471,8 +438,6 @@ class _PostBlockContentItem extends StatelessWidget {
   final Key? locationFieldKey;
   final bool locationHasError;
   final String? locationErrorText;
-  final VoidCallback? onImportPhotos;
-  final bool importing;
 
   /// What the location row reads: the place over its distance and address, or
   /// the prompt when nothing is pinned yet.
@@ -509,7 +474,9 @@ class _PostBlockContentItem extends StatelessWidget {
         item.location?.status == ContentLocationStatus.suggested ||
             (item.legacyMapId != null && item.location == null);
     final hasLocationRow = pinned || locationHasError;
-    final menuButton = item.imagePaths.length == 1 || onRemoveItem != null
+    final menuButton = item.imagePaths.length == 1 ||
+            onRemoveItem != null ||
+            onRemoveSpot != null
         ? IconButton(
             onPressed: () => _showItemMenu(context),
             icon: const Icon(Icons.more_vert, size: 20),
@@ -559,35 +526,8 @@ class _PostBlockContentItem extends StatelessWidget {
                 ),
               ),
             const _Hairline(),
-            TextField(
-              controller: item.bodyController,
-              maxLength: 10000,
-              minLines: 3,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              style: const TextStyle(
-                color: AppColors.foreground,
-                fontSize: 16,
-                height: 1.6,
-                fontWeight: FontWeight.w500,
-              ),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(vertical: 10),
-                counterText: '',
-                hintText: 'Tell us about your trip..',
-                hintStyle: TextStyle(
-                  color: AppColors.postFieldHint,
-                  fontSize: 16,
-                  height: 1.6,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
             if (item.imagePaths.length == 1) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               DragTarget<PostPhotoMove>(
                 onAcceptWithDetails: (details) =>
                     onDropBeforeImage(details.data, 0),
@@ -622,7 +562,7 @@ class _PostBlockContentItem extends StatelessWidget {
                 ),
               ),
             ] else if (item.imagePaths.length > 1) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               _PhotoCluster(
                 paths: item.imagePaths,
                 coverPath: coverPath,
@@ -636,28 +576,44 @@ class _PostBlockContentItem extends StatelessWidget {
                 ),
               ),
             ],
-            if (!item.details.isEmpty) ...[
-              const SizedBox(height: 4),
-              PostSpotDetailRows(
-                details: item.details,
-                onEdit: (detail) => onExtra(switch (detail) {
-                  PostSpotDetail.time => PostSpotExtra.recommendTime,
-                  PostSpotDetail.transport => PostSpotExtra.howToGetHere,
-                  PostSpotDetail.hack => PostSpotExtra.tripHack,
-                  PostSpotDetail.contact => PostSpotExtra.contact,
-                }),
+            TextField(
+              controller: item.bodyController,
+              maxLength: 10000,
+              minLines: 3,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: const TextStyle(
+                color: AppColors.foreground,
+                fontSize: 16,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-            const SizedBox(height: 10),
-            _ItemExtrasRow(
-              onPickImage: onPickImage,
-              onPickPlace: onPickPlace,
-              onExtra: onExtra,
-              locationPinned: pinned,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
+                counterText: '',
+                hintText: 'Tell us about your trip..',
+                hintStyle: TextStyle(
+                  color: AppColors.postFieldHint,
+                  fontSize: 16,
+                  height: 1.6,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const _Hairline(),
+            const SizedBox(height: 14),
+            _DetailsCard(
               details: item.details,
-              onImportPhotos: onImportPhotos,
-              importing: importing,
-              compact: multipleItems,
+              onOpen: () => _showDetailsSheet(context, locationPinned: pinned),
+              onEdit: (detail) => onExtra(switch (detail) {
+                PostSpotDetail.time => PostSpotExtra.recommendTime,
+                PostSpotDetail.transport => PostSpotExtra.howToGetHere,
+                PostSpotDetail.hack => PostSpotExtra.tripHack,
+                PostSpotDetail.contact => PostSpotExtra.contact,
+              }),
             ),
           ],
         ),
@@ -665,9 +621,40 @@ class _PostBlockContentItem extends StatelessWidget {
     );
   }
 
+  /// "รายละเอียดสถานที่" — every "add something" row this item still has on
+  /// offer, in a sheet. Each closes the sheet before running, since most open
+  /// a sheet of their own.
+  Future<void> _showDetailsSheet(BuildContext context,
+      {required bool locationPinned}) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (sheetContext) {
+        void run(VoidCallback action) {
+          Navigator.of(sheetContext).pop();
+          action();
+        }
+
+        return ComposerSheet(
+          title: 'รายละเอียดสถานที่',
+          child: _ItemExtrasRow(
+            onPickImage: () => run(onPickImage),
+            onPickPlace: () => run(onPickPlace),
+            onExtra: (extra) => run(() => onExtra(extra)),
+            locationPinned: locationPinned,
+            details: item.details,
+          ),
+        );
+      },
+    );
+  }
+
   /// The ⋮ beside the item itself — ย้ายรูป (only when it carries exactly
   /// one photo; several have their own grid-based reordering) and ลบชุด
-  /// ข้อมูลนี้ (only when a sibling item exists to leave behind).
+  /// ข้อมูลนี้ (only when a sibling item exists to leave behind), and ลบจุด
+  /// นี้ (only when another spot exists to leave behind).
   Future<void> _showItemMenu(BuildContext context) async {
     final canMoveImage = item.imagePaths.length == 1;
     final action = await showModalBottomSheet<_ItemAction>(
@@ -678,6 +665,7 @@ class _PostBlockContentItem extends StatelessWidget {
       builder: (_) => _ItemActionsSheet(
         canMoveImage: canMoveImage,
         canRemove: onRemoveItem != null,
+        canRemoveSpot: onRemoveSpot != null,
       ),
     );
     switch (action) {
@@ -685,6 +673,8 @@ class _PostBlockContentItem extends StatelessWidget {
         onMoveImage(0);
       case _ItemAction.remove:
         onRemoveItem?.call();
+      case _ItemAction.removeSpot:
+        onRemoveSpot?.call();
       case null:
         break;
     }
@@ -805,107 +795,106 @@ class _LocationRow extends StatelessWidget {
 
   Widget _buildRow(Color tint) {
     return DecoratedBox(
-          decoration: hasError
-              ? const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: AppColors.brandOrangeDeep),
+      decoration: hasError
+          ? const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppColors.brandOrangeDeep),
+              ),
+            )
+          : const BoxDecoration(),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                // A plain purple pin, the size of the heading's plus
+                // above it — this pass drops the tinted plate the last
+                // one had.
+                SizedBox(
+                  width: 34,
+                  child: Icon(
+                    Icons.location_on_outlined,
+                    size: 21,
+                    color: tint,
                   ),
-                )
-              : const BoxDecoration(),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(
-                  children: [
-                    // A plain purple pin, the size of the heading's plus
-                    // above it — this pass drops the tinted plate the last
-                    // one had.
-                    SizedBox(
-                      width: 34,
-                      child: Icon(
-                        Icons.location_on_outlined,
-                        size: 21,
-                        color: tint,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: hasError
-                                        ? AppColors.brandOrangeDeep
-                                        : pinned
-                                            ? AppColors.foreground
-                                            : AppColors.postFieldHint,
-                                    fontSize: 15,
-                                    fontWeight: pinned
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                              if (!pinned)
-                                Text(
-                                  '*',
-                                  style: TextStyle(
-                                    color: hasError
-                                        ? AppColors.brandOrangeDeep
-                                        : AppColors.postFieldHint,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          if (sublabel != null && sublabel!.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              sublabel!,
+                          Flexible(
+                            child: Text(
+                              label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppColors.muted,
-                                fontSize: 13,
+                              style: TextStyle(
+                                color: hasError
+                                    ? AppColors.brandOrangeDeep
+                                    : pinned
+                                        ? AppColors.foreground
+                                        : AppColors.postFieldHint,
+                                fontSize: 15,
+                                fontWeight:
+                                    pinned ? FontWeight.w700 : FontWeight.w500,
                               ),
                             ),
-                          ],
+                          ),
+                          if (!pinned)
+                            Text(
+                              '*',
+                              style: TextStyle(
+                                color: hasError
+                                    ? AppColors.brandOrangeDeep
+                                    : AppColors.postFieldHint,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                         ],
                       ),
-                    ),
-                    if (hasError) ...[
-                      const Icon(
-                        Icons.error,
-                        size: 18,
-                        color: AppColors.brandOrangeDeep,
-                      ),
-                      const SizedBox(width: 6),
+                      if (sublabel != null && sublabel!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          sublabel!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ],
-                    const SizedBox(width: 2),
-                    const Icon(
-                      Icons.chevron_right,
-                      size: 22,
-                      color: Color(0xFF9A9A95),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                if (hasError) ...[
+                  const Icon(
+                    Icons.error,
+                    size: 18,
+                    color: AppColors.brandOrangeDeep,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 22,
+                  color: Color(0xFF9A9A95),
+                ),
+              ],
             ),
           ),
-        );
+        ),
+      ),
+    );
   }
 }
 
@@ -1137,16 +1126,20 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 
-enum _ItemAction { moveImage, remove }
+enum _ItemAction { moveImage, remove, removeSpot }
 
-/// What the item's own ⋮ opens: ย้ายรูป, ลบชุดข้อมูลนี้ — never both missing,
-/// or the ⋮ itself would not have shown.
+/// What the item's own ⋮ opens: ย้ายรูป, ลบชุดข้อมูลนี้, ลบจุดนี้ — never all
+/// missing, or the ⋮ itself would not have shown.
 class _ItemActionsSheet extends StatelessWidget {
-  const _ItemActionsSheet(
-      {required this.canMoveImage, required this.canRemove});
+  const _ItemActionsSheet({
+    required this.canMoveImage,
+    required this.canRemove,
+    required this.canRemoveSpot,
+  });
 
   final bool canMoveImage;
   final bool canRemove;
+  final bool canRemoveSpot;
 
   @override
   Widget build(BuildContext context) {
@@ -1171,6 +1164,13 @@ class _ItemActionsSheet extends StatelessWidget {
                   color: AppColors.brandOrangeDeep),
               title: const Text('ลบชุดข้อมูลนี้'),
               onTap: () => Navigator.of(context).pop(_ItemAction.remove),
+            ),
+          if (canRemoveSpot)
+            ListTile(
+              leading: const Icon(Icons.delete_outline,
+                  color: AppColors.brandOrangeDeep),
+              title: const Text('ลบจุดนี้'),
+              onTap: () => Navigator.of(context).pop(_ItemAction.removeSpot),
             ),
           const SizedBox(height: 8),
         ],
@@ -1318,18 +1318,14 @@ class _SheetGrabber extends StatelessWidget {
   }
 }
 
-/// One item's own "+ something" rows — ask AI to help write it first, then
-/// add a photo, then when to go, how to get there, who to call, the one tip
-/// worth passing on. Independent per item, so the same list appears once
-/// under every content item in a section, not once for the whole heading.
+/// One item's own "+ something" rows, shown in the รายละเอียดสถานที่ sheet:
+/// a photo, the location, then when to go, how to get there, who to call,
+/// and the one tip worth passing on.
 ///
 /// Each of the five (location, time, transport, contact, hack) drops off the
-/// list the moment it has an answer — [PostSpotDetailRows] above already
-/// turned into its own tappable row, so the entry stays only for whichever
-/// extras are still blank. The photo and AI rows are the exceptions: there
-/// is no single "filled" state to replace the photo one with, since a spot
-/// takes more than one picture, and the AI action (once wired by the screen)
-/// is always on offer, not something an item answers.
+/// list the moment it has an answer — the details card already shows it as
+/// its own tappable row. The photo row stays: a spot takes more than one
+/// picture.
 class _ItemExtrasRow extends StatelessWidget {
   const _ItemExtrasRow({
     required this.onPickImage,
@@ -1337,9 +1333,6 @@ class _ItemExtrasRow extends StatelessWidget {
     required this.onExtra,
     required this.locationPinned,
     required this.details,
-    this.onImportPhotos,
-    this.importing = false,
-    this.compact = false,
   });
 
   final VoidCallback onPickImage;
@@ -1347,33 +1340,15 @@ class _ItemExtrasRow extends StatelessWidget {
   final ValueChanged<PostSpotExtra> onExtra;
   final bool locationPinned;
   final PostSpotDetails details;
-  final VoidCallback? onImportPhotos;
-  final bool importing;
-
-  /// A second (or later) item under the same heading — rendered as a
-  /// horizontally-scrolling strip of small pills instead of the stacked
-  /// full-width rows the lone item gets.
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final rows = <PostAddChip>[
-      if (onImportPhotos != null)
-        PostAddChip(
-          icon: Icons.auto_awesome,
-          label: 'ช่วยเขียน',
-          tooltip: 'ช่วยเขียน',
-          loading: importing,
-          onTap: onImportPhotos!,
-          compact: compact,
-        ),
       PostAddChip(
         icon: Icons.add_photo_alternate_outlined,
         label: 'รูปภาพ',
         tooltip: 'รูปภาพ',
         onTap: onPickImage,
-        compact: compact,
-        showLabel: !compact,
       ),
       if (!locationPinned)
         PostAddChip(
@@ -1381,8 +1356,6 @@ class _ItemExtrasRow extends StatelessWidget {
           label: 'เพิ่มตำแหน่ง',
           tooltip: 'Add Location',
           onTap: onPickPlace,
-          compact: compact,
-          showLabel: !compact,
         ),
       if (!details.hasTime)
         PostAddChip(
@@ -1390,8 +1363,6 @@ class _ItemExtrasRow extends StatelessWidget {
           label: PostSpotExtra.recommendTime.label,
           tooltip: PostSpotExtra.recommendTime.label,
           onTap: () => onExtra(PostSpotExtra.recommendTime),
-          compact: compact,
-          showLabel: !compact,
         ),
       if (!details.hasTransport)
         PostAddChip(
@@ -1399,8 +1370,6 @@ class _ItemExtrasRow extends StatelessWidget {
           label: PostSpotExtra.howToGetHere.label,
           tooltip: PostSpotExtra.howToGetHere.label,
           onTap: () => onExtra(PostSpotExtra.howToGetHere),
-          compact: compact,
-          showLabel: !compact,
         ),
       if (!details.hasContact)
         PostAddChip(
@@ -1408,8 +1377,6 @@ class _ItemExtrasRow extends StatelessWidget {
           label: PostSpotExtra.contact.label,
           tooltip: PostSpotExtra.contact.label,
           onTap: () => onExtra(PostSpotExtra.contact),
-          compact: compact,
-          showLabel: !compact,
         ),
       if (!details.hasHack)
         PostAddChip(
@@ -1417,26 +1384,11 @@ class _ItemExtrasRow extends StatelessWidget {
           label: PostSpotExtra.tripHack.label,
           tooltip: PostSpotExtra.tripHack.label,
           onTap: () => onExtra(PostSpotExtra.tripHack),
-          compact: compact,
         ),
     ];
 
-    if (compact) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        child: Row(
-          children: [
-            for (var i = 0; i < rows.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              rows[i],
-            ],
-          ],
-        ),
-      );
-    }
-
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < rows.length; i++) ...[
@@ -1448,13 +1400,7 @@ class _ItemExtrasRow extends StatelessWidget {
   }
 }
 
-/// One "add something" chip.
-///
-/// Full width by default: an icon, its label, then a chevron — the same
-/// shape every other list of optional extras in the app uses. [compact]
-/// shrinks it to a small dashed pill for the horizontally-scrolling strip a
-/// second item gets instead, dropping the label unless [showLabel] says
-/// otherwise (the reference keeps it only on the Trip Hack pill).
+/// One "add something" row: an icon, its label, then a chevron.
 class PostAddChip extends StatelessWidget {
   const PostAddChip({
     super.key,
@@ -1462,9 +1408,6 @@ class PostAddChip extends StatelessWidget {
     required this.onTap,
     required this.tooltip,
     this.label,
-    this.loading = false,
-    this.compact = false,
-    this.showLabel = true,
   });
 
   final IconData icon;
@@ -1472,18 +1415,8 @@ class PostAddChip extends StatelessWidget {
   final String tooltip;
   final VoidCallback onTap;
 
-  /// Swaps the glyph for a small spinner and stops answering taps — the AI
-  /// action while its own import is already running, rather than growing a
-  /// second control just for that state.
-  final bool loading;
-
-  final bool compact;
-  final bool showLabel;
-
   @override
   Widget build(BuildContext context) {
-    if (compact) return _buildCompact(context);
-
     return Tooltip(
       message: tooltip,
       child: Semantics(
@@ -1492,22 +1425,12 @@ class PostAddChip extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: loading ? null : onTap,
+            onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Row(
                 children: [
-                  if (loading)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.postPurple,
-                      ),
-                    )
-                  else
-                    Icon(icon, size: 18, color: AppColors.postPurple),
+                  Icon(icon, size: 18, color: AppColors.postPurple),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -1529,64 +1452,132 @@ class PostAddChip extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildCompact(BuildContext context) {
-    final text = showLabel ? (label ?? tooltip) : null;
+/// "รายละเอียดสถานที่" under the story. Empty, it is one tappable card
+/// naming what it holds; once anything is filled, those answers sit in a
+/// white panel inside it, with "แก้ไข" opening the same sheet.
+class _DetailsCard extends StatelessWidget {
+  const _DetailsCard({
+    required this.details,
+    required this.onOpen,
+    required this.onEdit,
+  });
 
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        button: true,
-        label: tooltip,
-        child: Material(
-          color: AppColors.screen,
-          borderRadius: BorderRadius.circular(11),
-          child: InkWell(
-            onTap: loading ? null : onTap,
-            borderRadius: BorderRadius.circular(11),
-            child: CustomPaint(
-              painter: const PostDashedBorder(
-                color: AppColors.postDashed,
-                radius: 11,
+  final PostSpotDetails details;
+  final VoidCallback onOpen;
+  final ValueChanged<PostSpotDetail> onEdit;
+
+  static const _title = Text(
+    'รายละเอียดสถานที่',
+    style: TextStyle(
+      color: AppColors.postPurple,
+      fontSize: 17,
+      fontWeight: FontWeight.w800,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final empty = details.isEmpty;
+    return Material(
+      color: AppColors.postDraftBg,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 12, empty ? 14 : 12),
+          child: empty ? _emptyContent() : _filledContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyContent() {
+    return Row(
+      children: [
+        const Icon(Icons.playlist_add, size: 28, color: AppColors.postPurple),
+        const SizedBox(width: 14),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _title,
+              SizedBox(height: 2),
+              Text(
+                'เวลาทำการ วิธีเดินทาง ช่องทางติดต่อ เคล็ดลับการเที่ยว',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
               ),
-              child: Container(
-                height: 36,
-                constraints: const BoxConstraints(minWidth: 46),
-                padding:
-                    EdgeInsets.symmetric(horizontal: text == null ? 6 : 11),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (loading)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.postPurple,
-                        ),
-                      )
-                    else
-                      Icon(icon, size: 16, color: AppColors.postPurple),
-                    if (text != null) ...[
-                      const SizedBox(width: 5),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          width: 34,
+          height: 34,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.chevron_right,
+              size: 22, color: AppColors.foreground),
+        ),
+      ],
+    );
+  }
+
+  Widget _filledContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.playlist_add,
+                size: 28, color: AppColors.postPurple),
+            const SizedBox(width: 10),
+            const Expanded(child: _title),
+            Material(
+              color: Colors.white,
+              shape: const StadiumBorder(),
+              child: InkWell(
+                onTap: onOpen,
+                customBorder: const StadiumBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 10, 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        text,
-                        style: const TextStyle(
-                          color: AppColors.postPurple,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                        'แก้ไข',
+                        style: TextStyle(
+                          color: AppColors.foreground,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
+                      SizedBox(width: 2),
+                      Icon(Icons.chevron_right,
+                          size: 20, color: AppColors.foreground),
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
-      ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: PostSpotDetailRows(details: details, onEdit: onEdit),
+        ),
+      ],
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/api/api_providers.dart';
@@ -267,8 +268,6 @@ class _PostPhotoReviewPageState extends ConsumerState<_PostPhotoReviewPage> {
 Future<TripPhoto> _readPhoto((Uint8List, String) input) =>
     readTripPhoto(input.$1, input.$2);
 
-const _deleteWell = Color(0xFFFDECEA);
-
 /// The photo on screen, edge to edge on black — letterboxed rather than
 /// cropped, so the traveller sees the whole of what they picked before
 /// zooming in on it.
@@ -299,12 +298,10 @@ class _FullBleedPhoto extends StatelessWidget {
             Positioned(
               top: 16,
               right: 16,
-              child: _CircleAction(
-                icon: Icons.delete_outline,
+              child: _DeleteButton(
                 tooltip: 'ลบรูปนี้',
                 size: 52,
-                background: _deleteWell,
-                foreground: AppColors.brandOrangeDeep,
+                iconHeight: 26,
                 onTap: onDelete,
               ),
             ),
@@ -465,12 +462,10 @@ class _PhotoStrip extends StatelessWidget {
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: _CircleAction(
-                      icon: Icons.delete_outline,
+                    child: _DeleteButton(
                       tooltip: 'ลบรูปที่ ${photo + 1}',
                       size: 30,
-                      background: _deleteWell,
-                      foreground: AppColors.brandOrangeDeep,
+                      iconHeight: 18,
                       onTap: () => onDelete(photo),
                     ),
                   ),
@@ -512,6 +507,43 @@ class _AddTile extends StatelessWidget {
                     )
                   : const Icon(Icons.add_photo_alternate_outlined,
                       size: 40, color: AppColors.postPurple),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The red trash glyph straight on the photo — no well behind it.
+class _DeleteButton extends StatelessWidget {
+  const _DeleteButton({
+    required this.tooltip,
+    required this.size,
+    required this.iconHeight,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final double size;
+  final double iconHeight;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox.square(
+            dimension: size,
+            child: Center(
+              child: SvgPicture.asset('assets/icons/delete.svg',
+                  height: iconHeight),
             ),
           ),
         ),
@@ -670,6 +702,7 @@ class _ReviewActionBar extends StatelessWidget {
       child: Opacity(
         opacity: hasPhotos ? 1 : 0.4,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch, // เพิ่มตรงนี้
           children: [
             Container(
               width: double.infinity,
@@ -692,11 +725,11 @@ class _ReviewActionBar extends StatelessWidget {
                 child: InkWell(
                   onTap: hasPhotos ? onUseAi : null,
                   child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                    padding: EdgeInsets.symmetric(vertical: 12, horizontal: 4),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                        Icon(Icons.auto_awesome, color: Colors.white, size: 14),
                         SizedBox(width: 8),
                         Flexible(
                           child: Text(
@@ -705,7 +738,7 @@ class _ReviewActionBar extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 16,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -724,7 +757,7 @@ class _ReviewActionBar extends StatelessWidget {
               child: InkWell(
                 onTap: hasPhotos ? onUseManual : null,
                 child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                  padding: EdgeInsets.symmetric(vertical: 12, horizontal: 4),
                   child: Text(
                     'ฉันสร้างโพสเอง',
                     textAlign: TextAlign.center,
@@ -732,7 +765,7 @@ class _ReviewActionBar extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

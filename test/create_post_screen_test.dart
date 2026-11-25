@@ -264,8 +264,7 @@ FakeAdapter _placesAdapter() => FakeAdapter({
 /// Settling here waits only for the sheet to arrive; the picker has not been
 /// asked for anything yet, so nothing is off in the background to hang on.
 Future<void> _tapImport(WidgetTester tester, {bool camera = false}) async {
-  await tester.ensureVisible(find.text('ช่วยเขียน'));
-  await tester.tap(find.text('ช่วยเขียน'));
+  await tester.tap(_aiButton);
   await tester.pumpAndSettle();
   await tester.tap(find.text('เพิ่มรูป').last);
   await tester.pumpAndSettle();
@@ -399,10 +398,26 @@ Future<void> _fillAboutTrip(
 /// icon alone, so there is no text on it to look for any more.
 final _headingChip = find.byTooltip('ตั้งชื่อหัวข้อ');
 
-Future<void> _tapSpotOption(WidgetTester tester, Finder chip) async {
+Future<void> _tapSpotOption(WidgetTester tester, Finder chip,
+    {int item = 0}) async {
+  // The "add something" rows live in the รายละเอียดสถานที่ sheet now.
+  if (chip.evaluate().isEmpty) await _openDetails(tester, item: item);
   await tester.ensureVisible(chip.first);
   await tester.pumpAndSettle();
   await tester.tap(chip.first);
+  await tester.pumpAndSettle();
+}
+
+/// The header's "ให้ AI สร้างโพสจากรูป".
+final _aiButton = find.descendant(
+    of: find.byType(CreatePostHeader),
+    matching: find.text('ให้ AI สร้างโพสจากรูป'));
+
+/// Opens the [item]-th content item's รายละเอียดสถานที่ sheet.
+Future<void> _openDetails(WidgetTester tester, {int item = 0}) async {
+  final card = find.text('รายละเอียดสถานที่').at(item);
+  await _scrollTo(tester, card);
+  await tester.tap(card);
   await tester.pumpAndSettle();
 }
 
@@ -1008,8 +1023,7 @@ void main() {
         },
       ]),
     ];
-    await tester.ensureVisible(find.text('ช่วยเขียน'));
-    await tester.tap(find.text('ช่วยเขียน'));
+    await tester.tap(_aiButton);
     await tester.pumpAndSettle();
     // The location prompt only shows up once a photo exists — picking the
     // hint is done after, not before.
@@ -1091,8 +1105,7 @@ void main() {
       ],
     });
     await _pumpComposer(tester, adapter: adapter, extra: _located);
-    await tester.ensureVisible(find.text('ช่วยเขียน'));
-    await tester.tap(find.text('ช่วยเขียน'));
+    await tester.tap(_aiButton);
     await tester.pumpAndSettle();
     // The location prompt only shows up once a photo exists.
     await tester.tap(find.text('เพิ่มรูป').last);
@@ -1927,7 +1940,7 @@ void main() {
     expect(find.text('เพิ่มรูป').last, findsOneWidget);
     await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
-    expect(find.text('ช่วยเขียน'), findsOneWidget);
+    expect(_aiButton, findsOneWidget);
     // The page is a full page now, not a sheet over the composer, so the
     // draft underneath was never reachable to assert on until it is the only
     // thing left on screen again — but that silence is exactly the point:
@@ -2006,11 +2019,8 @@ void main() {
     final adapter = FakeAdapter({});
     await _pumpComposer(tester, adapter: adapter);
 
-    await tester.ensureVisible(
+    await _tapSpotOption(tester,
         find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-    await tester.tap(
-        find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('เลือกจากคลังภาพ'));
     await tester.pumpAndSettle();
 
@@ -2093,7 +2103,7 @@ void main() {
       expect(find.text('ร่างเดิม'), findsOneWidget);
       // Nothing is importing any more, so the toolbar's AI chip is back to
       // its own idle label rather than stuck showing a spinner.
-      expect(find.text('ช่วยเขียน'), findsOneWidget);
+      expect(_aiButton, findsOneWidget);
       expect(
           tester.widget<PostBlock>(find.byType(PostBlock)).imagePaths, isEmpty);
       expect(tester.takeException(), isNull);
@@ -2127,11 +2137,8 @@ void main() {
     });
     await _pumpComposer(tester, adapter: adapter);
     for (var i = 0; i < 2; i++) {
-      await tester.ensureVisible(
+      await _tapSpotOption(tester,
           find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-      await tester.tap(
-          find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('เลือกจากคลังภาพ'));
       // Bounded, not `pumpAndSettle`: the eager upload behind the pick runs
       // through real async work (EXIF off an isolate, then the upload
@@ -2274,12 +2281,13 @@ void main() {
     // its original height either way, so without the title's own
     // `IgnorePointer` the tap would never reach the photo's handler
     // underneath it (`RenderParagraph` claims hit-testing across its own
-    // painted line regardless of there being a recognizer on it).
-    await tester.tap(
-        find.descendant(
-            of: find.byType(CreatePostHeader),
-            matching: find.byType(CoverImage)),
-        warnIfMissed: false);
+    // painted line regardless of there being a recognizer on it). Its middle
+    // is under the AI button now, so the tap lands in the gap just above it.
+    final cover = tester.getRect(find.descendant(
+        of: find.byType(CreatePostHeader), matching: find.byType(CoverImage)));
+    final aiTop = tester.getRect(find.ancestor(
+        of: _aiButton, matching: find.byType(InkWell)).first).top;
+    await tester.tapAt(Offset(cover.center.dx, aiTop - 8));
     await tester.pumpAndSettle();
 
     // Two now — the header's own back button alongside the viewer's own
@@ -2297,11 +2305,8 @@ void main() {
     addTearDown(() => ImagePickerPlatform.instance = previousPicker);
     await _pumpComposer(tester);
     for (var i = 0; i < 2; i++) {
-      await tester.ensureVisible(
+      await _tapSpotOption(tester,
           find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-      await tester.tap(
-          find.widgetWithIcon(PostAddChip, Icons.add_photo_alternate_outlined));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('เลือกจากคลังภาพ'));
       await tester.pumpAndSettle();
     }
@@ -2395,12 +2400,10 @@ void main() {
   testWidgets('the composer lays out every part of the design', (tester) async {
     await _pumpComposer(tester);
 
-    // The dark cap: back, title, and the cover action opposite it. The old
-    // gradient AI button is gone — "ช่วยเขียน" in the spot's own toolbar
-    // below is the only way into that flow now.
+    // The dark cap: back, title, the cover action opposite it, and the
+    // gradient "ให้ AI สร้างโพสจากรูป" under them.
     expect(find.text('PunGuide'), findsOneWidget);
-    expect(find.text('AI สร้างโพสจากรูป'), findsNothing);
-    expect(find.text('ช่วยเขียน'), findsOneWidget);
+    expect(_aiButton, findsOneWidget);
     expect(find.byTooltip('รูปหน้าปก'), findsOneWidget);
 
     // One card says what the post is called. Who is posting and the
@@ -2433,17 +2436,20 @@ void main() {
     expect(find.text('Location'), findsNothing);
     expect(find.text('Tell us about your trip..'), findsOneWidget);
 
-    // Each item's own extras stack as a vertical list, one row per kind,
-    // "ช่วยเขียน" first.
-    final rows = find.descendant(
-      of: find.byType(PostBlock), matching: find.byType(PostAddChip));
+    // The story comes after the photos, then the details card — its "add
+    // something" rows are not on the page but in its own sheet.
+    expect(find.text('รายละเอียดสถานที่'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byType(PostBlock), matching: find.byType(PostAddChip)),
+        findsNothing);
+    await _openDetails(tester);
     expect(
         tester
-            .widgetList<PostAddChip>(rows)
+            .widgetList<PostAddChip>(find.byType(PostAddChip))
             .map((w) => w.label)
             .whereType<String>(),
         [
-          'ช่วยเขียน',
           'รูปภาพ',
           'เพิ่มตำแหน่ง',
           PostSpotExtra.recommendTime.label,
@@ -2451,20 +2457,8 @@ void main() {
           PostSpotExtra.contact.label,
           PostSpotExtra.tripHack.label,
         ]);
-
-    // Attachments: a photo, the location, the time, how you got there, and
-    // the hack.
-    for (final icon in const [
-      Icons.add_photo_alternate_outlined,
-      Icons.location_on_outlined,
-      Icons.schedule,
-      Icons.directions_car_outlined,
-      Icons.info_outline,
-    ]) {
-      expect(find.widgetWithIcon(PostAddChip, icon), findsOneWidget,
-          reason: icon.toString());
-    }
-    expect(find.text('Trip Hack'), findsOneWidget);
+    await tester.tapAt(const Offset(10, 10)); // dismiss the sheet
+    await tester.pumpAndSettle();
 
     // The rows that used to sit under the chips are gone with this pass.
     expect(find.text('Recommend Time'), findsNothing);
@@ -2655,14 +2649,15 @@ void main() {
     // One spot on screen at a time now — the new one, since adding a spot
     // lands on it — with the pagination row showing both exist.
     expect(find.byType(PostBlock), findsOneWidget);
-    expect(find.text('ลบจุดนี้'), findsOneWidget);
+    // "ลบจุดนี้" lives in the item's own ⋮ sheet now, not on the page.
+    expect(find.text('ลบจุดนี้'), findsNothing);
+    expect(find.byTooltip('ตัวเลือก'), findsOneWidget);
     expect(find.byType(TripSpotPagination), findsOneWidget);
 
-    await tester.tap(find.text('ลบจุดนี้'));
-    await tester.pumpAndSettle();
+    await _tapItemMenu(tester, 0, 'ลบจุดนี้');
 
     expect(find.byType(PostBlock), findsOneWidget);
-    expect(find.text('ลบจุดนี้'), findsNothing);
+    expect(find.byTooltip('ตัวเลือก'), findsNothing);
   });
 
   testWidgets(
@@ -2686,7 +2681,7 @@ void main() {
 
     // "เพิ่มจุดต่อไป" now goes through.
     await _tapAddMenu(tester, 'เพิ่มจุดถัดไป');
-    expect(find.text('ลบจุดนี้'), findsOneWidget);
+    expect(find.byType(TripSpotPagination), findsOneWidget);
   });
 
   testWidgets('Next jumps back to an earlier invalid spot and flags it',
@@ -2741,8 +2736,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('กรุณาเพิ่ม Location'), findsOneWidget);
 
-    await tester.tap(find.text('ลบจุดนี้'));
-    await tester.pumpAndSettle();
+    await _tapItemMenu(tester, 0, 'ลบจุดนี้');
 
     // Back to the one remaining, valid spot — no stale error left behind.
     expect(find.byType(PostBlock), findsOneWidget);
@@ -2780,8 +2774,7 @@ void main() {
     expect(find.text('ส่วนแรก'), findsOneWidget);
 
     // Deleting the spot on screen (now "ส่วนแรก") leaves only "ส่วนที่สอง".
-    await tester.tap(find.text('ลบจุดนี้'));
-    await tester.pumpAndSettle();
+    await _tapItemMenu(tester, 0, 'ลบจุดนี้');
     expect(find.text('ส่วนแรก'), findsNothing);
     expect(find.text('ส่วนที่สอง'), findsOneWidget);
   });
@@ -2939,8 +2932,7 @@ void main() {
       ],
     });
     await _pumpComposer(tester, adapter: adapter);
-    await tester.ensureVisible(find.text('ช่วยเขียน'));
-    await tester.tap(find.text('ช่วยเขียน'));
+    await tester.tap(_aiButton);
     await tester.pumpAndSettle();
     await tester.tap(find.text('เพิ่มรูป').last);
     await tester.pumpAndSettle();
@@ -3554,18 +3546,14 @@ void main() {
     await tester.pumpAndSettle();
     await _tapAddMenu(tester, 'เพิ่มเนื้อหา');
 
-    await tester.ensureVisible(find.text('Trip Hack').first);
-    await tester.tap(find.text('Trip Hack').first);
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.text('Trip Hack'), item: 0);
     await tester.enterText(
         find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
         'ของจุดที่ 1');
     await tester.tap(find.widgetWithText(FilledButton, 'ตกลง'));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Trip Hack').last);
-    await tester.tap(find.text('Trip Hack').last);
-    await tester.pumpAndSettle();
+    await _tapSpotOption(tester, find.text('Trip Hack'), item: 1);
     await tester.enterText(
         find.widgetWithText(TextField, 'เช่น ไปเช้าคนน้อย ไม่ต้องรอคิว'),
         'ของจุดที่ 2');
