@@ -200,7 +200,7 @@ void main() {
     expect(find.text('0 Km'), findsNothing);
     // Duration and budget share one run of text under the divider.
     expect(
-      find.textContaining('฿ 200 /คน', findRichText: true),
+      find.textContaining('฿200 /คน', findRichText: true),
       findsWidgets,
     );
   });
@@ -215,13 +215,13 @@ void main() {
     // The post's own fact, not the schedule or budget of the trip it is about.
     expect(find.text('5 สถานที่'), findsWidgets);
     expect(
-      find.textContaining('฿ 4,000', findRichText: true),
+      find.textContaining('฿4,000', findRichText: true),
       findsNothing,
     );
     expect(find.textContaining('2 วัน'), findsNothing);
     // The plan beside it still reads as a plan.
     expect(
-      find.textContaining('฿ 200 /คน', findRichText: true),
+      find.textContaining('฿200 /คน', findRichText: true),
       findsWidgets,
     );
   });

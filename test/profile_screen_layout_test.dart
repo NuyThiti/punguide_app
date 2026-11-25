@@ -480,15 +480,16 @@ void main() {
     expect(find.text('detail-stub'), findsOneWidget);
   });
 
-  testWidgets('the shared nav is present and labelled My Post', (tester) async {
+  testWidgets('the shared nav is present and labelled Profile', (tester) async {
     _usePhone(tester);
 
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
     expect(find.byType(AppBottomNav), findsOneWidget);
-    expect(find.text('My Post'), findsOneWidget);
-    expect(find.text('Profile'), findsNothing);
+    expect(find.text('Profile'), findsOneWidget);
+    // The tab was called "My Post" until the nav took the reference's wording.
+    expect(find.text('My Post'), findsNothing);
   });
 
   testWidgets('profile lays out on a narrow phone without overflow',

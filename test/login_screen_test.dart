@@ -72,14 +72,50 @@ void _phone(WidgetTester tester, {Size size = const Size(393, 852)}) {
 }
 
 void main() {
-  testWidgets('login offers Google as the only way in', (tester) async {
+  testWidgets('login shows the welcome artwork and both providers',
+      (tester) async {
     _phone(tester);
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
-    expect(find.text('บัญชีผู้ใช้'), findsOneWidget);
-    expect(find.text('เข้าสู่ระบบ'), findsOneWidget);
+    expect(find.text('Welcome!'), findsOneWidget);
     expect(find.text('เข้าสู่ระบบด้วย Google'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบด้วย Apple'), findsOneWidget);
+    expect(find.text('ยังไม่มีบัญชี?'), findsOneWidget);
+    expect(find.text('สมัครสมาชิก'), findsOneWidget);
+    // The old light header is gone with the redesign.
+    expect(find.text('บัญชีผู้ใช้'), findsNothing);
+  });
+
+  testWidgets('Apple sign-in says it is not available yet', (tester) async {
+    _phone(tester);
+    final container = _container(tester);
+    await tester.pumpWidget(_harness(container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('เข้าสู่ระบบด้วย Apple'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('เข้าสู่ระบบด้วย Apple ยังไม่เปิดให้ใช้งาน'),
+      findsOneWidget,
+    );
+    expect(container.read(authSessionProvider), isNull);
+  });
+
+  testWidgets('สมัครสมาชิก runs the same Google flow', (tester) async {
+    _phone(tester);
+    final container = _container(
+      tester,
+      google: _FakeGoogle(token: 'firebase-id-token'),
+    );
+    await tester.pumpWidget(_harness(container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('สมัครสมาชิก'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(authSessionProvider), isNotNull);
   });
 
   testWidgets('the username and password form is gone', (tester) async {
@@ -93,9 +129,6 @@ void main() {
     expect(find.byType(Form), findsNothing);
     expect(find.text('อีเมลหรือชื่อผู้ใช้'), findsNothing);
     expect(find.text('รหัสผ่าน'), findsNothing);
-    // The sign-up link belonged to the password flow; Google creates the
-    // account on first use.
-    expect(find.text('สมัครสมาชิก'), findsNothing);
     expect(find.byIcon(Icons.visibility_outlined), findsNothing);
   });
 
@@ -107,7 +140,8 @@ void main() {
 
     expect(find.text('จำฉันไว้'), findsNothing);
     expect(find.text('เข้าใช้แบบผู้เยี่ยมชม'), findsNothing);
-    expect(find.text('ดำเนินการต่อด้วย Apple'), findsNothing);
+    expect(find.text('ลืมรหัสผ่าน?'), findsNothing);
+    expect(find.text('หรือดำเนินการต่อด้วย'), findsNothing);
   });
 
   testWidgets('the Google button exchanges an ID token for a session',
@@ -189,9 +223,7 @@ void main() {
     await tester.pumpWidget(_harness(_container(tester)));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await tester.pumpAndSettle();
-
     expect(find.text('เข้าสู่ระบบด้วย Google'), findsOneWidget);
+    expect(find.text('Welcome!'), findsOneWidget);
   });
 }

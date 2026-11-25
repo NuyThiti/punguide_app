@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/api/pluno_api.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/cover_image.dart';
+import '../../../home/presentation/widgets/pun_guide_card.dart';
 
 /// A clip's card on a wall of trips.
 ///
@@ -47,7 +48,7 @@ class PuntokCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(PunGuideCard.cornerRadius),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.07),

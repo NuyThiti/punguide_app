@@ -73,7 +73,7 @@ void main() {
     // The facts line is rich text so its separator can be violet.
     expect(find.textContaining('1 วัน', findRichText: true), findsOneWidget);
     expect(
-      find.textContaining('฿ 200 /คน', findRichText: true),
+      find.textContaining('฿200 /คน', findRichText: true),
       findsOneWidget,
     );
     expect(find.text('3.5K'), findsOneWidget);
@@ -123,14 +123,20 @@ void main() {
     expect(find.text('แผนทริป'), findsOneWidget);
     expect(find.text('คู่มือ'), findsNothing);
     expect(chipColourOf(tester, '1 Km'), AppColors.cardPlanAccent);
+    expect(tester.widget<Text>(find.text('1 Km')).style!.color, Colors.white);
     // Rendered as rich text so the bullet can be violet.
     expect(
       find.textContaining('2 วัน', findRichText: true),
       findsOneWidget,
     );
+    // The sign sits against the figure: "฿2,000", not "฿ 2,000".
     expect(
-      find.textContaining('฿ 2,000 /คน', findRichText: true),
+      find.textContaining('฿2,000 /คน', findRichText: true),
       findsOneWidget,
+    );
+    expect(
+      find.textContaining('฿ 2,000', findRichText: true),
+      findsNothing,
     );
   });
 
@@ -148,6 +154,12 @@ void main() {
     expect(find.text('คู่มือ'), findsOneWidget);
     expect(find.text('แผนทริป'), findsNothing);
     expect(chipColourOf(tester, '8.5 Km'), AppColors.cardGuideAccent);
+    // Violet on the lime, the same pairing the type pill above it uses — it
+    // read as plain dark here until the close-up reference settled it.
+    expect(
+      tester.widget<Text>(find.text('8.5 Km')).style!.color,
+      AppColors.cardPlanAccent,
+    );
     // A guide is measured in places, not days and money.
     expect(
         find.textContaining('7 สถานที่', findRichText: true), findsOneWidget);
@@ -399,6 +411,56 @@ void main() {
     expect(find.text('makitravels'), findsNothing);
     // The type is still worth saying — it tells their own rows apart.
     expect(find.text('แผนทริป'), findsOneWidget);
+  });
+
+  testWidgets('the type pill wears the accent solid, in the top-left corner',
+      (tester) async {
+    await tester.pumpWidget(_card(feedTrip()));
+    await tester.pumpAndSettle();
+
+    // Filled with the accent, not the dark pill it used to share with the
+    // creator — and the label takes the colour that reads on it.
+    expect(chipColourOf(tester, 'แผนทริป'), AppColors.cardPlanAccent);
+    expect(
+      tester.widget<Text>(find.text('แผนทริป')).style!.color,
+      Colors.white,
+    );
+
+    // Above the creator, and in the left half of the card.
+    final card = tester.getRect(find.byType(PunGuideCard));
+    final type = tester.getTopLeft(find.text('แผนทริป'));
+    final creator = tester.getTopLeft(find.text('makitravels'));
+    expect(type.dy, lessThan(creator.dy));
+    expect(type.dx - card.left, lessThan(card.width / 2));
+  });
+
+  testWidgets('a guide pill is lime with the violet back on top',
+      (tester) async {
+    await tester.pumpWidget(
+      _card(TripListItem.fromJson(feedTripJson(type: 'content'))),
+    );
+    await tester.pumpAndSettle();
+
+    expect(chipColourOf(tester, 'คู่มือ'), AppColors.cardGuideAccent);
+    expect(
+      tester.widget<Text>(find.text('คู่มือ')).style!.color,
+      AppColors.cardPlanAccent,
+    );
+  });
+
+  testWidgets('the Top PunGuide badge shares the bottom line, not the top',
+      (tester) async {
+    await tester.pumpWidget(_card(feedTrip(), featured: true));
+    await tester.pumpAndSettle();
+
+    // It sat top-left until the type pill took that corner.
+    final badge = tester.getTopLeft(find.text('Top PunGuide'));
+    final type = tester.getTopLeft(find.text('แผนทริป'));
+    final creator = tester.getTopLeft(find.text('makitravels'));
+    expect(badge.dy, greaterThan(type.dy));
+    expect((badge.dy - creator.dy).abs(), lessThan(4));
+    // And on the far side from the name.
+    expect(badge.dx, greaterThan(creator.dx));
   });
 
   testWidgets("someone else's wall keeps the creator pill", (tester) async {

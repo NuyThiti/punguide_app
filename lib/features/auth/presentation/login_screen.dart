@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/api/pluno_api.dart';
@@ -97,183 +99,195 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  /// Apple sign-in has no endpoint yet: the API exchanges a Firebase token at
+  /// `POST /auth/firebase`, and only Google is enabled on that project.
+  void _appleNotReady() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('เข้าสู่ระบบด้วย Apple ยังไม่เปิดให้ใช้งาน')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AppFrame(
-      background: AppColors.screen,
-      child: ListView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 28),
-        children: [
-          _LoginHeader(onClose: _close),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Center(child: _LoginIntro()),
-                const SizedBox(height: 28),
-                _SocialButton(
-                  label: 'เข้าสู่ระบบด้วย Google',
-                  leading: const _GoogleGlyph(),
-                  onPressed: _isSubmitting ? null : _signInWithGoogle,
-                ),
-                if (_isSubmitting) ...[
-                  const SizedBox(height: 20),
-                  const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            AppColors.brandOrange),
-                      ),
+    // The artwork runs under the status bar, so its icons have to be light.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: AppFrame(
+        background: _LoginPalette.background,
+        child: Stack(
+          children: [
+            // Pinned to the top at its own aspect ratio rather than cropped to
+            // fit: the artwork occupies the upper part of the image and the
+            // rest is the same black as the screen, so the seam never shows.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Image.asset(
+                'assets/images/login_background.jpg',
+                fit: BoxFit.fitWidth,
+                alignment: Alignment.topCenter,
+              ),
+            ),
+            SafeArea(
+              child: Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _CloseButton(onTap: _close),
+                  ),
+                  const Spacer(),
+                  const Text(
+                    'Welcome!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 38,
+                      height: 1.1,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
+                  const SizedBox(height: 26),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 21),
+                    child: Column(
+                      children: [
+                        _AuthButton(
+                          label: 'เข้าสู่ระบบด้วย Google',
+                          leading: Image.asset(
+                            'assets/icons/google.png',
+                            width: 22,
+                            height: 22,
+                          ),
+                          busy: _isSubmitting,
+                          onPressed:
+                              _isSubmitting ? null : _signInWithGoogle,
+                        ),
+                        const SizedBox(height: 13),
+                        _AuthButton(
+                          label: 'เข้าสู่ระบบด้วย Apple',
+                          leading: SvgPicture.asset(
+                            'assets/icons/apple.svg',
+                            width: 19,
+                            height: 22,
+                          ),
+                          onPressed: _isSubmitting ? null : _appleNotReady,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  // Google creates the account on first use, so signing up and
+                  // signing in are the same tap.
+                  _SignUpRow(
+                    onPressed: _isSubmitting ? null : _signInWithGoogle,
+                  ),
+                  const SizedBox(height: 50),
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Brand-orange cap that carries the wordmark, matching the profile hero.
-class _LoginHeader extends StatelessWidget {
-  const _LoginHeader({required this.onClose});
+class _LoginPalette {
+  const _LoginPalette._();
 
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-          20, MediaQuery.of(context).padding.top + 14, 20, 14),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.line)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('บัญชีผู้ใช้',
-                    style: TextStyle(
-                        color: AppColors.foreground,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800)),
-                SizedBox(height: 2),
-                Text('โปรไฟล์ การตั้งค่า และการเข้าสู่ระบบ',
-                    style: TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400)),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: onClose,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                  color: Color(0xFFF4F6F5), shape: BoxShape.circle),
-              child: const Icon(Icons.close, color: AppColors.muted, size: 20),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  /// Matches the flat black the artwork fades into.
+  static const background = Color(0xFF000000);
+  static const buttonLabel = Color(0xFF232323);
+  static const mutedLabel = Color(0xFFB9B4B4);
 }
 
-class _LoginIntro extends StatelessWidget {
-  const _LoginIntro();
+/// Not in the reference, which is a first-run welcome screen — but the login
+/// route is also reachable from Profile and is skippable at launch, so there
+/// has to be a way out.
+class _CloseButton extends StatelessWidget {
+  const _CloseButton({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 64,
-          height: 64,
+    return Semantics(
+      button: true,
+      label: 'ปิด',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          margin: const EdgeInsets.only(right: 8, top: 4),
           alignment: Alignment.center,
-          decoration: const BoxDecoration(
-              color: Color(0xFFE7F5EF), shape: BoxShape.circle),
-          child: const Icon(Icons.login, color: Color(0xFF159566), size: 28),
+          child: Icon(
+            Icons.close,
+            size: 22,
+            color: Colors.white.withValues(alpha: 0.75),
+          ),
         ),
-        const SizedBox(height: 16),
-        const Text('เข้าสู่ระบบ',
-            style: TextStyle(
-                color: AppColors.foreground,
-                fontSize: 20,
-                fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        const Text(
-          'เข้าสู่ระบบเพื่อบันทึกทริป สร้างแพลน และจัดการโปรไฟล์',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              color: AppColors.muted,
-              fontSize: 13,
-              height: 1.4,
-              fontWeight: FontWeight.w400),
-        ),
-      ],
+      ),
     );
   }
 }
 
-class _SocialButton extends StatelessWidget {
-  const _SocialButton({
+/// The white pill both providers share.
+class _AuthButton extends StatelessWidget {
+  const _AuthButton({
     required this.label,
     required this.leading,
     required this.onPressed,
+    this.busy = false,
   });
 
   final String label;
   final Widget leading;
   final VoidCallback? onPressed;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(23),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          height: 50,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFEBCF9E)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              leading,
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.foreground,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+        borderRadius: BorderRadius.circular(23),
+        child: SizedBox(
+          height: 46,
+          child: Center(
+            child: busy
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _LoginPalette.buttonLabel,
+                      ),
+                    ),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      leading,
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _LoginPalette.buttonLabel,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -281,21 +295,42 @@ class _SocialButton extends StatelessWidget {
   }
 }
 
-class _GoogleGlyph extends StatelessWidget {
-  const _GoogleGlyph();
+class _SignUpRow extends StatelessWidget {
+  const _SignUpRow({required this.onPressed});
+
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 22,
-      height: 22,
-      child: Center(
-        child: Text('G',
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        const Text(
+          'ยังไม่มีบัญชี?',
+          style: TextStyle(
+            color: _LoginPalette.mutedLabel,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minimumSize: const Size(0, 36),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text(
+            'สมัครสมาชิก',
             style: TextStyle(
-                color: Color(0xFF4285F4),
-                fontSize: 16,
-                fontWeight: FontWeight.w900)),
-      ),
+              color: AppColors.brandOrange,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

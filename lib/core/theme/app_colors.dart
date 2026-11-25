@@ -126,6 +126,13 @@ class AppColors {
   static const filterGrabber = Color(0xFFE2E0DD);
   static const filterChipOn = Color(0xFFFFEDE4);
 
+  /// Home's own category row (the reference shot for 2026-11-24): the chip in
+  /// force is a filled cream pill with no outline, the rest are white with a
+  /// warm hairline. Separate from [chipBorder], which half the app leans on —
+  /// Home's row is warmer than the neutral grey everywhere else.
+  static const homeChipFill = Color(0xFFF6F0E5);
+  static const homeChipBorder = Color(0xFFE6D9B8);
+
   static const chipBorder = Color(0xFFE3E0DC);
   static const chipBorderActive = Color(0xFF2B2422);
   static const searchButton = Color(0xFF1A1614);

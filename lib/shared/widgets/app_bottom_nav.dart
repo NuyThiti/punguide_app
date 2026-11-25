@@ -20,7 +20,7 @@ class AppBottomNav extends StatelessWidget {
 
   static const double bumpHeight = 14;
   static const double barHeight = 64;
-  static const double fabSize = 56;
+  static const double fabSize = 52;
 
   /// Height the nav occupies, so scroll views can reserve room for it.
   static double heightOf(BuildContext context) =>
@@ -64,7 +64,10 @@ class AppBottomNav extends StatelessWidget {
                         active == AppRoute.paigun || active == AppRoute.search,
                     onTap: () => onTap(AppRoute.paigun),
                   ),
-                  const SizedBox(width: fabSize + 24),
+                  // The create button is painted above, in the Stack; this
+                  // holds its slot in the row and gives it the label the
+                  // other four have, on the same baseline.
+                  _CreateLabel(onTap: onCreate),
                   _NavItem(
                     asset: 'assets/icons/nav_puntok.svg',
                     label: 'Puntok',
@@ -74,7 +77,7 @@ class AppBottomNav extends StatelessWidget {
                   ),
                   _NavItem(
                     asset: 'assets/icons/nav_profile.svg',
-                    label: 'My Post',
+                    label: 'Profile',
                     selected: active == AppRoute.profile,
                     onTap: () => onTap(AppRoute.profile),
                   ),
@@ -83,9 +86,10 @@ class AppBottomNav extends StatelessWidget {
             ),
           ),
           Positioned(
-            // Sits a little below the bump crest so it reads level with the
-            // icon row rather than floating above the bar.
-            top: 10,
+            // Rides the bump crest. It used to sit 10 lower, which was fine
+            // while the slot under it was empty — now "Create" is down there
+            // and the button would cover its own label.
+            top: -4,
             left: 0,
             right: 0,
             child: Center(
@@ -118,6 +122,46 @@ class AppBottomNav extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The create button's share of the row: the FAB's own width kept clear, and
+/// "Create" under it, level with the other four labels.
+///
+/// Tappable itself, so the word is not a dead caption under a live button.
+class _CreateLabel extends StatelessWidget {
+  const _CreateLabel({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: AppBottomNav.fabSize + 24,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Stands in for an icon, so this label lands on the same line as
+            // the others instead of centring on its own.
+            const SizedBox(height: 22),
+            const SizedBox(height: 6),
+            Text(
+              'Create',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.navIconMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -31,7 +31,24 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _categoryIndex = 0;
 
-  static const _categories = <String>['All', 'Top Destination', 'Top PunGuide'];
+  /// The category row, in the order the reference prints it. The first three
+  /// pick which *sections* are on screen; the last two narrow the wall to one
+  /// kind of trip, the way the ไปกัน chips do.
+  static const _categories = <String>[
+    'All',
+    'Top Destination',
+    'Top PunGuide',
+    'คู่มือ',
+    'แผนทริป',
+  ];
+
+  /// What the chip in force narrows the wall to, or null when it narrows
+  /// nothing.
+  TripType? get _typeFilter => switch (_categoryIndex) {
+        3 => TripType.content,
+        4 => TripType.planTrip,
+        _ => null,
+      };
 
   static const _heroImage = 'assets/images/home_hero.jpg';
 
@@ -94,7 +111,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final feed = ref.watch(visibleHomeFeedProvider);
     final destinations = ref.watch(topDestinationsProvider);
     final session = ref.watch(authSessionProvider);
-    final showDestinations = _categoryIndex != 2;
+    // The destination rail is the answer to "where", so it stands down as
+    // soon as a chip asks something else of the wall.
+    final showDestinations = _categoryIndex == 0 || _categoryIndex == 1;
     final showPunGuide = _categoryIndex != 1;
 
     return AppFrame(
@@ -147,7 +166,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 if (showPunGuide) ...[
                   const SizedBox(height: 24),
                   HomeSectionHeader(
-                    title: 'Top PunGuide',
+                    // The wall is headed by whatever the chip asked for, so
+                    // the two never contradict each other: a wall narrowed to
+                    // guides is not "Top PunGuide".
+                    title: _typeFilter == null
+                        ? 'Top PunGuide'
+                        : _categories[_categoryIndex],
                     onSeeAll: _openSearch,
                   ),
                   const SizedBox(height: 12),
@@ -244,12 +268,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildPunGuideGrid(List<TripListItem> items) {
+  Widget _buildPunGuideGrid(List<TripListItem> rows) {
+    final items = switch (_typeFilter) {
+      final type? =>
+        rows.where((trip) => trip.type == type).toList(growable: false),
+      null => rows,
+    };
     if (items.isEmpty) {
-      return const _EmptyState(
-        title: 'ยังไม่มีทริป',
-        subtitle: 'เริ่มปันไกด์ทริปแรกของคุณได้เลย',
-      );
+      // An empty wall under a type chip is a filter result, not an empty
+      // app: saying "ปันไกด์ทริปแรก" there would be wrong twice over.
+      return _typeFilter == null
+          ? const _EmptyState(
+              title: 'ยังไม่มีทริป',
+              subtitle: 'เริ่มปันไกด์ทริปแรกของคุณได้เลย',
+            )
+          : _EmptyState(
+              title: 'ยังไม่มี${_categories[_categoryIndex]}',
+              subtitle: 'ลองดูหมวดอื่น หรือกลับมาใหม่ภายหลัง',
+            );
     }
 
     // The badge and the bookmark the ไปกัน board puts on a card, over Home's

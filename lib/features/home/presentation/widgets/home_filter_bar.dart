@@ -55,13 +55,18 @@ class HomeFilterBar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        // The chip in force is filled and loses its outline;
+                        // the rest are white with a warm hairline. Weight
+                        // alone used to carry it, which read as two shades of
+                        // the same chip rather than on and off.
+                        color: active
+                            ? AppColors.homeChipFill
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(99),
                         border: Border.all(
                           color: active
-                              ? AppColors.chipBorderActive
-                              : AppColors.chipBorder,
-                          width: active ? 1.4 : 1,
+                              ? AppColors.homeChipFill
+                              : AppColors.homeChipBorder,
                         ),
                       ),
                       child: Text(

@@ -147,7 +147,7 @@ void main() {
 
     expect(find.byType(AppBottomNav), findsOneWidget);
     // Reached from the profile menu, so that tab stays lit.
-    expect(find.text('My Post'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
   });
 
   testWidgets('saved trips lays out on a narrow phone without overflow',

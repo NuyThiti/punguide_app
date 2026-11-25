@@ -7,6 +7,8 @@ import 'package:pluno/core/router/app_router.dart';
 import 'package:pluno/features/ai_chat/presentation/ai_chat_screen.dart';
 import 'package:pluno/features/home/presentation/home_screen.dart';
 import 'package:pluno/features/home/presentation/widgets/home_assistant_fab.dart';
+import 'package:pluno/features/home/presentation/widgets/destination_card.dart';
+import 'package:pluno/features/home/presentation/widgets/home_filter_bar.dart';
 import 'package:pluno/shared/widgets/app_bottom_nav.dart';
 
 import 'support/home_feed_fixtures.dart';
@@ -72,7 +74,7 @@ void main() {
     expect(find.text('Paigun'), findsOneWidget);
     // The create button is the unlabelled bump in the middle of the bar.
     expect(find.text('Puntok'), findsOneWidget);
-    expect(find.text('My Post'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
     expect(find.text(_trips.first.title), findsOneWidget);
     expect(find.text('makitravels'), findsOneWidget);
   });
@@ -182,6 +184,85 @@ void main() {
     await tester.drag(find.byType(ListView).first, const Offset(0, -300));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(chips), pinned);
+  });
+
+  testWidgets('a type chip narrows the wall and stands the rail down',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(<TripListItem>[
+      feedTrip(id: 'plan', title: 'แผนสามวัน'),
+      TripListItem.fromJson(
+        feedTripJson(id: 'guide', title: 'คู่มือเยาวราช', type: 'content'),
+      ),
+    ]));
+    await tester.pumpAndSettle();
+
+    expect(find.text('แผนสามวัน'), findsOneWidget);
+    expect(find.text('คู่มือเยาวราช'), findsOneWidget);
+
+    // The chip row scrolls, so the type chips are off-screen at rest. Find
+    // the chip inside the bar — "คู่มือ" is also what a guide's own card says.
+    final chip = find.descendant(
+      of: find.byType(HomeFilterBar),
+      matching: find.text('คู่มือ'),
+    );
+    await tester.drag(
+      find.descendant(
+        of: find.byType(HomeFilterBar),
+        matching: find.byType(ListView),
+      ),
+      const Offset(-240, 0),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(chip);
+    await tester.pumpAndSettle();
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+
+    // Only guides are left, and the destination rail — the answer to
+    // "where" — has stood down.
+    expect(find.text('คู่มือเยาวราช'), findsOneWidget);
+    expect(find.text('แผนสามวัน'), findsNothing);
+    expect(find.byType(DestinationCard), findsNothing);
+    // And the wall is headed by what was asked for, not by "Top PunGuide".
+    expect(
+      find.descendant(
+        of: find.byType(HomeSectionHeader),
+        matching: find.text('คู่มือ'),
+      ),
+      findsOneWidget,
+    );
+    // "Top PunGuide" survives as a chip and as a card badge, but not as the
+    // heading over a wall it no longer describes.
+    expect(
+      find.descendant(
+        of: find.byType(HomeSectionHeader),
+        matching: find.text('Top PunGuide'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('the nav says Create under the button and Profile at the end',
+      (tester) async {
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(_trips));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
+
+    // The button must not sit on top of its own label.
+    final fab = tester.getRect(find.byIcon(Icons.add));
+    final label = tester.getRect(find.text('Create'));
+    expect(fab.bottom, lessThanOrEqualTo(label.top));
   });
 
   testWidgets('the assistant button floats clear of the nav bar',

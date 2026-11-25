@@ -12,13 +12,19 @@ import 'pun_guide_card.dart';
 /// card is as tall as its own title and meta, so nothing is padded out with
 /// dead space and nothing can overflow a budgeted tile.
 class PunGuideGrid extends StatelessWidget {
+  /// What the wall leaves at its edges and between its two columns — the same
+  /// figure for both, so the gap down the middle matches the margin either
+  /// side. Half what it was: the reference runs the covers much closer to the
+  /// screen than the headings above them.
+  static const double _gutter = 8;
+
   const PunGuideGrid({
     super.key,
     required this.trips,
     required this.onOpen,
     this.onSave,
     this.onLike,
-    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+    this.padding = const EdgeInsets.symmetric(horizontal: _gutter),
     this.distanceLabelOf,
     this.featuredOf,
     this.savedOf,
@@ -87,7 +93,7 @@ class PunGuideGrid extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(child: _column(left)),
-          const SizedBox(width: 12),
+          const SizedBox(width: _gutter),
           Expanded(child: _column(right)),
         ],
       ),

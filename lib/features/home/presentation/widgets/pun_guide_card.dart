@@ -91,6 +91,14 @@ class PunGuideCard extends StatelessWidget {
   /// Only the cover has a fixed shape; the card is as tall as its own text.
   static const double coverAspectRatio = 0.97;
 
+  /// Shared with [PuntokCard], which sits in the same walls — two radii on
+  /// one wall reads as a mistake.
+  static const double cornerRadius = 6;
+
+  /// Breathing room round the title, the place line and the counts. The
+  /// cover has none: it runs to the card's own edge.
+  static const double contentPadding = 8;
+
   /// The cover's corner holds delete and nothing else.
   ///
   /// Bookmarking moved down to the counts row, where the save tally already
@@ -116,6 +124,9 @@ class PunGuideCard extends StatelessWidget {
     // One accent per card: the chip in front of the type label and the
     // distance pill are the same colour, so the type reads at a glance.
     final accent = guide ? AppColors.cardGuideAccent : AppColors.cardPlanAccent;
+    // What reads on top of that accent, in the type pill and again in the
+    // distance chip: the lime wants the violet back, the violet wants white.
+    final onAccent = guide ? AppColors.cardPlanAccent : Colors.white;
 
     return GestureDetector(
       onTap: onTap,
@@ -124,7 +135,9 @@ class PunGuideCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          // Seventy per cent off the 20 it wore: the reference's cards are
+          // all but square-cornered, and the cover fills more of them for it.
+          borderRadius: BorderRadius.circular(PunGuideCard.cornerRadius),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.07),
@@ -148,33 +161,60 @@ class PunGuideCard extends StatelessWidget {
                     const _MissingCover(),
                   // Keeps the pills legible over a bright sky or a beach.
                   const _CoverScrim(),
-                  if (featured)
-                    const Positioned(
-                      top: 10,
-                      left: 10,
-                      child: _FeaturedBadge(),
+                  // The type is the first thing to read, so it takes the
+                  // corner the eye starts in and wears the accent solid
+                  // rather than hiding inside the dark pill it used to share
+                  // with the creator.
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    // Room kept for the delete disc opposite, nothing more:
+                    // the Top PunGuide badge moved to the bottom corner so a
+                    // type word never has to share this line with it.
+                    right: onDelete == null ? 10 : 48,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _TypePill(
+                        guide: guide,
+                        accent: accent,
+                        onAccent: onAccent,
+                      ),
                     ),
-                  // Delete on the traveller's own wall, nothing on anyone
-                  // else's — report and block are on the long press.
+                  ),
                   if (_corner(context) case final corner?)
                     Positioned(top: 10, right: 10, child: corner),
+                  // The bottom line: who made it on the left, and the badge
+                  // on the right. The badge sat up top until the type pill
+                  // took that corner, and two pills there left neither room
+                  // to say its whole word on a card half a phone wide.
                   Positioned(
-                    left: 8,
-                    right: 8,
+                    left: 10,
+                    right: 10,
                     bottom: 10,
-                    // Both pills flex. Only the creator did before, so on a
-                    // narrow phone the type pill took the whole cover and
-                    // left the creator a few points to overflow out of.
                     child: Row(
                       children: [
-                        Flexible(
-                          child: _TypePill(guide: guide, accent: accent),
-                        ),
                         // Whose trip this is only tells the traveller
-                        // something on someone else's wall.
-                        if (!isMine) ...[
+                        // something on someone else's wall. Expanded rather
+                        // than Flexible so the badge is pushed to the far
+                        // end even when the name beside it bows out — see
+                        // [_CreatorPill], which decides that for itself.
+                        if (!isMine)
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _CreatorPill(creator: trip.creator),
+                            ),
+                          )
+                        else
+                          const Spacer(),
+                        if (featured) ...[
                           const SizedBox(width: 6),
-                          Flexible(child: _CreatorPill(creator: trip.creator)),
+                          // Flexible, because on the narrowest phone the
+                          // badge is wider than the half-card line it sits
+                          // on. It never truncates at a real width; this is
+                          // what keeps the bottom of the cover from
+                          // overflowing when one does not fit.
+                          const Flexible(child: _FeaturedBadge()),
                         ],
                       ],
                     ),
@@ -183,7 +223,12 @@ class PunGuideCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(3),
+              padding: const EdgeInsets.fromLTRB(
+                contentPadding,
+                contentPadding,
+                contentPadding,
+                contentPadding + 2,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -203,7 +248,7 @@ class PunGuideCard extends StatelessWidget {
                     destination: trip.destination,
                     distanceLabel: distanceLabel,
                     accent: accent,
-                    onAccent: guide ? AppColors.cardTitle : Colors.white,
+                    onAccent: onAccent,
                   ),
                   const SizedBox(height: 6),
                   _StatsLine(
@@ -285,6 +330,9 @@ class _FeaturedBadge extends StatelessWidget {
       ),
       child: const Text(
         'Top PunGuide',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
         style: TextStyle(
           color: Colors.white,
           fontSize: 9,
@@ -360,40 +408,62 @@ class _CoverPill extends StatelessWidget {
 }
 
 /// "คู่มือ" or "แผนทริป", behind a badge in the card's accent.
+/// What the trip is, in the cover's top-left corner.
+///
+/// Solid accent rather than the dark pill it used to share with the creator:
+/// up here it is the one label that has to carry across a thumbnail, and the
+/// colour says as much as the word does — lime is a guide, violet is a plan.
 class _TypePill extends StatelessWidget {
-  const _TypePill({required this.guide, required this.accent});
+  const _TypePill({
+    required this.guide,
+    required this.accent,
+    required this.onAccent,
+  });
 
   final bool guide;
   final Color accent;
 
+  /// The glyph and the label both take this — one colour, so the pill reads
+  /// as a single object rather than an icon sitting next to a word.
+  final Color onAccent;
+
   @override
   Widget build(BuildContext context) {
-    return _CoverPill(
-      leading: Container(
-        width: 16,
-        height: 16,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-        child: SvgPicture.asset(
-          guide ? 'assets/icons/trip_guide.svg' : 'assets/icons/trip_plan.svg',
-          width: 9,
-          height: 9,
-          colorFilter: ColorFilter.mode(
-            // The glyph takes whichever of the two reads on its badge.
-            guide ? AppColors.cardPlanAccent : Colors.white,
-            BlendMode.srcIn,
-          ),
-        ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(5, 2, 6, 2),
+      decoration: BoxDecoration(
+        color: accent,
+        borderRadius: BorderRadius.circular(99),
       ),
-      label: Text(
-        guide ? 'คู่มือ' : 'แผนทริป',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SvgPicture.asset(
+            guide
+                ? 'assets/icons/trip_guide.svg'
+                : 'assets/icons/trip_plan.svg',
+            width: 9,
+            height: 9,
+            colorFilter: ColorFilter.mode(onAccent, BlendMode.srcIn),
+          ),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(
+              guide ? 'คู่มือ' : 'แผนทริป',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: onAccent,
+                // The one metric not halved: 6pt would not be readable at
+                // arm's length. Height and width still come out at about
+                // half, which is what makes the pill read as half the size.
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -406,8 +476,22 @@ class _CreatorPill extends StatelessWidget {
   /// Absent once the owner deletes their account.
   final TripCreator? creator;
 
+  /// Under this the pill is an avatar and an ellipsis, which says less than
+  /// nothing. A narrow card that is also wearing the Top PunGuide badge runs
+  /// out of line here, and drops the name rather than crushing it: the badge
+  /// is the rarer thing to say, so it keeps the room.
+  static const double _minWidth = 56;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < _minWidth
+          ? const SizedBox.shrink()
+          : _pill(),
+    );
+  }
+
+  Widget _pill() {
     final avatar = creator?.avatarUrl;
 
     return _CoverPill(

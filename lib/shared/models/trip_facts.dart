@@ -27,7 +27,7 @@ List<String> tripFactsParts(TripListItem trip) {
     // A costed plan prints its price; one that adds up to nothing is free,
     // not unpriced — the design spells that out rather than leaving a gap.
     if (trip.totalBudget > 0)
-      '${trip.totalBudget.asSpacedBaht} /คน'
+      '${trip.totalBudget.asBaht} /คน'
     else
       'ฟรี / คน',
   ];

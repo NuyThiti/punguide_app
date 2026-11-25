@@ -14,8 +14,7 @@ extension BudgetFormat on double {
 
   String get asBudget => '\$$_grouped';
 
+  /// "฿2,000" — what a feed card prints beside "/คน". The sign sits against
+  /// the figure; the space the card used to put there read as two fields.
   String get asBaht => '฿$_grouped';
-
-  /// "฿ 2,000" — the spaced form a feed card prints beside "/คน".
-  String get asSpacedBaht => '฿ $_grouped';
 }

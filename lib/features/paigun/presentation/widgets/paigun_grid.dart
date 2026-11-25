@@ -9,6 +9,9 @@ import 'paigun_card.dart';
 /// the same reason the Home wall is: a card is as tall as its own title and
 /// meta, so nothing is padded out with dead space and nothing overflows.
 class PaigunGrid extends StatelessWidget {
+  /// Matches [PunGuideGrid]'s, so the board's wall and Home's line up.
+  static const double _gutter = 8;
+
   const PaigunGrid({
     super.key,
     required this.rows,
@@ -17,7 +20,7 @@ class PaigunGrid extends StatelessWidget {
     required this.likedOf,
     required this.onLike,
     this.moreOf,
-    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+    this.padding = const EdgeInsets.symmetric(horizontal: _gutter),
   });
 
   final List<NearbyTrip> rows;
@@ -46,7 +49,7 @@ class PaigunGrid extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(child: _column(left)),
-          const SizedBox(width: 12),
+          const SizedBox(width: _gutter),
           Expanded(child: _column(right)),
         ],
       ),
