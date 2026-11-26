@@ -102,7 +102,7 @@ class CreatePostHeader extends StatelessWidget {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 20,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -123,7 +123,7 @@ class CreatePostHeader extends StatelessWidget {
                     ),
                   ),
                   if (onCreateFromPhotos != null) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                     _AiCreateButton(
                       busy: importing,
                       onTap: onCreateFromPhotos!,
@@ -149,7 +149,7 @@ class _AiCreateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 52,
+      height: 42,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         gradient: const LinearGradient(
@@ -172,14 +172,14 @@ class _AiCreateButton extends StatelessWidget {
             child: busy
                 ? const SizedBox(
                     width: 22,
-                    height: 22,
+                    height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white),
                   )
                 : const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                      Icon(Icons.auto_awesome, color: Colors.white, size: 18),
                       SizedBox(width: 8),
                       Flexible(
                         child: Text(

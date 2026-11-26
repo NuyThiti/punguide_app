@@ -2264,6 +2264,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           titleController: _blocks[index].title,
                           titleFocus: _blocks[index].titleFocus,
                           showHeading: _blocks[index].headingRevealed,
+                          onHideHeading: () => setState(() {
+                            final block = _blocks[index];
+                            block.titleFocus.unfocus();
+                            block.title.clear();
+                            block.headingRevealed = false;
+                          }),
                           bodyController: _blocks[index].body,
                           imagePath: null,
                           items: _blocks[index]

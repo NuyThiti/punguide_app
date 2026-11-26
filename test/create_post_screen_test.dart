@@ -415,7 +415,7 @@ final _aiButton = find.descendant(
 
 /// Opens the [item]-th content item's รายละเอียดสถานที่ sheet.
 Future<void> _openDetails(WidgetTester tester, {int item = 0}) async {
-  final card = find.text('รายละเอียดสถานที่').at(item);
+  final card = find.text('รายละเอียด').at(item);
   await _scrollTo(tester, card);
   await tester.tap(card);
   await tester.pumpAndSettle();
@@ -2438,7 +2438,7 @@ void main() {
 
     // The story comes after the photos, then the details card — its "add
     // something" rows are not on the page but in its own sheet.
-    expect(find.text('รายละเอียดสถานที่'), findsOneWidget);
+    expect(find.text('รายละเอียด'), findsOneWidget);
     expect(
         find.descendant(
             of: find.byType(PostBlock), matching: find.byType(PostAddChip)),
@@ -2803,6 +2803,29 @@ void main() {
     expect(
         tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text,
         'ร้านอาหารที่ต้องแวะ');
+  });
+
+  testWidgets('the heading row\'s × hides it again and drops its name',
+      (tester) async {
+    await _pumpComposer(tester);
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
+    await tester.enterText(find.byType(TextField).first, 'ร้านอาหารที่ต้องแวะ');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('ซ่อนหัวข้อ'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+        findsNothing);
+    expect(find.byTooltip('ซ่อนหัวข้อ'), findsNothing);
+    expect(
+        tester.widget<PostBlock>(find.byType(PostBlock)).titleController.text,
+        isEmpty);
+
+    // And it can come back from the same menu.
+    await _tapAddMenu(tester, 'เพิ่มหัวข้อ');
+    expect(find.text('ชื่อหัวข้อ  (เช่น รวมร้านอาหาร, จุดห้ามพลาด)'),
+        findsOneWidget);
   });
 
   testWidgets('a heading that has text stays put when focus moves on',

@@ -66,6 +66,7 @@ class PostBlock extends StatefulWidget {
     required this.titleController,
     required this.titleFocus,
     this.showHeading = false,
+    this.onHideHeading,
     required this.bodyController,
     required this.imagePath,
     required this.imagePaths,
@@ -120,6 +121,10 @@ class PostBlock extends StatefulWidget {
   /// a title of its own (checked again below, so a reopened post with one
   /// still shows it even if this happens to be false).
   final bool showHeading;
+
+  /// The × at the end of the heading row: clears the name and puts the row
+  /// away again. Null leaves the row without one.
+  final VoidCallback? onHideHeading;
   final TextEditingController bodyController;
   final String? coverPath;
   final ValueChanged<String>? onSelectCover;
@@ -202,6 +207,7 @@ class _PostBlockState extends State<PostBlock> {
               _TitleRow(
                 controller: widget.titleController,
                 focusNode: widget.titleFocus,
+                onHide: widget.onHideHeading,
               ),
               const _Hairline(),
             ],
@@ -288,10 +294,15 @@ class _PostBlockState extends State<PostBlock> {
 /// design offers it — one line, no label.
 /// The spot's heading, once the options row has asked for it.
 class _TitleRow extends StatefulWidget {
-  const _TitleRow({required this.controller, required this.focusNode});
+  const _TitleRow({
+    required this.controller,
+    required this.focusNode,
+    this.onHide,
+  });
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final VoidCallback? onHide;
 
   @override
   State<_TitleRow> createState() => _TitleRowState();
@@ -338,6 +349,15 @@ class _TitleRowState extends State<_TitleRow> {
             ),
           ),
         ),
+        if (widget.onHide != null)
+          IconButton(
+            onPressed: widget.onHide,
+            icon: const Icon(Icons.close, size: 20),
+            color: AppColors.muted,
+            tooltip: 'ซ่อนหัวข้อ',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+          ),
       ],
     );
   }
@@ -1469,7 +1489,7 @@ class _DetailsCard extends StatelessWidget {
   final ValueChanged<PostSpotDetail> onEdit;
 
   static const _title = Text(
-    'รายละเอียดสถานที่',
+    'รายละเอียด',
     style: TextStyle(
       color: AppColors.postPurple,
       fontSize: 17,
